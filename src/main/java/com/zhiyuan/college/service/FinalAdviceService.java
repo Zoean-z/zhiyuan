@@ -1,0 +1,88 @@
+package com.zhiyuan.college.service;
+
+import com.zhiyuan.college.model.dto.FinalAdviceRequest;
+import com.zhiyuan.college.model.dto.FinalAdviceResponse;
+import com.zhiyuan.college.model.dto.RecommendationItemResponse;
+import com.zhiyuan.college.model.dto.RecommendationRequest;
+import com.zhiyuan.college.model.dto.RecommendationResponse;
+import com.zhiyuan.college.model.enums.StrategyType;
+import java.util.ArrayList;
+import java.util.List;
+import org.springframework.stereotype.Service;
+
+@Service
+public class FinalAdviceService {
+
+    private final RecommendationService recommendationService;
+    private final AiAdviceSummaryService aiAdviceSummaryService;
+
+    public FinalAdviceService(RecommendationService recommendationService,
+                              AiAdviceSummaryService aiAdviceSummaryService) {
+        this.recommendationService = recommendationService;
+        this.aiAdviceSummaryService = aiAdviceSummaryService;
+    }
+
+    public FinalAdviceResponse generate(FinalAdviceRequest request) {
+        RecommendationRequest recommendationRequest = new RecommendationRequest();
+        recommendationRequest.setScore(request.getScore());
+        recommendationRequest.setProvince(request.getProvince());
+        recommendationRequest.setSubjectType(request.getSubjectType());
+
+        RecommendationResponse recommendationResponse = recommendationService.recommend(recommendationRequest);
+        StrategyType resolved = resolveStrategy(request.getStrategy());
+
+        List<RecommendationItemResponse> pool = switch (resolved) {
+            case RUSH -> recommendationResponse.getRush();
+            case SAFE -> recommendationResponse.getSafe();
+            case GUARANTEE -> recommendationResponse.getGuarantee();
+        };
+
+        List<String> schools = pool.stream()
+                .limit(5)
+                .map(RecommendationItemResponse::getUniversityName)
+                .toList();
+
+        String advice = buildAdvice(request, resolved, schools, recommendationResponse.getSummary());
+        String summary = aiAdviceSummaryService.summarize(advice);
+        return new FinalAdviceResponse(resolved.name(), schools, advice, summary);
+    }
+
+    private StrategyType resolveStrategy(String rawStrategy) {
+        String text = rawStrategy == null ? "" : rawStrategy;
+        if (text.contains("保守") || text.contains("保险") || text.contains("兜底")) {
+            return StrategyType.GUARANTEE;
+        }
+        if (text.contains("冲") || text.contains("激进")) {
+            return StrategyType.RUSH;
+        }
+        return StrategyType.SAFE;
+    }
+
+    private String buildAdvice(FinalAdviceRequest request,
+                               StrategyType strategy,
+                               List<String> schools,
+                               String baseSummary) {
+        String strategyCn = switch (strategy) {
+            case RUSH -> "冲刺";
+            case SAFE -> "稳定";
+            case GUARANTEE -> "保守";
+        };
+
+        List<String> preferred = request.getPreferredUniversities() == null
+                ? List.of() : request.getPreferredUniversities();
+
+        String schoolText = schools.isEmpty() ? "当前条件下暂无满足策略的推荐院校。"
+                : "优先关注：" + String.join("、", schools) + "。";
+
+        String preferredText = preferred.isEmpty() ? ""
+                : "你关注的院校有：" + String.join("、", new ArrayList<>(preferred)) + "。";
+
+        return "最终填报建议（" + strategyCn + "策略）：" +
+                "建议以" + request.getProvince() + request.getSubjectType().getDisplayName() + "类分数线为基准，" +
+                "按“冲-稳-保”梯度组合志愿。" +
+                schoolText +
+                preferredText +
+                "建议在正式填报前核对招生章程、专业限选和近三年位次变化。" +
+                "系统参考：" + baseSummary;
+    }
+}
