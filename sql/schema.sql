@@ -22,3 +22,12 @@ CREATE TABLE IF NOT EXISTS admission_cutoff (
   CONSTRAINT fk_cutoff_university FOREIGN KEY (university_id) REFERENCES university(id),
   INDEX idx_cutoff_query (province, subject_type, admission_year)
 );
+
+CREATE TABLE IF NOT EXISTS users (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  username VARCHAR(64) NOT NULL UNIQUE,
+  password VARCHAR(128) NOT NULL,
+  score INT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);

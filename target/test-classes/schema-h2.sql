@@ -16,3 +16,12 @@ CREATE TABLE admission_cutoff (
   min_rank INT,
   CONSTRAINT fk_cutoff_university FOREIGN KEY (university_id) REFERENCES university(id)
 );
+
+CREATE TABLE users (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  username VARCHAR(64) NOT NULL UNIQUE,
+  password VARCHAR(128) NOT NULL,
+  score INT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);

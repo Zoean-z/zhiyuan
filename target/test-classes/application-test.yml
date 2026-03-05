@@ -12,3 +12,11 @@ spring:
 mybatis-plus:
   configuration:
     map-underscore-to-camel-case: true
+ai:
+  qwen:
+    enabled: false
+    base-url: http://localhost
+    model: qwen-plus
+    api-key: test-key
+auth:
+  token-ttl-seconds: 86400

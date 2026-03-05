@@ -12,3 +12,11 @@ mybatis-plus:
     map-underscore-to-camel-case: true
 server:
   port: 8080
+ai:
+  qwen:
+    enabled: true
+    base-url: ${QWEN_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode/v1}
+    model: ${QWEN_MODEL:qwen-plus}
+    api-key: sk-c7fe217b504d484fa289e9fdc1b425ca
+auth:
+  token-ttl-seconds: ${AUTH_TOKEN_TTL_SECONDS:86400}

@@ -3,6 +3,7 @@ USE college_recommendation;
 SET FOREIGN_KEY_CHECKS = 0;
 TRUNCATE TABLE admission_cutoff;
 TRUNCATE TABLE university;
+TRUNCATE TABLE users;
 SET FOREIGN_KEY_CHECKS = 1;
 
 INSERT INTO university (id, name, province, tier, tags) VALUES
@@ -20,3 +21,7 @@ INSERT INTO admission_cutoff (university_id, admission_year, province, subject_t
 (2, 2025, '浙江', '历史', 618, 21000),
 (3, 2025, '浙江', '历史', 601, 36000),
 (4, 2025, '浙江', '历史', 589, 49000);
+
+INSERT INTO users (id, username, password, score) VALUES
+(1, 'testuser', '123456', NULL),
+(2, 'freshuser', '123456', NULL);
