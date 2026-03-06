@@ -29,7 +29,7 @@ class RecommendationControllerTest {
 
     @Test
     void recommend_shouldReturnGroupedResults() throws Exception {
-        String token = loginAndGetToken("testuser", "123456", 620);
+        String token = loginAndGetToken("testuser", "123456", 620, "PHYSICS", "浙江");
         JsonNode meta = fetchMeta();
 
         String requestJson = """
@@ -60,7 +60,7 @@ class RecommendationControllerTest {
 
     @Test
     void recommend_shouldRejectInvalidRequest() throws Exception {
-        String token = loginAndGetToken("testuser", "123456", 620);
+        String token = loginAndGetToken("testuser", "123456", 620, "PHYSICS", "浙江");
         String requestJson = """
                 {
                   "score": 900,
@@ -78,7 +78,7 @@ class RecommendationControllerTest {
 
     @Test
     void recommendByText_shouldUseStoredScoreWhenTextHasNoScore() throws Exception {
-        String token = loginAndGetToken("testuser", "123456", 620);
+        String token = loginAndGetToken("testuser", "123456", 620, "PHYSICS", "浙江");
         String requestJson = """
                 {
                   "requirementText": "我想在浙江上大学，物理类，求稳"
@@ -96,7 +96,7 @@ class RecommendationControllerTest {
 
     @Test
     void recommendByText_shouldUpdateStoredScoreWhenTextContainsScore() throws Exception {
-        String token = loginAndGetToken("testuser", "123456", 620);
+        String token = loginAndGetToken("testuser", "123456", 620, "PHYSICS", "浙江");
         String requestJson = """
                 {
                   "requirementText": "我630分，想在浙江上大学，物理类"
@@ -127,7 +127,7 @@ class RecommendationControllerTest {
 
     @Test
     void finalAdvice_shouldReturnAiSummary() throws Exception {
-        String token = loginAndGetToken("testuser", "123456", 620);
+        String token = loginAndGetToken("testuser", "123456", 620, "PHYSICS", "浙江");
         JsonNode meta = fetchMeta();
         String province = meta.get("provinces").get(0).asText();
         String requestJson = """
@@ -173,8 +173,8 @@ class RecommendationControllerTest {
         return objectMapper.readTree(result.getResponse().getContentAsString());
     }
 
-    private String loginAndGetToken(String username, String password, Integer score) throws Exception {
-        String payload = score == null
+    private String loginAndGetToken(String username, String password, Integer score, String subjectType, String examProvince) throws Exception {
+        String payload = score == null && subjectType == null && examProvince == null
                 ? """
                 {
                   "username": "%s",
@@ -185,9 +185,11 @@ class RecommendationControllerTest {
                 {
                   "username": "%s",
                   "password": "%s",
-                  "score": %d
+                  "score": %d,
+                  "subjectType": "%s",
+                  "examProvince": "%s"
                 }
-                """.formatted(username, password, score);
+                """.formatted(username, password, score, subjectType, examProvince);
 
         MvcResult result = mockMvc.perform(post("/api/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)

@@ -35,16 +35,34 @@ public class AuthService {
         if (user.getScore() == null && request.getScore() == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Score is required at first login");
         }
+        if (user.getSubjectType() == null && request.getSubjectType() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Subject type is required at first login");
+        }
+        if (isBlank(user.getExamProvince()) && isBlank(request.getExamProvince())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Exam province is required at first login");
+        }
 
+        boolean profileChanged = false;
         if (request.getScore() != null && !request.getScore().equals(user.getScore())) {
             user.setScore(request.getScore());
+            profileChanged = true;
+        }
+        if (request.getSubjectType() != null && request.getSubjectType() != user.getSubjectType()) {
+            user.setSubjectType(request.getSubjectType());
+            profileChanged = true;
+        }
+        if (!isBlank(request.getExamProvince()) && !request.getExamProvince().equals(user.getExamProvince())) {
+            user.setExamProvince(request.getExamProvince().trim());
+            profileChanged = true;
+        }
+        if (profileChanged) {
             userAccountMapper.updateById(user);
         }
 
         String token = UUID.randomUUID().toString().replace("-", "");
         long expireAtEpochSecond = Instant.now().getEpochSecond() + tokenTtlSeconds;
         sessions.put(token, new SessionInfo(user.getId(), expireAtEpochSecond));
-        return new LoginResponse(token, user.getUsername(), user.getScore());
+        return new LoginResponse(token, user.getUsername(), user.getScore(), user.getSubjectType(), user.getExamProvince());
     }
 
     public UserAccount validateToken(String token) {
@@ -59,6 +77,10 @@ public class AuthService {
         return userAccountMapper.selectById(sessionInfo.userId());
     }
 
+    public void logout(String token) {
+        sessions.remove(token);
+    }
+
     public void updateScore(Long userId, Integer score) {
         UserAccount user = new UserAccount();
         user.setId(userId);
@@ -66,6 +88,9 @@ public class AuthService {
         userAccountMapper.updateById(user);
     }
 
+    private boolean isBlank(String value) {
+        return value == null || value.isBlank();
+    }
+
     private record SessionInfo(Long userId, long expireAtEpochSecond) {}
 }
-

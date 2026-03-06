@@ -1,5 +1,6 @@
 package com.zhiyuan.college.model.dto;
 
+import com.zhiyuan.college.model.enums.SubjectType;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
@@ -15,6 +16,8 @@ public class LoginRequest {
     @Min(0)
     @Max(750)
     private Integer score;
+    private SubjectType subjectType;
+    private String examProvince;
 
     public String getUsername() {
         return username;
@@ -39,5 +42,20 @@ public class LoginRequest {
     public void setScore(Integer score) {
         this.score = score;
     }
-}
 
+    public SubjectType getSubjectType() {
+        return subjectType;
+    }
+
+    public void setSubjectType(SubjectType subjectType) {
+        this.subjectType = subjectType;
+    }
+
+    public String getExamProvince() {
+        return examProvince;
+    }
+
+    public void setExamProvince(String examProvince) {
+        this.examProvince = examProvince;
+    }
+}

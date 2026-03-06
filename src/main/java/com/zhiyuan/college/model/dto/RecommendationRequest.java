@@ -4,11 +4,9 @@ import com.zhiyuan.college.model.enums.SubjectType;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
 
 public class RecommendationRequest {
 
-    @NotNull
     @Min(0)
     @Max(750)
     private Integer score;
@@ -16,7 +14,6 @@ public class RecommendationRequest {
     @NotBlank
     private String province;
 
-    @NotNull
     private SubjectType subjectType;
 
     public Integer getScore() {

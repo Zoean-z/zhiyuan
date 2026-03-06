@@ -45,17 +45,30 @@ public class FreeTextRecommendationService {
     public FreeTextRecommendationResponse recommend(FreeTextRecommendationRequest request) {
         ParsedRequirement parsed = parserService.parse(request.getRequirementText());
         UserAccount currentUser = UserContext.get();
-        if (currentUser == null) {
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Please login first");
-        }
-
-        if (parsed.getScore() == null) {
-            if (currentUser.getScore() == null) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Score is required at first login");
+        if (currentUser != null) {
+            if (parsed.getScore() == null) {
+                if (currentUser.getScore() == null) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Score is required");
+                }
+                parsed.setScore(currentUser.getScore());
+            } else if (!parsed.getScore().equals(currentUser.getScore())) {
+                authService.updateScore(currentUser.getId(), parsed.getScore());
             }
-            parsed.setScore(currentUser.getScore());
-        } else if (!parsed.getScore().equals(currentUser.getScore())) {
-            authService.updateScore(currentUser.getId(), parsed.getScore());
+            if (currentUser.getSubjectType() != null) {
+                parsed.setSubjectType(currentUser.getSubjectType());
+            }
+            if (currentUser.getExamProvince() != null && !currentUser.getExamProvince().isBlank()) {
+                parsed.setCandidateProvince(currentUser.getExamProvince());
+            }
+        }
+        if (parsed.getScore() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "score is required");
+        }
+        if (parsed.getSubjectType() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "subjectType is required");
+        }
+        if (parsed.getCandidateProvince() == null || parsed.getCandidateProvince().isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "examProvince is required");
         }
 
         List<AdmissionCutoffWithUniversity> cutoffs = loadCandidateCutoffs(parsed);
@@ -73,7 +86,7 @@ public class FreeTextRecommendationService {
 
         List<RecommendationItemResponse> result = new ArrayList<>();
         for (AdmissionCutoffWithUniversity cutoff : cutoffs) {
-            if (parsed.getSubjectType() != null && !parsed.getSubjectType().getDbValue().equals(cutoff.getSubjectType())) {
+            if (!parsed.getSubjectType().getDbValue().equals(cutoff.getSubjectType())) {
                 continue;
             }
             if (parsed.getSchoolProvince() != null && !parsed.getSchoolProvince().equals(cutoff.getUniversityProvince())) {
@@ -150,15 +163,7 @@ public class FreeTextRecommendationService {
     }
 
     private List<AdmissionCutoffWithUniversity> loadCandidateCutoffs(ParsedRequirement parsed) {
-        if (parsed.getCandidateProvince() != null && !parsed.getCandidateProvince().isBlank()) {
-            return admissionCutoffMapper.findLatestByProvince(parsed.getCandidateProvince());
-        }
-
-        List<AdmissionCutoffWithUniversity> merged = new ArrayList<>();
-        for (String province : admissionCutoffMapper.findDistinctProvinces()) {
-            merged.addAll(admissionCutoffMapper.findLatestByProvince(province));
-        }
-        return merged;
+        return admissionCutoffMapper.findLatestByProvince(parsed.getCandidateProvince());
     }
 
     private String buildGeneralSummary(ParsedRequirement parsed, int totalCount) {

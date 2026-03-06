@@ -42,7 +42,7 @@ public class FinalAdviceService {
                 .map(RecommendationItemResponse::getUniversityName)
                 .toList();
 
-        String advice = buildAdvice(request, resolved, schools, recommendationResponse.getSummary());
+        String advice = buildAdvice(request, recommendationRequest, resolved, schools, recommendationResponse.getSummary());
         String summary = aiAdviceSummaryService.summarize(advice);
         return new FinalAdviceResponse(resolved.name(), schools, advice, summary);
     }
@@ -59,6 +59,7 @@ public class FinalAdviceService {
     }
 
     private String buildAdvice(FinalAdviceRequest request,
+                               RecommendationRequest resolvedRequest,
                                StrategyType strategy,
                                List<String> schools,
                                String baseSummary) {
@@ -78,7 +79,7 @@ public class FinalAdviceService {
                 : "你关注的院校有：" + String.join("、", new ArrayList<>(preferred)) + "。";
 
         return "最终填报建议（" + strategyCn + "策略）：" +
-                "建议以" + request.getProvince() + request.getSubjectType().getDisplayName() + "类分数线为基准，" +
+                "建议以" + request.getProvince() + resolvedRequest.getSubjectType().getDisplayName() + "类分数线为基准，" +
                 "按“冲-稳-保”梯度组合志愿。" +
                 schoolText +
                 preferredText +

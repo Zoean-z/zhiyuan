@@ -22,6 +22,6 @@ INSERT INTO admission_cutoff (university_id, admission_year, province, subject_t
 (3, 2025, '浙江', '历史', 601, 36000),
 (4, 2025, '浙江', '历史', 589, 49000);
 
-INSERT INTO users (id, username, password, score) VALUES
-(1, 'testuser', '123456', NULL),
-(2, 'freshuser', '123456', NULL);
+INSERT INTO users (id, username, password, score, subject_type, exam_province) VALUES
+(1, 'testuser', '123456', NULL, NULL, NULL),
+(2, 'freshuser', '123456', NULL, NULL, NULL);

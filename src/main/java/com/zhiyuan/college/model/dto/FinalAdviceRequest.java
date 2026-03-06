@@ -5,6 +5,7 @@ import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+
 import java.util.List;
 
 public class FinalAdviceRequest {
@@ -17,7 +18,6 @@ public class FinalAdviceRequest {
     @NotBlank
     private String province;
 
-    @NotNull
     private SubjectType subjectType;
 
     @NotBlank

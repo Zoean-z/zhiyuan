@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.zhiyuan.college.model.enums.SubjectType;
 
 @TableName("users")
 public class UserAccount {
@@ -16,6 +17,12 @@ public class UserAccount {
     private String password;
 
     private Integer score;
+
+    @TableField("subject_type")
+    private String subjectType;
+
+    @TableField("exam_province")
+    private String examProvince;
 
     @TableField("created_at")
     private java.time.LocalDateTime createdAt;
@@ -55,6 +62,30 @@ public class UserAccount {
         this.score = score;
     }
 
+    public String getSubjectTypeValue() {
+        return subjectType;
+    }
+
+    public void setSubjectTypeValue(String subjectType) {
+        this.subjectType = subjectType;
+    }
+
+    public SubjectType getSubjectType() {
+        return SubjectType.fromValue(subjectType);
+    }
+
+    public void setSubjectType(SubjectType subjectType) {
+        this.subjectType = subjectType == null ? null : subjectType.getDbValue();
+    }
+
+    public String getExamProvince() {
+        return examProvince;
+    }
+
+    public void setExamProvince(String examProvince) {
+        this.examProvince = examProvince;
+    }
+
     public java.time.LocalDateTime getCreatedAt() {
         return createdAt;
     }
@@ -71,4 +102,3 @@ public class UserAccount {
         this.updatedAt = updatedAt;
     }
 }
-
