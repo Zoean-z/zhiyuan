@@ -2,8 +2,8 @@
   const { createApp, ref, reactive, computed, onMounted } = Vue;
 
   const SUBJECT_OPTIONS = [
-    { value: "PHYSICS", label: "物理" },
-    { value: "HISTORY", label: "历史" }
+    { value: "PHYSICS", label: "Physics" },
+    { value: "HISTORY", label: "History" }
   ];
 
   function readStoredAuth() {
@@ -27,7 +27,7 @@
     const isJson = response.headers.get("content-type")?.includes("application/json");
     const data = isJson ? await response.json() : null;
     if (!response.ok) {
-      const message = data?.message || "请求失败";
+      const message = data?.message || "Request failed";
       throw new Error(message);
     }
     return data;
@@ -41,7 +41,211 @@
     return "safe";
   }
 
-  createApp({
+  function pickValue(obj, keys) {
+    for (const key of keys) {
+      if (obj && obj[key] !== undefined && obj[key] !== null && obj[key] !== "") {
+        return obj[key];
+      }
+    }
+    return null;
+  }
+
+  function normalizeItem(item, fallbackStrategy) {
+    const strategy = normalizeStrategy(pickValue(item, ["strategy", "strategyType", "type"]) || fallbackStrategy);
+    return {
+      universityName: pickValue(item, ["universityName", "schoolName", "name"]) || "Unknown University",
+      cutoffScore: pickValue(item, ["cutoffScore", "cutoff", "lastYearCutoff"]),
+      scoreGap: pickValue(item, ["scoreGap", "gap", "difference"]),
+      admissionProbability: pickValue(item, ["admissionProbability", "probability", "chance"]),
+      strategy
+    };
+  }
+
+  const UniversityCard = {
+    name: "UniversityCard",
+    props: {
+      item: {
+        type: Object,
+        required: true
+      },
+      strategy: {
+        type: String,
+        default: "safe"
+      }
+    },
+    computed: {
+      model() {
+        return normalizeItem(this.item, this.strategy);
+      },
+      strategyLabel() {
+        return this.model.strategy === "rush"
+          ? "Rush"
+          : this.model.strategy === "guarantee"
+            ? "Guarantee"
+            : "Safe";
+      },
+      strategyType() {
+        return this.model.strategy === "rush"
+          ? "danger"
+          : this.model.strategy === "guarantee"
+            ? "success"
+            : "warning";
+      },
+      probabilityText() {
+        return this.model.admissionProbability === null ? "-" : `${this.model.admissionProbability}%`;
+      }
+    },
+    template: `
+      <el-card class="university-card" shadow="hover">
+        <div class="university-card__head">
+          <h4 class="university-card__name">{{ model.universityName }}</h4>
+          <el-tag size="small" :type="strategyType" effect="light">{{ strategyLabel }}</el-tag>
+        </div>
+        <div class="university-card__meta">
+          <div class="meta-row"><span>Cutoff</span><strong>{{ model.cutoffScore ?? '-' }}</strong></div>
+          <div class="meta-row"><span>Score Gap</span><strong>{{ model.scoreGap ?? '-' }}</strong></div>
+          <div class="meta-row"><span>Probability</span><strong>{{ probabilityText }}</strong></div>
+        </div>
+      </el-card>
+    `
+  };
+
+  const AiSummaryPanel = {
+    name: "AiSummaryPanel",
+    props: {
+      aiSummary: {
+        type: String,
+        default: ""
+      },
+      summary: {
+        type: String,
+        default: ""
+      }
+    },
+    computed: {
+      displaySummary() {
+        return this.aiSummary || this.summary || "";
+      }
+    },
+    template: `
+      <el-card class="summary-panel" shadow="never">
+        <template #header>
+          <div class="panel-title-row">
+            <span>AI Summary</span>
+            <el-tag size="small" type="info" effect="plain">Recommendation Advice</el-tag>
+          </div>
+        </template>
+        <div v-if="displaySummary" class="summary-text">{{ displaySummary }}</div>
+        <el-empty v-else description="No AI summary available yet." :image-size="90" />
+      </el-card>
+    `
+  };
+
+  const RecommendationResult = {
+    name: "RecommendationResult",
+    components: {
+      UniversityCard,
+      AiSummaryPanel
+    },
+    props: {
+      loading: {
+        type: Boolean,
+        default: false
+      },
+      grouped: {
+        type: Object,
+        required: true
+      },
+      aiSummary: {
+        type: String,
+        default: ""
+      },
+      summary: {
+        type: String,
+        default: ""
+      }
+    },
+    data() {
+      return {
+        activeTab: "rush"
+      };
+    },
+    computed: {
+      rushList() {
+        return Array.isArray(this.grouped?.rush) ? this.grouped.rush : [];
+      },
+      safeList() {
+        return Array.isArray(this.grouped?.safe) ? this.grouped.safe : [];
+      },
+      guaranteeList() {
+        return Array.isArray(this.grouped?.guarantee) ? this.grouped.guarantee : [];
+      },
+      hasAnyData() {
+        return this.rushList.length + this.safeList.length + this.guaranteeList.length > 0;
+      }
+    },
+    template: `
+      <section class="result-page">
+        <el-card class="result-hero" shadow="never">
+          <h2>Recommendation Results</h2>
+          <p>Review AI-generated colleges by strategy level and compare score fit quickly.</p>
+        </el-card>
+
+        <el-card class="result-main" shadow="never">
+          <template #header>
+            <div class="panel-title-row">
+              <span>University Recommendations</span>
+              <el-tag size="small" type="primary" effect="plain">Rush / Safe / Guarantee</el-tag>
+            </div>
+          </template>
+
+          <el-skeleton :loading="loading" animated>
+            <template #template>
+              <div class="cards-grid">
+                <el-skeleton-item variant="p" style="height: 140px; border-radius: 12px;" />
+                <el-skeleton-item variant="p" style="height: 140px; border-radius: 12px;" />
+                <el-skeleton-item variant="p" style="height: 140px; border-radius: 12px;" />
+              </div>
+            </template>
+
+            <template #default>
+              <el-tabs v-model="activeTab" class="recommend-tabs">
+                <el-tab-pane :label="'Rush (' + rushList.length + ')'" name="rush">
+                  <div v-if="rushList.length" class="cards-grid">
+                    <UniversityCard v-for="(item, idx) in rushList" :key="'rush-'+idx" :item="item" strategy="rush" />
+                  </div>
+                  <el-empty v-else description="No rush universities yet." :image-size="90" />
+                </el-tab-pane>
+
+                <el-tab-pane :label="'Safe (' + safeList.length + ')'" name="safe">
+                  <div v-if="safeList.length" class="cards-grid">
+                    <UniversityCard v-for="(item, idx) in safeList" :key="'safe-'+idx" :item="item" strategy="safe" />
+                  </div>
+                  <el-empty v-else description="No safe universities yet." :image-size="90" />
+                </el-tab-pane>
+
+                <el-tab-pane :label="'Guarantee (' + guaranteeList.length + ')'" name="guarantee">
+                  <div v-if="guaranteeList.length" class="cards-grid">
+                    <UniversityCard v-for="(item, idx) in guaranteeList" :key="'guarantee-'+idx" :item="item" strategy="guarantee" />
+                  </div>
+                  <el-empty v-else description="No guarantee universities yet." :image-size="90" />
+                </el-tab-pane>
+              </el-tabs>
+
+              <el-empty v-if="!hasAnyData" description="No recommendation data. Submit a query to generate results." :image-size="100" />
+            </template>
+          </el-skeleton>
+        </el-card>
+
+        <AiSummaryPanel :ai-summary="aiSummary" :summary="summary" />
+      </section>
+    `
+  };
+
+  const app = createApp({
+    components: {
+      RecommendationResult
+    },
     setup() {
       const auth = ref(readStoredAuth());
       const activeMode = ref("text");
@@ -73,7 +277,7 @@
       const userText = computed(() => {
         if (!auth.value) return "";
         const user = auth.value.user || {};
-        return `用户: ${user.username || "-"} | 分数: ${user.score ?? "-"} | 科类: ${user.subjectType || "-"} | 生源地: ${user.examProvince || "-"}`;
+        return `User: ${user.username || "-"} | Score: ${user.score ?? "-"} | Subject: ${user.subjectType || "-"} | Province: ${user.examProvince || "-"}`;
       });
 
       function resetResults() {
@@ -118,6 +322,7 @@
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(payload)
           });
+
           auth.value = { token: data.token, user: data };
           saveStoredAuth(auth.value);
           fillScoreFromUser();
@@ -158,10 +363,10 @@
               subjectType: scoreForm.subjectType || null
             })
           });
-          grouped.rush = data.rush || [];
-          grouped.safe = data.safe || [];
-          grouped.guarantee = data.guarantee || [];
-          resultSummary.value = data.summary || "";
+          grouped.rush = Array.isArray(data?.rush) ? data.rush : [];
+          grouped.safe = Array.isArray(data?.safe) ? data.safe : [];
+          grouped.guarantee = Array.isArray(data?.guarantee) ? data.guarantee : [];
+          resultSummary.value = data?.summary || "";
         } catch (e) {
           error.value = e.message;
         } finally {
@@ -180,14 +385,14 @@
             body: JSON.stringify({ requirementText: textForm.requirementText })
           });
           const buckets = { rush: [], safe: [], guarantee: [] };
-          (data.recommendations || []).forEach((item) => {
-            buckets[normalizeStrategy(item.strategy)].push(item);
+          (data?.recommendations || []).forEach((item) => {
+            buckets[normalizeStrategy(item?.strategy)].push(item);
           });
           grouped.rush = buckets.rush;
           grouped.safe = buckets.safe;
           grouped.guarantee = buckets.guarantee;
-          resultSummary.value = data.summary || "";
-          aiSummary.value = data.aiSummary || "";
+          resultSummary.value = data?.summary || "";
+          aiSummary.value = data?.aiSummary || "";
         } catch (e) {
           error.value = e.message;
         } finally {
@@ -223,147 +428,115 @@
     template: `
       <div v-if="!auth" class="auth-wrap">
         <div class="card">
-          <h1>志愿推荐系统</h1>
-          <p>请先登录，首次登录可补充分数、科类和生源地。</p>
+          <h1>AI College Recommendation</h1>
+          <p>Login first. You can optionally provide score and province information at login.</p>
+
           <div class="field">
-            <label>用户名</label>
-            <input v-model.trim="loginForm.username" placeholder="请输入用户名" />
+            <label>Username</label>
+            <input v-model.trim="loginForm.username" placeholder="Enter username" />
           </div>
+
           <div class="field">
-            <label>密码</label>
-            <input v-model="loginForm.password" type="password" placeholder="请输入密码" />
+            <label>Password</label>
+            <input v-model="loginForm.password" type="password" placeholder="Enter password" />
           </div>
+
           <div class="grid-2">
             <div class="field">
-              <label>分数(可选)</label>
-              <input v-model="loginForm.score" type="number" min="0" max="750" placeholder="如 620" />
+              <label>Score (optional)</label>
+              <input v-model="loginForm.score" type="number" min="0" max="750" placeholder="e.g. 620" />
             </div>
             <div class="field">
-              <label>科类(可选)</label>
+              <label>Subject (optional)</label>
               <select v-model="loginForm.subjectType">
-                <option value="">请选择</option>
+                <option value="">Select</option>
                 <option v-for="opt in SUBJECT_OPTIONS" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
               </select>
             </div>
           </div>
+
           <div class="field">
-            <label>生源地(可选)</label>
+            <label>Province (optional)</label>
             <select v-model="loginForm.examProvince">
-              <option value="">请选择</option>
+              <option value="">Select</option>
               <option v-for="p in provinces" :key="p" :value="p">{{ p }}</option>
             </select>
           </div>
-          <button class="btn-primary btn-block" :disabled="loading" @click="login">{{ loading ? '登录中...' : '登录' }}</button>
+
+          <button class="btn-primary btn-block" :disabled="loading" @click="login">{{ loading ? 'Logging in...' : 'Login' }}</button>
           <p class="error" v-if="error">{{ error }}</p>
         </div>
       </div>
 
       <div v-else class="layout">
         <aside class="sidebar">
-          <h2>查询模式</h2>
-          <button class="menu-btn" :class="{ active: activeMode === 'text' }" @click="activeMode = 'text'">文本查询</button>
-          <button class="menu-btn" :class="{ active: activeMode === 'score' }" @click="activeMode = 'score'">分数查询</button>
+          <h2>Query Mode</h2>
+          <button class="menu-btn" :class="{ active: activeMode === 'text' }" @click="activeMode = 'text'">Free Text</button>
+          <button class="menu-btn" :class="{ active: activeMode === 'score' }" @click="activeMode = 'score'">By Score</button>
         </aside>
 
         <main class="main">
           <header class="topbar">
-            <div class="title">高考志愿推荐中心</div>
+            <div class="title">AI College Planner</div>
             <div class="user-info">
               <span>{{ userText }}</span>
-              <button class="btn-secondary" @click="logout">退出登录</button>
+              <button class="btn-secondary" @click="logout">Logout</button>
             </div>
           </header>
 
           <section class="content">
             <div class="panel">
-              <h3 v-if="activeMode === 'text'">文本查询</h3>
-              <h3 v-else>分数查询</h3>
+              <h3 v-if="activeMode === 'text'">Text Query</h3>
+              <h3 v-else>Score Query</h3>
 
               <template v-if="activeMode === 'text'">
                 <div class="field">
-                  <label>需求描述</label>
-                  <textarea v-model.trim="textForm.requirementText" placeholder="例如：我是江苏考生，620分，偏好计算机，想去华东地区，学校层次希望冲稳保各给几所。"></textarea>
+                  <label>Requirement</label>
+                  <textarea
+                    v-model.trim="textForm.requirementText"
+                    placeholder="Example: Jiangsu student, score 620, computer major preference, East China, provide rush/safe/guarantee schools."
+                  ></textarea>
                 </div>
-                <button class="btn-primary btn-block" :disabled="loading" @click="queryByText">{{ loading ? '查询中...' : '开始文本查询' }}</button>
+                <button class="btn-primary btn-block" :disabled="loading" @click="queryByText">{{ loading ? 'Loading...' : 'Generate Recommendations' }}</button>
               </template>
 
               <template v-else>
                 <div class="field">
-                  <label>分数</label>
+                  <label>Score</label>
                   <input type="number" min="0" max="750" v-model="scoreForm.score" />
                 </div>
                 <div class="field">
-                  <label>省份</label>
+                  <label>Province</label>
                   <select v-model="scoreForm.province">
-                    <option value="">请选择</option>
+                    <option value="">Select</option>
                     <option v-for="p in provinces" :key="p" :value="p">{{ p }}</option>
                   </select>
                 </div>
                 <div class="field">
-                  <label>科类</label>
+                  <label>Subject</label>
                   <select v-model="scoreForm.subjectType">
-                    <option value="">请选择</option>
+                    <option value="">Select</option>
                     <option v-for="opt in SUBJECT_OPTIONS" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
                   </select>
                 </div>
-                <button class="btn-primary btn-block" :disabled="loading" @click="queryByScore">{{ loading ? '查询中...' : '开始分数查询' }}</button>
+                <button class="btn-primary btn-block" :disabled="loading" @click="queryByScore">{{ loading ? 'Loading...' : 'Generate Recommendations' }}</button>
               </template>
 
               <p class="error" v-if="error">{{ error }}</p>
             </div>
 
-            <div class="panel">
-              <h3>学校推荐结果</h3>
-              <div v-if="activeMode === 'text' && aiSummary" class="summary-box">{{ aiSummary }}</div>
-              <div v-else-if="resultSummary" class="summary-box">{{ resultSummary }}</div>
-
-              <div class="cards">
-                <div class="school-col rush">
-                  <div class="school-head">冲刺学校</div>
-                  <div class="school-body">
-                    <div v-if="!grouped.rush.length" class="meta">暂无数据</div>
-                    <div class="item" v-for="(item, idx) in grouped.rush" :key="'r' + idx">
-                      <h4>{{ item.universityName }}</h4>
-                      <div class="meta">录取线: {{ item.cutoffScore ?? '-' }}</div>
-                      <div class="meta">分差: {{ item.scoreGap ?? '-' }}</div>
-                      <div class="meta">概率: {{ item.admissionProbability ?? '-' }}%</div>
-                      <div class="meta">{{ item.explanation || '' }}</div>
-                    </div>
-                  </div>
-                </div>
-
-                <div class="school-col safe">
-                  <div class="school-head">稳妥学校</div>
-                  <div class="school-body">
-                    <div v-if="!grouped.safe.length" class="meta">暂无数据</div>
-                    <div class="item" v-for="(item, idx) in grouped.safe" :key="'s' + idx">
-                      <h4>{{ item.universityName }}</h4>
-                      <div class="meta">录取线: {{ item.cutoffScore ?? '-' }}</div>
-                      <div class="meta">分差: {{ item.scoreGap ?? '-' }}</div>
-                      <div class="meta">概率: {{ item.admissionProbability ?? '-' }}%</div>
-                      <div class="meta">{{ item.explanation || '' }}</div>
-                    </div>
-                  </div>
-                </div>
-
-                <div class="school-col guarantee">
-                  <div class="school-head">保底学校</div>
-                  <div class="school-body">
-                    <div v-if="!grouped.guarantee.length" class="meta">暂无数据</div>
-                    <div class="item" v-for="(item, idx) in grouped.guarantee" :key="'g' + idx">
-                      <h4>{{ item.universityName }}</h4>
-                      <div class="meta">录取线: {{ item.cutoffScore ?? '-' }}</div>
-                      <div class="meta">分差: {{ item.scoreGap ?? '-' }}</div>
-                      <div class="meta">概率: {{ item.admissionProbability ?? '-' }}%</div>
-                      <div class="meta">{{ item.explanation || '' }}</div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
+            <RecommendationResult
+              :loading="loading"
+              :grouped="grouped"
+              :summary="resultSummary"
+              :ai-summary="aiSummary"
+            />
           </section>
         </main>
       </div>
     `
-  }).mount("#app");
+  });
+
+  app.use(ElementPlus);
+  app.mount("#app");
 })();
