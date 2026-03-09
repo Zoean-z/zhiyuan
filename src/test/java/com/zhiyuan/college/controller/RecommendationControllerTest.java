@@ -1,4 +1,4 @@
-package com.zhiyuan.college.controller;
+﻿package com.zhiyuan.college.controller;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -7,6 +7,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.util.Comparator;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -51,6 +53,58 @@ class RecommendationControllerTest {
     }
 
     @Test
+    void history_shouldSaveAndQueryCurrentUserOnly() throws Exception {
+        String token1 = loginAndGetToken("testuser", "123456", 620, "PHYSICS", "浙江");
+        String token2 = loginAndGetToken("freshuser", "123456", 610, "HISTORY", "浙江");
+        JsonNode meta = fetchMeta();
+
+        String requestJson = """
+                {
+                  "score": 620,
+                  "province": "%s",
+                  "subjectType": "PHYSICS"
+                }
+                """.formatted(meta.get("provinces").get(0).asText());
+
+        mockMvc.perform(post("/api/recommendations")
+                        .header("Authorization", "Bearer " + token1)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(requestJson))
+                .andExpect(status().isOk());
+
+        MvcResult historyResult = mockMvc.perform(get("/api/history")
+                        .header("Authorization", "Bearer " + token1))
+                .andExpect(status().isOk())
+                .andReturn();
+        JsonNode historyList = objectMapper.readTree(historyResult.getResponse().getContentAsString());
+        Assertions.assertTrue(historyList.isArray() && historyList.size() >= 1);
+        JsonNode latest = historyList.get(0);
+        Assertions.assertEquals("score", latest.get("queryType").asText());
+
+        MvcResult emptyHistoryResult = mockMvc.perform(get("/api/history")
+                        .header("Authorization", "Bearer " + token2))
+                .andExpect(status().isOk())
+                .andReturn();
+        JsonNode emptyHistory = objectMapper.readTree(emptyHistoryResult.getResponse().getContentAsString());
+        Assertions.assertEquals(0, emptyHistory.size());
+
+        long latestId = historyList.findValues("id").stream()
+                .map(JsonNode::asLong)
+                .max(Comparator.naturalOrder())
+                .orElseThrow();
+
+        mockMvc.perform(get("/api/history/" + latestId)
+                        .header("Authorization", "Bearer " + token1))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(latestId))
+                .andExpect(jsonPath("$.resultJson").isNotEmpty());
+
+        mockMvc.perform(get("/api/history/" + latestId)
+                        .header("Authorization", "Bearer " + token2))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
     void options_shouldReturnMetaData() throws Exception {
         mockMvc.perform(get("/api/meta/options"))
                 .andExpect(status().isOk())
@@ -81,7 +135,7 @@ class RecommendationControllerTest {
         String token = loginAndGetToken("testuser", "123456", 620, "PHYSICS", "浙江");
         String requestJson = """
                 {
-                  "requirementText": "我想在浙江上大学，物理类，求稳"
+                  "requirementText": "我是浙江考生，物理类，求稳"
                 }
                 """;
 
@@ -122,7 +176,7 @@ class RecommendationControllerTest {
                 .andReturn();
 
         JsonNode loginResp = objectMapper.readTree(result.getResponse().getContentAsString());
-        org.junit.jupiter.api.Assertions.assertEquals(630, loginResp.get("score").asInt());
+        Assertions.assertEquals(630, loginResp.get("score").asInt());
     }
 
     @Test

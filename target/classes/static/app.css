@@ -103,7 +103,9 @@ body {
 .query-card,
 .result-hero,
 .result-main,
-.summary-panel {
+.summary-panel,
+.history-card,
+.history-raw-card {
   border: 1px solid var(--border);
   border-radius: 14px;
 }
@@ -185,6 +187,19 @@ body {
   white-space: pre-wrap;
   line-height: 1.7;
   color: #334155;
+}
+
+.history-detail-meta {
+  margin-bottom: 12px;
+}
+
+.history-raw {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-all;
+  font-size: 12px;
+  color: #334155;
+  line-height: 1.6;
 }
 
 @media (max-width: 1200px) {

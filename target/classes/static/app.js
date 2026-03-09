@@ -1,4 +1,4 @@
-(function () {
+﻿(function () {
   const { createApp, ref, reactive, computed, onMounted } = Vue;
 
   const SUBJECT_OPTIONS = [
@@ -34,7 +34,7 @@
   }
 
   function normalizeStrategy(value) {
-    const v = (value || "").toUpperCase();
+    const v = String(value || "").toUpperCase();
     if (v.includes("RUSH") || v.includes("冲")) return "rush";
     if (v.includes("SAFE") || v.includes("稳")) return "safe";
     if (v.includes("GUARANTEE") || v.includes("保")) return "guarantee";
@@ -76,17 +76,55 @@
     return result;
   }
 
+  function groupByStrategy(items) {
+    const buckets = { rush: [], safe: [], guarantee: [] };
+    (items || []).forEach((item) => {
+      buckets[normalizeStrategy(item?.strategy)].push(item);
+    });
+    return {
+      rush: dedupeByUniversity(buckets.rush),
+      safe: dedupeByUniversity(buckets.safe),
+      guarantee: dedupeByUniversity(buckets.guarantee)
+    };
+  }
+
+  function buildGroupedFromResult(resultObj) {
+    if (Array.isArray(resultObj?.rush) || Array.isArray(resultObj?.safe) || Array.isArray(resultObj?.guarantee)) {
+      return {
+        rush: Array.isArray(resultObj?.rush) ? resultObj.rush : [],
+        safe: Array.isArray(resultObj?.safe) ? resultObj.safe : [],
+        guarantee: Array.isArray(resultObj?.guarantee) ? resultObj.guarantee : []
+      };
+    }
+    if (Array.isArray(resultObj?.recommendations)) {
+      return groupByStrategy(resultObj.recommendations);
+    }
+    return { rush: [], safe: [], guarantee: [] };
+  }
+
+  function queryTypeLabel(type) {
+    return type === "score" ? "分数查询" : type === "text" ? "文本查询" : "未知";
+  }
+
+  function queryTypeTag(type) {
+    return type === "score" ? "success" : type === "text" ? "warning" : "info";
+  }
+
+  function formatDateTime(value) {
+    if (!value) return "-";
+    const normalized = String(value).replace(" ", "T");
+    const date = new Date(normalized);
+    if (Number.isNaN(date.getTime())) {
+      return String(value);
+    }
+    return date.toLocaleString("zh-CN", { hour12: false });
+  }
+
   const UniversityCard = {
     name: "UniversityCard",
     props: {
-      item: {
-        type: Object,
-        required: true
-      },
-      strategy: {
-        type: String,
-        default: "safe"
-      }
+      item: { type: Object, required: true },
+      strategy: { type: String, default: "safe" }
     },
     computed: {
       model() {
@@ -128,14 +166,8 @@
   const AiSummaryPanel = {
     name: "AiSummaryPanel",
     props: {
-      aiSummary: {
-        type: String,
-        default: ""
-      },
-      summary: {
-        type: String,
-        default: ""
-      }
+      aiSummary: { type: String, default: "" },
+      summary: { type: String, default: "" }
     },
     computed: {
       displaySummary() {
@@ -158,32 +190,15 @@
 
   const RecommendationResult = {
     name: "RecommendationResult",
-    components: {
-      UniversityCard,
-      AiSummaryPanel
-    },
+    components: { UniversityCard, AiSummaryPanel },
     props: {
-      loading: {
-        type: Boolean,
-        default: false
-      },
-      grouped: {
-        type: Object,
-        required: true
-      },
-      aiSummary: {
-        type: String,
-        default: ""
-      },
-      summary: {
-        type: String,
-        default: ""
-      }
+      loading: { type: Boolean, default: false },
+      grouped: { type: Object, required: true },
+      aiSummary: { type: String, default: "" },
+      summary: { type: String, default: "" }
     },
     data() {
-      return {
-        activeTab: "rush"
-      };
+      return { activeTab: "rush" };
     },
     computed: {
       rushList() {
@@ -257,12 +272,54 @@
     `
   };
 
-  const app = createApp({
-    components: {
-      RecommendationResult
+  const HistoryView = {
+    name: "HistoryView",
+    props: {
+      records: { type: Array, default: () => [] },
+      loading: { type: Boolean, default: false }
     },
+    emits: ["refresh", "view"],
+    methods: {
+      queryTypeLabel,
+      queryTypeTag,
+      formatDateTime
+    },
+    template: `
+      <el-card class="history-card" shadow="never">
+        <template #header>
+          <div class="panel-title-row">
+            <span>历史记录</span>
+            <el-button type="primary" plain size="small" @click="$emit('refresh')">刷新</el-button>
+          </div>
+        </template>
+
+        <el-table v-if="records.length" :data="records" v-loading="loading" border>
+          <el-table-column label="查询时间" min-width="180">
+            <template #default="scope">{{ formatDateTime(scope.row.createdAt) }}</template>
+          </el-table-column>
+          <el-table-column label="查询类型" width="120">
+            <template #default="scope">
+              <el-tag :type="queryTypeTag(scope.row.queryType)" effect="light">{{ queryTypeLabel(scope.row.queryType) }}</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column prop="queryContent" label="查询内容" min-width="320" show-overflow-tooltip />
+          <el-table-column label="操作" width="120" fixed="right">
+            <template #default="scope">
+              <el-button type="primary" link @click="$emit('view', scope.row)">查看结果</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+
+        <el-empty v-else :image-size="100" description="暂无历史记录" />
+      </el-card>
+    `
+  };
+
+  const app = createApp({
+    components: { RecommendationResult, HistoryView },
     setup() {
       const auth = ref(readStoredAuth());
+      const activePage = ref("recommend");
       const activeMode = ref("text");
       const loading = ref(false);
       const error = ref("");
@@ -270,6 +327,16 @@
       const aiSummary = ref("");
       const grouped = reactive({ rush: [], safe: [], guarantee: [] });
       const provinces = ref([]);
+
+      const historyLoading = ref(false);
+      const historyRecords = ref([]);
+      const historyDialogVisible = ref(false);
+      const historyDetailLoading = ref(false);
+      const historyDetail = ref(null);
+      const historyResultJson = ref("");
+      const historyGrouped = reactive({ rush: [], safe: [], guarantee: [] });
+      const historySummary = ref("");
+      const historyAiSummary = ref("");
 
       const loginForm = reactive({
         username: "",
@@ -285,15 +352,28 @@
         subjectType: ""
       });
 
-      const textForm = reactive({
-        requirementText: ""
-      });
+      const textForm = reactive({ requirementText: "" });
 
       const userText = computed(() => {
         if (!auth.value) return "";
         const user = auth.value.user || {};
         return `用户：${user.username || "-"} | 分数：${user.score ?? "-"} | 科类：${user.subjectType || "-"} | 省份：${user.examProvince || "-"}`;
       });
+
+      const historyHasResult = computed(() => {
+        return historyGrouped.rush.length + historyGrouped.safe.length + historyGrouped.guarantee.length > 0;
+      });
+
+      function getAuthHeaders(extraHeaders) {
+        const token = auth.value?.token;
+        if (!token) {
+          throw new Error("请先登录");
+        }
+        return {
+          ...(extraHeaders || {}),
+          Authorization: `Bearer ${token}`
+        };
+      }
 
       function resetResults() {
         grouped.rush = [];
@@ -309,6 +389,16 @@
         scoreForm.score = u.score ?? "";
         scoreForm.subjectType = u.subjectType || "";
         scoreForm.province = u.examProvince || "";
+      }
+
+      function resetHistoryDialog() {
+        historyDetail.value = null;
+        historyResultJson.value = "";
+        historyGrouped.rush = [];
+        historyGrouped.safe = [];
+        historyGrouped.guarantee = [];
+        historySummary.value = "";
+        historyAiSummary.value = "";
       }
 
       async function loadMetaOptions() {
@@ -340,6 +430,7 @@
 
           auth.value = { token: data.token, user: data };
           saveStoredAuth(auth.value);
+          activePage.value = "recommend";
           fillScoreFromUser();
         } catch (e) {
           error.value = e.message;
@@ -362,6 +453,8 @@
         auth.value = null;
         clearStoredAuth();
         resetResults();
+        historyRecords.value = [];
+        historyDialogVisible.value = false;
       }
 
       async function queryByScore() {
@@ -371,7 +464,7 @@
         try {
           const data = await apiFetch("/api/recommendations", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: getAuthHeaders({ "Content-Type": "application/json" }),
             body: JSON.stringify({
               score: Number(scoreForm.score),
               province: scoreForm.province,
@@ -396,22 +489,73 @@
         try {
           const data = await apiFetch("/api/recommendations/free-text", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: getAuthHeaders({ "Content-Type": "application/json" }),
             body: JSON.stringify({ requirementText: textForm.requirementText })
           });
-          const buckets = { rush: [], safe: [], guarantee: [] };
-          (data?.recommendations || []).forEach((item) => {
-            buckets[normalizeStrategy(item?.strategy)].push(item);
-          });
-          grouped.rush = dedupeByUniversity(buckets.rush);
-          grouped.safe = dedupeByUniversity(buckets.safe);
-          grouped.guarantee = dedupeByUniversity(buckets.guarantee);
+          const groupedData = groupByStrategy(data?.recommendations || []);
+          grouped.rush = groupedData.rush;
+          grouped.safe = groupedData.safe;
+          grouped.guarantee = groupedData.guarantee;
           resultSummary.value = data?.summary || "";
           aiSummary.value = data?.aiSummary || "";
         } catch (e) {
           error.value = e.message;
         } finally {
           loading.value = false;
+        }
+      }
+
+      async function loadHistory() {
+        historyLoading.value = true;
+        try {
+          historyRecords.value = await apiFetch("/api/history", {
+            method: "GET",
+            headers: getAuthHeaders()
+          });
+        } catch (e) {
+          error.value = e.message;
+          historyRecords.value = [];
+        } finally {
+          historyLoading.value = false;
+        }
+      }
+
+      async function openHistoryResult(row) {
+        historyDialogVisible.value = true;
+        historyDetailLoading.value = true;
+        resetHistoryDialog();
+        try {
+          const detail = await apiFetch(`/api/history/${row.id}`, {
+            method: "GET",
+            headers: getAuthHeaders()
+          });
+          historyDetail.value = detail;
+          historyResultJson.value = detail?.resultJson || "";
+          let parsed = null;
+          try {
+            parsed = detail?.resultJson ? JSON.parse(detail.resultJson) : null;
+          } catch (parseError) {
+            parsed = null;
+          }
+
+          const groupedData = buildGroupedFromResult(parsed || {});
+          historyGrouped.rush = groupedData.rush;
+          historyGrouped.safe = groupedData.safe;
+          historyGrouped.guarantee = groupedData.guarantee;
+          historySummary.value = parsed?.summary || "";
+          historyAiSummary.value = parsed?.aiSummary || "";
+        } catch (e) {
+          error.value = e.message;
+          resetHistoryDialog();
+        } finally {
+          historyDetailLoading.value = false;
+        }
+      }
+
+      async function switchPage(page) {
+        activePage.value = page;
+        if (page === "history") {
+          await loadHistory();
         }
       }
 
@@ -422,6 +566,7 @@
 
       return {
         auth,
+        activePage,
         activeMode,
         loading,
         error,
@@ -429,15 +574,30 @@
         aiSummary,
         grouped,
         provinces,
+        historyLoading,
+        historyRecords,
+        historyDialogVisible,
+        historyDetailLoading,
+        historyDetail,
+        historyResultJson,
+        historyGrouped,
+        historySummary,
+        historyAiSummary,
+        historyHasResult,
         loginForm,
         scoreForm,
         textForm,
         userText,
         SUBJECT_OPTIONS,
+        queryTypeLabel,
+        formatDateTime,
         login,
         logout,
         queryByScore,
-        queryByText
+        queryByText,
+        loadHistory,
+        openHistoryResult,
+        switchPage
       };
     },
     template: `
@@ -501,12 +661,16 @@
               <p>结合分数与意向文本，智能生成志愿建议</p>
             </div>
             <el-space alignment="center" :size="12" wrap>
+              <el-button-group>
+                <el-button :type="activePage === 'recommend' ? 'primary' : 'default'" @click="switchPage('recommend')">推荐查询</el-button>
+                <el-button :type="activePage === 'history' ? 'primary' : 'default'" @click="switchPage('history')">历史记录</el-button>
+              </el-button-group>
               <span class="user-text">{{ userText }}</span>
               <el-button type="info" plain @click="logout">退出登录</el-button>
             </el-space>
           </el-header>
 
-          <el-main class="app-main">
+          <el-main class="app-main" v-if="activePage === 'recommend'">
             <el-row :gutter="16">
               <el-col :xs="24" :lg="8">
                 <el-card class="query-card" shadow="never">
@@ -566,7 +730,55 @@
               </el-col>
             </el-row>
           </el-main>
+
+          <el-main class="app-main" v-else>
+            <HistoryView
+              :records="historyRecords"
+              :loading="historyLoading"
+              @refresh="loadHistory"
+              @view="openHistoryResult"
+            />
+          </el-main>
         </el-container>
+
+        <el-dialog
+          v-model="historyDialogVisible"
+          title="历史结果"
+          width="80%"
+          top="4vh"
+          destroy-on-close
+        >
+          <el-skeleton :loading="historyDetailLoading" animated>
+            <template #template>
+              <el-skeleton-item variant="h1" style="width: 50%;" />
+              <el-skeleton-item variant="text" style="margin-top: 8px;" />
+              <el-skeleton-item variant="text" />
+            </template>
+
+            <template #default>
+              <div v-if="historyDetail" class="history-detail-meta">
+                <el-descriptions :column="1" border>
+                  <el-descriptions-item label="查询时间">{{ formatDateTime(historyDetail.createdAt) }}</el-descriptions-item>
+                  <el-descriptions-item label="查询类型">{{ queryTypeLabel(historyDetail.queryType) }}</el-descriptions-item>
+                  <el-descriptions-item label="查询内容">{{ historyDetail.queryContent }}</el-descriptions-item>
+                </el-descriptions>
+              </div>
+
+              <RecommendationResult
+                v-if="historyHasResult"
+                :loading="false"
+                :grouped="historyGrouped"
+                :summary="historySummary"
+                :ai-summary="historyAiSummary"
+              />
+
+              <el-card v-else shadow="never" class="history-raw-card">
+                <template #header>原始结果</template>
+                <pre class="history-raw">{{ historyResultJson || '暂无可展示结果' }}</pre>
+              </el-card>
+            </template>
+          </el-skeleton>
+        </el-dialog>
       </div>
     `
   });

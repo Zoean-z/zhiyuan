@@ -33,3 +33,14 @@ CREATE TABLE IF NOT EXISTS users (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS recommendation_log (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  user_id BIGINT NOT NULL,
+  query_type VARCHAR(16) NOT NULL,
+  query_content TEXT NOT NULL,
+  result_json LONGTEXT NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_log_user FOREIGN KEY (user_id) REFERENCES users(id),
+  INDEX idx_log_user_created (user_id, created_at)
+);

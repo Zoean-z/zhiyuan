@@ -22,6 +22,18 @@ CREATE TABLE users (
   username VARCHAR(64) NOT NULL UNIQUE,
   password VARCHAR(128) NOT NULL,
   score INT NULL,
+  subject_type VARCHAR(16) NULL,
+  exam_province VARCHAR(64) NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE recommendation_log (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  user_id BIGINT NOT NULL,
+  query_type VARCHAR(16) NOT NULL,
+  query_content CLOB NOT NULL,
+  result_json CLOB NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_log_user FOREIGN KEY (user_id) REFERENCES users(id)
 );

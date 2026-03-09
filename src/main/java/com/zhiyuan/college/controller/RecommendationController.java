@@ -8,18 +8,23 @@ import com.zhiyuan.college.model.dto.FreeTextRecommendationResponse;
 import com.zhiyuan.college.model.dto.MetaOptionsResponse;
 import com.zhiyuan.college.model.dto.RecommendationRequest;
 import com.zhiyuan.college.model.dto.RecommendationResponse;
+import com.zhiyuan.college.model.entity.UserAccount;
 import com.zhiyuan.college.model.enums.SubjectType;
 import com.zhiyuan.college.service.FinalAdviceService;
 import com.zhiyuan.college.service.FreeTextRecommendationService;
+import com.zhiyuan.college.service.HistoryService;
 import com.zhiyuan.college.service.RecommendationService;
+import com.zhiyuan.college.security.UserContext;
 import jakarta.validation.Valid;
 import java.util.Arrays;
 import java.util.List;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 
 @RestController
 @RequestMapping("/api")
@@ -29,25 +34,32 @@ public class RecommendationController {
     private final FinalAdviceService finalAdviceService;
     private final FreeTextRecommendationService freeTextRecommendationService;
     private final AdmissionCutoffMapper admissionCutoffMapper;
+    private final HistoryService historyService;
 
     public RecommendationController(RecommendationService recommendationService,
                                     FinalAdviceService finalAdviceService,
                                     FreeTextRecommendationService freeTextRecommendationService,
-                                    AdmissionCutoffMapper admissionCutoffMapper) {
+                                    AdmissionCutoffMapper admissionCutoffMapper,
+                                    HistoryService historyService) {
         this.recommendationService = recommendationService;
         this.finalAdviceService = finalAdviceService;
         this.freeTextRecommendationService = freeTextRecommendationService;
         this.admissionCutoffMapper = admissionCutoffMapper;
+        this.historyService = historyService;
     }
 
     @PostMapping("/recommendations")
     public RecommendationResponse recommend(@Valid @RequestBody RecommendationRequest request) {
-        return recommendationService.recommend(request);
+        RecommendationResponse response = recommendationService.recommend(request);
+        historyService.saveScoreHistory(currentUserId(), request, response);
+        return response;
     }
 
     @PostMapping("/recommendations/free-text")
     public FreeTextRecommendationResponse recommendByText(@Valid @RequestBody FreeTextRecommendationRequest request) {
-        return freeTextRecommendationService.recommend(request);
+        FreeTextRecommendationResponse response = freeTextRecommendationService.recommend(request);
+        historyService.saveTextHistory(currentUserId(), request, response);
+        return response;
     }
 
     @PostMapping("/recommendations/final-advice")
@@ -62,5 +74,13 @@ public class RecommendationController {
                 .map(SubjectType::getDisplayName)
                 .toList();
         return new MetaOptionsResponse(provinces, subjectTypes);
+    }
+
+    private Long currentUserId() {
+        UserAccount user = UserContext.get();
+        if (user == null || user.getId() == null) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Unauthorized");
+        }
+        return user.getId();
     }
 }
