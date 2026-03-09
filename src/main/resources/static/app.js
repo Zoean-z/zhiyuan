@@ -2,8 +2,8 @@
   const { createApp, ref, reactive, computed, onMounted } = Vue;
 
   const SUBJECT_OPTIONS = [
-    { value: "PHYSICS", label: "Physics" },
-    { value: "HISTORY", label: "History" }
+    { value: "PHYSICS", label: "物理" },
+    { value: "HISTORY", label: "历史" }
   ];
 
   function readStoredAuth() {
@@ -27,7 +27,7 @@
     const isJson = response.headers.get("content-type")?.includes("application/json");
     const data = isJson ? await response.json() : null;
     if (!response.ok) {
-      const message = data?.message || "Request failed";
+      const message = data?.message || "请求失败";
       throw new Error(message);
     }
     return data;
@@ -53,12 +53,27 @@
   function normalizeItem(item, fallbackStrategy) {
     const strategy = normalizeStrategy(pickValue(item, ["strategy", "strategyType", "type"]) || fallbackStrategy);
     return {
-      universityName: pickValue(item, ["universityName", "schoolName", "name"]) || "Unknown University",
+      universityName: pickValue(item, ["universityName", "schoolName", "name"]) || "未知院校",
       cutoffScore: pickValue(item, ["cutoffScore", "cutoff", "lastYearCutoff"]),
       scoreGap: pickValue(item, ["scoreGap", "gap", "difference"]),
       admissionProbability: pickValue(item, ["admissionProbability", "probability", "chance"]),
       strategy
     };
+  }
+
+  function dedupeByUniversity(list) {
+    const seen = new Set();
+    const result = [];
+    (list || []).forEach((item) => {
+      const name = String(pickValue(item, ["universityName", "schoolName", "name"]) || "")
+        .trim()
+        .toLowerCase();
+      if (!name || !seen.has(name)) {
+        if (name) seen.add(name);
+        result.push(item);
+      }
+    });
+    return result;
   }
 
   const UniversityCard = {
@@ -79,10 +94,10 @@
       },
       strategyLabel() {
         return this.model.strategy === "rush"
-          ? "Rush"
+          ? "冲刺"
           : this.model.strategy === "guarantee"
-            ? "Guarantee"
-            : "Safe";
+            ? "保底"
+            : "稳妥";
       },
       strategyType() {
         return this.model.strategy === "rush"
@@ -102,9 +117,9 @@
           <el-tag size="small" :type="strategyType" effect="light">{{ strategyLabel }}</el-tag>
         </div>
         <div class="university-card__meta">
-          <div class="meta-row"><span>Cutoff</span><strong>{{ model.cutoffScore ?? '-' }}</strong></div>
-          <div class="meta-row"><span>Score Gap</span><strong>{{ model.scoreGap ?? '-' }}</strong></div>
-          <div class="meta-row"><span>Probability</span><strong>{{ probabilityText }}</strong></div>
+          <div class="meta-row"><span>录取线</span><strong>{{ model.cutoffScore ?? '-' }}</strong></div>
+          <div class="meta-row"><span>分差</span><strong>{{ model.scoreGap ?? '-' }}</strong></div>
+          <div class="meta-row"><span>录取概率</span><strong>{{ probabilityText }}</strong></div>
         </div>
       </el-card>
     `
@@ -131,12 +146,12 @@
       <el-card class="summary-panel" shadow="never">
         <template #header>
           <div class="panel-title-row">
-            <span>AI Summary</span>
-            <el-tag size="small" type="info" effect="plain">Recommendation Advice</el-tag>
+            <span>AI 总结</span>
+            <el-tag size="small" type="info" effect="plain">报考建议</el-tag>
           </div>
         </template>
         <div v-if="displaySummary" class="summary-text">{{ displaySummary }}</div>
-        <el-empty v-else description="No AI summary available yet." :image-size="90" />
+        <el-empty v-else description="暂无 AI 总结" :image-size="90" />
       </el-card>
     `
   };
@@ -187,15 +202,15 @@
     template: `
       <section class="result-page">
         <el-card class="result-hero" shadow="never">
-          <h2>Recommendation Results</h2>
-          <p>Review AI-generated colleges by strategy level and compare score fit quickly.</p>
+          <h2>推荐结果</h2>
+          <p>按冲刺、稳妥、保底查看推荐院校，快速对比分数匹配度。</p>
         </el-card>
 
         <el-card class="result-main" shadow="never">
           <template #header>
             <div class="panel-title-row">
-              <span>University Recommendations</span>
-              <el-tag size="small" type="primary" effect="plain">Rush / Safe / Guarantee</el-tag>
+              <span>院校推荐</span>
+              <el-tag size="small" type="primary" effect="plain">冲刺 / 稳妥 / 保底</el-tag>
             </div>
           </template>
 
@@ -210,29 +225,29 @@
 
             <template #default>
               <el-tabs v-model="activeTab" class="recommend-tabs">
-                <el-tab-pane :label="'Rush (' + rushList.length + ')'" name="rush">
+                <el-tab-pane :label="'冲刺 (' + rushList.length + ')'" name="rush">
                   <div v-if="rushList.length" class="cards-grid">
                     <UniversityCard v-for="(item, idx) in rushList" :key="'rush-'+idx" :item="item" strategy="rush" />
                   </div>
-                  <el-empty v-else description="No rush universities yet." :image-size="90" />
+                  <el-empty v-else description="暂无冲刺院校" :image-size="90" />
                 </el-tab-pane>
 
-                <el-tab-pane :label="'Safe (' + safeList.length + ')'" name="safe">
+                <el-tab-pane :label="'稳妥 (' + safeList.length + ')'" name="safe">
                   <div v-if="safeList.length" class="cards-grid">
                     <UniversityCard v-for="(item, idx) in safeList" :key="'safe-'+idx" :item="item" strategy="safe" />
                   </div>
-                  <el-empty v-else description="No safe universities yet." :image-size="90" />
+                  <el-empty v-else description="暂无稳妥院校" :image-size="90" />
                 </el-tab-pane>
 
-                <el-tab-pane :label="'Guarantee (' + guaranteeList.length + ')'" name="guarantee">
+                <el-tab-pane :label="'保底 (' + guaranteeList.length + ')'" name="guarantee">
                   <div v-if="guaranteeList.length" class="cards-grid">
                     <UniversityCard v-for="(item, idx) in guaranteeList" :key="'guarantee-'+idx" :item="item" strategy="guarantee" />
                   </div>
-                  <el-empty v-else description="No guarantee universities yet." :image-size="90" />
+                  <el-empty v-else description="暂无保底院校" :image-size="90" />
                 </el-tab-pane>
               </el-tabs>
 
-              <el-empty v-if="!hasAnyData" description="No recommendation data. Submit a query to generate results." :image-size="100" />
+              <el-empty v-if="!hasAnyData" description="暂无推荐数据，请先发起查询。" :image-size="100" />
             </template>
           </el-skeleton>
         </el-card>
@@ -277,7 +292,7 @@
       const userText = computed(() => {
         if (!auth.value) return "";
         const user = auth.value.user || {};
-        return `User: ${user.username || "-"} | Score: ${user.score ?? "-"} | Subject: ${user.subjectType || "-"} | Province: ${user.examProvince || "-"}`;
+        return `用户：${user.username || "-"} | 分数：${user.score ?? "-"} | 科类：${user.subjectType || "-"} | 省份：${user.examProvince || "-"}`;
       });
 
       function resetResults() {
@@ -388,9 +403,9 @@
           (data?.recommendations || []).forEach((item) => {
             buckets[normalizeStrategy(item?.strategy)].push(item);
           });
-          grouped.rush = buckets.rush;
-          grouped.safe = buckets.safe;
-          grouped.guarantee = buckets.guarantee;
+          grouped.rush = dedupeByUniversity(buckets.rush);
+          grouped.safe = dedupeByUniversity(buckets.safe);
+          grouped.guarantee = dedupeByUniversity(buckets.guarantee);
           resultSummary.value = data?.summary || "";
           aiSummary.value = data?.aiSummary || "";
         } catch (e) {
@@ -426,113 +441,132 @@
       };
     },
     template: `
-      <div v-if="!auth" class="auth-wrap">
-        <div class="card">
-          <h1>AI College Recommendation</h1>
-          <p>Login first. You can optionally provide score and province information at login.</p>
+      <div v-if="!auth" class="app-shell">
+        <el-container class="auth-container">
+          <el-main class="auth-main">
+            <el-card class="auth-card" shadow="never">
+              <div class="auth-head">
+                <h1>高考志愿推荐系统</h1>
+                <p>AI 助手为你生成冲刺、稳妥、保底三档院校建议</p>
+              </div>
 
-          <div class="field">
-            <label>Username</label>
-            <input v-model.trim="loginForm.username" placeholder="Enter username" />
-          </div>
+              <el-form label-position="top" :model="loginForm">
+                <el-row :gutter="12">
+                  <el-col :span="24">
+                    <el-form-item label="用户名">
+                      <el-input v-model.trim="loginForm.username" placeholder="请输入用户名" />
+                    </el-form-item>
+                  </el-col>
+                  <el-col :span="24">
+                    <el-form-item label="密码">
+                      <el-input v-model="loginForm.password" type="password" show-password placeholder="请输入密码" />
+                    </el-form-item>
+                  </el-col>
+                </el-row>
 
-          <div class="field">
-            <label>Password</label>
-            <input v-model="loginForm.password" type="password" placeholder="Enter password" />
-          </div>
+                <el-row :gutter="12">
+                  <el-col :xs="24" :sm="12">
+                    <el-form-item label="分数（可选）">
+                      <el-input v-model="loginForm.score" type="number" placeholder="例如 620" />
+                    </el-form-item>
+                  </el-col>
+                  <el-col :xs="24" :sm="12">
+                    <el-form-item label="科类（可选）">
+                      <el-select v-model="loginForm.subjectType" placeholder="请选择" style="width: 100%;">
+                        <el-option v-for="opt in SUBJECT_OPTIONS" :key="opt.value" :label="opt.label" :value="opt.value" />
+                      </el-select>
+                    </el-form-item>
+                  </el-col>
+                </el-row>
 
-          <div class="grid-2">
-            <div class="field">
-              <label>Score (optional)</label>
-              <input v-model="loginForm.score" type="number" min="0" max="750" placeholder="e.g. 620" />
-            </div>
-            <div class="field">
-              <label>Subject (optional)</label>
-              <select v-model="loginForm.subjectType">
-                <option value="">Select</option>
-                <option v-for="opt in SUBJECT_OPTIONS" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
-              </select>
-            </div>
-          </div>
+                <el-form-item label="省份（可选）">
+                  <el-select v-model="loginForm.examProvince" placeholder="请选择" style="width: 100%;">
+                    <el-option v-for="p in provinces" :key="p" :label="p" :value="p" />
+                  </el-select>
+                </el-form-item>
 
-          <div class="field">
-            <label>Province (optional)</label>
-            <select v-model="loginForm.examProvince">
-              <option value="">Select</option>
-              <option v-for="p in provinces" :key="p" :value="p">{{ p }}</option>
-            </select>
-          </div>
-
-          <button class="btn-primary btn-block" :disabled="loading" @click="login">{{ loading ? 'Logging in...' : 'Login' }}</button>
-          <p class="error" v-if="error">{{ error }}</p>
-        </div>
+                <el-button type="primary" class="auth-submit" :loading="loading" @click="login">登录</el-button>
+                <div class="error" v-if="error">{{ error }}</div>
+              </el-form>
+            </el-card>
+          </el-main>
+        </el-container>
       </div>
 
-      <div v-else class="layout">
-        <aside class="sidebar">
-          <h2>Query Mode</h2>
-          <button class="menu-btn" :class="{ active: activeMode === 'text' }" @click="activeMode = 'text'">Free Text</button>
-          <button class="menu-btn" :class="{ active: activeMode === 'score' }" @click="activeMode = 'score'">By Score</button>
-        </aside>
-
-        <main class="main">
-          <header class="topbar">
-            <div class="title">AI College Planner</div>
-            <div class="user-info">
-              <span>{{ userText }}</span>
-              <button class="btn-secondary" @click="logout">Logout</button>
+      <div v-else class="app-shell">
+        <el-container class="dashboard">
+          <el-header class="app-header">
+            <div>
+              <h2>高考志愿推荐中心</h2>
+              <p>结合分数与意向文本，智能生成志愿建议</p>
             </div>
-          </header>
+            <el-space alignment="center" :size="12" wrap>
+              <span class="user-text">{{ userText }}</span>
+              <el-button type="info" plain @click="logout">退出登录</el-button>
+            </el-space>
+          </el-header>
 
-          <section class="content">
-            <div class="panel">
-              <h3 v-if="activeMode === 'text'">Text Query</h3>
-              <h3 v-else>Score Query</h3>
+          <el-main class="app-main">
+            <el-row :gutter="16">
+              <el-col :xs="24" :lg="8">
+                <el-card class="query-card" shadow="never">
+                  <template #header>
+                    <div class="panel-title-row">
+                      <span>查询条件</span>
+                      <el-tag size="small" type="primary" effect="plain">分数查询 / 文本查询</el-tag>
+                    </div>
+                  </template>
 
-              <template v-if="activeMode === 'text'">
-                <div class="field">
-                  <label>Requirement</label>
-                  <textarea
-                    v-model.trim="textForm.requirementText"
-                    placeholder="Example: Jiangsu student, score 620, computer major preference, East China, provide rush/safe/guarantee schools."
-                  ></textarea>
-                </div>
-                <button class="btn-primary btn-block" :disabled="loading" @click="queryByText">{{ loading ? 'Loading...' : 'Generate Recommendations' }}</button>
-              </template>
+                  <el-tabs v-model="activeMode">
+                    <el-tab-pane label="文本查询" name="text">
+                      <el-form label-position="top" :model="textForm">
+                        <el-form-item label="需求描述">
+                          <el-input
+                            v-model.trim="textForm.requirementText"
+                            type="textarea"
+                            :rows="7"
+                            placeholder="例如：我是江苏考生，620分，偏好计算机，想去华东地区，请给出冲刺/稳妥/保底院校建议。"
+                          />
+                        </el-form-item>
+                        <el-button type="primary" class="query-submit" :loading="loading" @click="queryByText">开始推荐</el-button>
+                      </el-form>
+                    </el-tab-pane>
 
-              <template v-else>
-                <div class="field">
-                  <label>Score</label>
-                  <input type="number" min="0" max="750" v-model="scoreForm.score" />
-                </div>
-                <div class="field">
-                  <label>Province</label>
-                  <select v-model="scoreForm.province">
-                    <option value="">Select</option>
-                    <option v-for="p in provinces" :key="p" :value="p">{{ p }}</option>
-                  </select>
-                </div>
-                <div class="field">
-                  <label>Subject</label>
-                  <select v-model="scoreForm.subjectType">
-                    <option value="">Select</option>
-                    <option v-for="opt in SUBJECT_OPTIONS" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
-                  </select>
-                </div>
-                <button class="btn-primary btn-block" :disabled="loading" @click="queryByScore">{{ loading ? 'Loading...' : 'Generate Recommendations' }}</button>
-              </template>
+                    <el-tab-pane label="分数查询" name="score">
+                      <el-form label-position="top" :model="scoreForm">
+                        <el-form-item label="分数">
+                          <el-input v-model="scoreForm.score" type="number" placeholder="请输入高考分数" />
+                        </el-form-item>
+                        <el-form-item label="省份">
+                          <el-select v-model="scoreForm.province" placeholder="请选择" style="width: 100%;">
+                            <el-option v-for="p in provinces" :key="p" :label="p" :value="p" />
+                          </el-select>
+                        </el-form-item>
+                        <el-form-item label="科类">
+                          <el-select v-model="scoreForm.subjectType" placeholder="请选择" style="width: 100%;">
+                            <el-option v-for="opt in SUBJECT_OPTIONS" :key="opt.value" :label="opt.label" :value="opt.value" />
+                          </el-select>
+                        </el-form-item>
+                        <el-button type="primary" class="query-submit" :loading="loading" @click="queryByScore">开始推荐</el-button>
+                      </el-form>
+                    </el-tab-pane>
+                  </el-tabs>
 
-              <p class="error" v-if="error">{{ error }}</p>
-            </div>
+                  <div class="error" v-if="error">{{ error }}</div>
+                </el-card>
+              </el-col>
 
-            <RecommendationResult
-              :loading="loading"
-              :grouped="grouped"
-              :summary="resultSummary"
-              :ai-summary="aiSummary"
-            />
-          </section>
-        </main>
+              <el-col :xs="24" :lg="16">
+                <RecommendationResult
+                  :loading="loading"
+                  :grouped="grouped"
+                  :summary="resultSummary"
+                  :ai-summary="aiSummary"
+                />
+              </el-col>
+            </el-row>
+          </el-main>
+        </el-container>
       </div>
     `
   });
