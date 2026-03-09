@@ -74,7 +74,7 @@ public class AuthService {
             sessions.remove(token);
             return null;
         }
-        return userAccountMapper.selectById(sessionInfo.userId());
+        return userAccountMapper.findByIdCompat(sessionInfo.userId());
     }
 
     public void logout(String token) {
