@@ -5,7 +5,8 @@ set SCRIPT_DIR=%~dp0
 set MYSQL_HOST=localhost
 set MYSQL_PORT=3306
 set MYSQL_USER=root
-set MYSQL_PASSWORD=1234
+set MYSQL_PASSWORD=%DB_PASSWORD%
+if "%MYSQL_PASSWORD%"=="" set MYSQL_PASSWORD=123456
 set DB_NAME=college_recommendation
 
 if not "%~1"=="" set MYSQL_HOST=%~1
