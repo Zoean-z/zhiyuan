@@ -1,10 +1,12 @@
 package com.zhiyuan.college.model.dto;
 
+import com.zhiyuan.college.model.enums.RecommendationMode;
 import java.util.List;
 
 public class RecommendationResponse {
 
     private String requestId;
+    private RecommendationMode recommendationMode;
     private Integer userRank;
     private List<RecommendationItemResponse> rush;
     private List<RecommendationItemResponse> safe;
@@ -12,12 +14,14 @@ public class RecommendationResponse {
     private String summary;
 
     public RecommendationResponse(String requestId,
+                                  RecommendationMode recommendationMode,
                                   Integer userRank,
                                   List<RecommendationItemResponse> rush,
                                   List<RecommendationItemResponse> safe,
                                   List<RecommendationItemResponse> guarantee,
                                   String summary) {
         this.requestId = requestId;
+        this.recommendationMode = recommendationMode;
         this.userRank = userRank;
         this.rush = rush;
         this.safe = safe;
@@ -27,6 +31,10 @@ public class RecommendationResponse {
 
     public String getRequestId() {
         return requestId;
+    }
+
+    public RecommendationMode getRecommendationMode() {
+        return recommendationMode;
     }
 
     public Integer getUserRank() {

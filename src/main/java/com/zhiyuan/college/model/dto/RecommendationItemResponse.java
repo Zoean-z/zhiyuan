@@ -1,8 +1,12 @@
 package com.zhiyuan.college.model.dto;
 
+import com.zhiyuan.college.model.enums.RecommendationMode;
+
 public class RecommendationItemResponse {
 
+    private RecommendationMode recommendationMode;
     private String universityName;
+    private String majorName;
     private Integer cutoffScore;
     private Integer scoreGap;
     private Integer userRank;
@@ -23,7 +27,35 @@ public class RecommendationItemResponse {
                                       String recommendationBasis,
                                       String strategy,
                                       String explanation) {
+        this(RecommendationMode.SCHOOL_FIRST,
+                universityName,
+                null,
+                cutoffScore,
+                scoreGap,
+                userRank,
+                minRank,
+                rankGap,
+                admissionProbability,
+                recommendationBasis,
+                strategy,
+                explanation);
+    }
+
+    public RecommendationItemResponse(RecommendationMode recommendationMode,
+                                      String universityName,
+                                      String majorName,
+                                      Integer cutoffScore,
+                                      Integer scoreGap,
+                                      Integer userRank,
+                                      Integer minRank,
+                                      Integer rankGap,
+                                      Integer admissionProbability,
+                                      String recommendationBasis,
+                                      String strategy,
+                                      String explanation) {
+        this.recommendationMode = recommendationMode;
         this.universityName = universityName;
+        this.majorName = majorName;
         this.cutoffScore = cutoffScore;
         this.scoreGap = scoreGap;
         this.userRank = userRank;
@@ -35,8 +67,16 @@ public class RecommendationItemResponse {
         this.explanation = explanation;
     }
 
+    public RecommendationMode getRecommendationMode() {
+        return recommendationMode;
+    }
+
     public String getUniversityName() {
         return universityName;
+    }
+
+    public String getMajorName() {
+        return majorName;
     }
 
     public Integer getCutoffScore() {

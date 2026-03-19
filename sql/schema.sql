@@ -23,6 +23,19 @@ CREATE TABLE IF NOT EXISTS admission_cutoff (
   INDEX idx_cutoff_query (province, subject_type, admission_year)
 );
 
+CREATE TABLE IF NOT EXISTS major_admission_cutoff (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  university_id BIGINT NOT NULL,
+  major_name VARCHAR(120) NOT NULL,
+  admission_year INT NOT NULL,
+  province VARCHAR(64) NOT NULL,
+  subject_type VARCHAR(16) NOT NULL,
+  cutoff_score INT NULL,
+  min_rank INT NULL,
+  CONSTRAINT fk_major_cutoff_university FOREIGN KEY (university_id) REFERENCES university(id),
+  INDEX idx_major_cutoff_query (province, subject_type, admission_year, major_name)
+);
+
 CREATE TABLE IF NOT EXISTS score_rank_mapping (
   id BIGINT PRIMARY KEY AUTO_INCREMENT,
   mapping_year INT NOT NULL,

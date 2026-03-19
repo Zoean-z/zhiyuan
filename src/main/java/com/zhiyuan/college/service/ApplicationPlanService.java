@@ -55,6 +55,14 @@ public class ApplicationPlanService {
         return toDetailResponse(plan);
     }
 
+    public void deleteById(Long userId, Long id) {
+        ApplicationPlan plan = applicationPlanMapper.selectById(id);
+        if (plan == null || !userId.equals(plan.getUserId())) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Plan not found");
+        }
+        applicationPlanMapper.deleteById(id);
+    }
+
     private String normalizeSourceType(String sourceType) {
         if (sourceType == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "sourceType is required");

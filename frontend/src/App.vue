@@ -1,10 +1,11 @@
 <script setup>
-import { ElMessage } from "element-plus";
-import { computed, onMounted, reactive, ref } from "vue";
+import { ElMessage, ElMessageBox } from "element-plus";
+import { computed, onMounted, reactive, ref, watch } from "vue";
 import ApplicationPlanView from "./components/ApplicationPlanView.vue";
 import HistoryView from "./components/HistoryView.vue";
 import RecommendationResult from "./components/RecommendationResult.vue";
 import {
+  RECOMMENDATION_MODE_OPTIONS,
   SUBJECT_OPTIONS,
   buildGroupedFromResult,
   clearStoredAuth,
@@ -12,6 +13,7 @@ import {
   groupByStrategy,
   queryTypeLabel,
   readStoredAuth,
+  recommendationModeLabel,
   saveStoredAuth,
   sourceTypeLabel,
   subjectTypeLabel
@@ -40,6 +42,7 @@ const historyResultJson = ref("");
 const historyGrouped = reactive({ rush: [], safe: [], guarantee: [] });
 const historySummary = ref("");
 const historyAiSummary = ref("");
+const historyRecommendationMode = ref("");
 
 const planLoading = ref(false);
 const planRecords = ref([]);
@@ -50,13 +53,16 @@ const planResultJson = ref("");
 const planGrouped = reactive({ rush: [], safe: [], guarantee: [] });
 const planSummary = ref("");
 const planAiSummary = ref("");
+const planRecommendationMode = ref("");
 
 const saveDialogVisible = ref(false);
 const saveSubmitting = ref(false);
 const saveForm = reactive({ planName: "" });
+const majorSuggestionLoading = ref(false);
+const majorSuggestions = ref([]);
 
 const loginForm = reactive({ username: "", password: "", score: "", subjectType: "", examProvince: "" });
-const scoreForm = reactive({ score: "", province: "", subjectType: "" });
+const scoreForm = reactive({ score: "", province: "", subjectType: "", recommendationMode: "SCHOOL_FIRST", majorKeyword: "" });
 const textForm = reactive({ requirementText: "" });
 
 const userText = computed(() => {
@@ -110,6 +116,10 @@ function fillScoreFromUser() {
   scoreForm.province = user.examProvince || "";
 }
 
+function resetMajorSuggestions() {
+  majorSuggestions.value = [];
+}
+
 function resetHistoryDialog() {
   historyDetail.value = null;
   historyResultJson.value = "";
@@ -118,6 +128,7 @@ function resetHistoryDialog() {
   historyGrouped.guarantee = [];
   historySummary.value = "";
   historyAiSummary.value = "";
+  historyRecommendationMode.value = "";
 }
 
 function resetPlanDialog() {
@@ -128,10 +139,20 @@ function resetPlanDialog() {
   planGrouped.guarantee = [];
   planSummary.value = "";
   planAiSummary.value = "";
+  planRecommendationMode.value = "";
 }
 
 function buildScoreSourceQuery() {
-  return `分数：${scoreForm.score || "-"}，省份：${scoreForm.province || "-"}，科类：${subjectTypeLabel(scoreForm.subjectType)}`;
+  const parts = [
+    `模式：${recommendationModeLabel(scoreForm.recommendationMode)}`,
+    `分数：${scoreForm.score || "-"}`,
+    `省份：${scoreForm.province || "-"}`,
+    `科类：${subjectTypeLabel(scoreForm.subjectType)}`
+  ];
+  if (scoreForm.recommendationMode === "MAJOR_FIRST") {
+    parts.push(`专业：${scoreForm.majorKeyword || "-"}`);
+  }
+  return parts.join("，");
 }
 
 async function loadMetaOptions() {
@@ -140,6 +161,31 @@ async function loadMetaOptions() {
     provinces.value = Array.isArray(data?.provinces) ? data.provinces : [];
   } catch {
     provinces.value = [];
+  }
+}
+
+async function loadMajorSuggestions(query) {
+  const keyword = String(query || "").trim();
+  if (scoreForm.recommendationMode !== "MAJOR_FIRST" || !keyword) {
+    resetMajorSuggestions();
+    return;
+  }
+
+  majorSuggestionLoading.value = true;
+  try {
+    const params = new URLSearchParams({ keyword });
+    if (scoreForm.province) {
+      params.set("province", scoreForm.province);
+    }
+    if (scoreForm.subjectType) {
+      params.set("subjectType", scoreForm.subjectType);
+    }
+    const data = await apiFetch(`/api/meta/major-options?${params.toString()}`, { method: "GET" });
+    majorSuggestions.value = Array.isArray(data) ? data : [];
+  } catch {
+    majorSuggestions.value = [];
+  } finally {
+    majorSuggestionLoading.value = false;
   }
 }
 
@@ -189,6 +235,11 @@ async function logout() {
 
 async function queryByScore() {
   error.value = "";
+  if (scoreForm.recommendationMode === "MAJOR_FIRST" && !scoreForm.majorKeyword.trim()) {
+    error.value = "专业优先模式下请输入专业";
+    ElMessage.warning("专业优先模式下请输入专业");
+    return;
+  }
   loading.value = true;
   resetResults();
   try {
@@ -198,7 +249,9 @@ async function queryByScore() {
       body: JSON.stringify({
         score: Number(scoreForm.score),
         province: scoreForm.province,
-        subjectType: scoreForm.subjectType || null
+        subjectType: scoreForm.subjectType || null,
+        recommendationMode: scoreForm.recommendationMode,
+        majorKeyword: scoreForm.recommendationMode === "MAJOR_FIRST" ? scoreForm.majorKeyword.trim() : null
       })
     });
     grouped.rush = Array.isArray(data?.rush) ? data.rush : [];
@@ -289,11 +342,42 @@ async function openHistoryResult(row) {
     historyGrouped.guarantee = groupedData.guarantee;
     historySummary.value = parsed?.summary || "";
     historyAiSummary.value = parsed?.aiSummary || "";
+    historyRecommendationMode.value =
+      parsed?.recommendationMode
+      || groupedData.rush[0]?.recommendationMode
+      || groupedData.safe[0]?.recommendationMode
+      || groupedData.guarantee[0]?.recommendationMode
+      || "";
   } catch (ex) {
     error.value = ex.message;
     resetHistoryDialog();
   } finally {
     historyDetailLoading.value = false;
+  }
+}
+
+async function deleteHistoryRecord(row) {
+  try {
+    await ElMessageBox.confirm("删除后不可恢复，是否继续？", "删除历史记录", {
+      type: "warning",
+      confirmButtonText: "删除",
+      cancelButtonText: "取消"
+    });
+  } catch {
+    return;
+  }
+
+  try {
+    await apiFetch(`/api/history/${row.id}`, { method: "DELETE", headers: getAuthHeaders() });
+    if (historyDetail.value?.id === row.id) {
+      historyDialogVisible.value = false;
+      resetHistoryDialog();
+    }
+    ElMessage.success("历史记录已删除");
+    await loadHistory();
+  } catch (ex) {
+    error.value = ex.message;
+    ElMessage.error(ex.message || "删除历史记录失败");
   }
 }
 
@@ -334,11 +418,42 @@ async function openPlanDetail(row) {
     if (!planAiSummary.value) {
       planAiSummary.value = parsed?.aiSummary || parsed?.summary || "";
     }
+    planRecommendationMode.value =
+      parsed?.recommendationMode
+      || groupedData.rush[0]?.recommendationMode
+      || groupedData.safe[0]?.recommendationMode
+      || groupedData.guarantee[0]?.recommendationMode
+      || "";
   } catch (ex) {
     error.value = ex.message;
     resetPlanDialog();
   } finally {
     planDetailLoading.value = false;
+  }
+}
+
+async function deletePlan(row) {
+  try {
+    await ElMessageBox.confirm("删除后不可恢复，是否继续？", "删除志愿方案", {
+      type: "warning",
+      confirmButtonText: "删除",
+      cancelButtonText: "取消"
+    });
+  } catch {
+    return;
+  }
+
+  try {
+    await apiFetch(`/api/plans/${row.id}`, { method: "DELETE", headers: getAuthHeaders() });
+    if (planDetail.value?.id === row.id) {
+      planDialogVisible.value = false;
+      resetPlanDialog();
+    }
+    ElMessage.success("志愿方案已删除");
+    await loadPlans();
+  } catch (ex) {
+    error.value = ex.message;
+    ElMessage.error(ex.message || "删除志愿方案失败");
   }
 }
 
@@ -396,6 +511,21 @@ async function switchPage(page) {
 onMounted(() => {
   loadMetaOptions();
   fillScoreFromUser();
+});
+
+watch(() => scoreForm.recommendationMode, (mode) => {
+  if (mode !== "MAJOR_FIRST") {
+    scoreForm.majorKeyword = "";
+  }
+  resetMajorSuggestions();
+});
+
+watch(() => scoreForm.province, () => {
+  resetMajorSuggestions();
+});
+
+watch(() => scoreForm.subjectType, () => {
+  resetMajorSuggestions();
 });
 </script>
 
@@ -493,6 +623,13 @@ onMounted(() => {
 
                 <el-tab-pane label="分数查询" name="score">
                   <el-form label-position="top" :model="scoreForm">
+                    <el-form-item label="推荐模式">
+                      <el-radio-group v-model="scoreForm.recommendationMode">
+                        <el-radio-button v-for="opt in RECOMMENDATION_MODE_OPTIONS" :key="opt.value" :value="opt.value">
+                          {{ opt.label }}
+                        </el-radio-button>
+                      </el-radio-group>
+                    </el-form-item>
                     <el-form-item label="分数">
                       <el-input v-model="scoreForm.score" type="number" placeholder="请输入高考分数" />
                     </el-form-item>
@@ -506,6 +643,23 @@ onMounted(() => {
                         <el-option v-for="opt in SUBJECT_OPTIONS" :key="opt.value" :label="opt.label" :value="opt.value" />
                       </el-select>
                     </el-form-item>
+                    <el-form-item v-if="scoreForm.recommendationMode === 'MAJOR_FIRST'" label="专业">
+                      <el-select
+                        v-model="scoreForm.majorKeyword"
+                        filterable
+                        remote
+                        clearable
+                        allow-create
+                        default-first-option
+                        reserve-keyword
+                        :remote-method="loadMajorSuggestions"
+                        :loading="majorSuggestionLoading"
+                        placeholder="输入专业关键词，例如：计算机、法学、软件工程"
+                        style="width: 100%;"
+                      >
+                        <el-option v-for="item in majorSuggestions" :key="item" :label="item" :value="item" />
+                      </el-select>
+                    </el-form-item>
                     <el-button type="primary" class="query-submit" :loading="loading" @click="queryByScore">开始推荐</el-button>
                   </el-form>
                 </el-tab-pane>
@@ -516,17 +670,17 @@ onMounted(() => {
           </el-col>
 
           <el-col :xs="24" :lg="16">
-            <RecommendationResult :loading="loading" :grouped="grouped" :summary="resultSummary" :ai-summary="aiSummary" :rank-meta="latestRankMeta" :show-save-action="true" :save-disabled="!canSavePlan" @save-plan="openSavePlanDialog" />
+            <RecommendationResult :loading="loading" :grouped="grouped" :summary="resultSummary" :ai-summary="aiSummary" :recommendation-mode="latestResult?.recommendationMode || scoreForm.recommendationMode" :rank-meta="latestRankMeta" :show-save-action="true" :save-disabled="!canSavePlan" @save-plan="openSavePlanDialog" />
           </el-col>
         </el-row>
       </el-main>
 
       <el-main v-else-if="activePage === 'history'" class="app-main">
-        <HistoryView :records="historyRecords" :loading="historyLoading" @refresh="loadHistory" @view="openHistoryResult" />
+        <HistoryView :records="historyRecords" :loading="historyLoading" @refresh="loadHistory" @view="openHistoryResult" @delete="deleteHistoryRecord" />
       </el-main>
 
       <el-main v-else class="app-main">
-        <ApplicationPlanView :records="planRecords" :loading="planLoading" @refresh="loadPlans" @view="openPlanDetail" />
+        <ApplicationPlanView :records="planRecords" :loading="planLoading" @refresh="loadPlans" @view="openPlanDetail" @delete="deletePlan" />
       </el-main>
     </el-container>
 
@@ -557,7 +711,7 @@ onMounted(() => {
               <el-descriptions-item label="查询内容">{{ historyDetail.queryContent }}</el-descriptions-item>
             </el-descriptions>
           </div>
-          <RecommendationResult v-if="historyHasResult" :loading="false" :grouped="historyGrouped" :summary="historySummary" :ai-summary="historyAiSummary" />
+          <RecommendationResult v-if="historyHasResult" :loading="false" :grouped="historyGrouped" :summary="historySummary" :ai-summary="historyAiSummary" :recommendation-mode="historyRecommendationMode" />
           <el-card v-else shadow="never" class="history-raw-card">
             <template #header>原始结果</template>
             <pre class="history-raw">{{ historyResultJson || "暂无可展示结果" }}</pre>
@@ -582,7 +736,7 @@ onMounted(() => {
               <el-descriptions-item label="来源内容">{{ planDetail.sourceQuery }}</el-descriptions-item>
             </el-descriptions>
           </div>
-          <RecommendationResult v-if="planHasResult" :loading="false" :grouped="planGrouped" :summary="planSummary" :ai-summary="planAiSummary" />
+          <RecommendationResult v-if="planHasResult" :loading="false" :grouped="planGrouped" :summary="planSummary" :ai-summary="planAiSummary" :recommendation-mode="planRecommendationMode" />
           <el-card v-else shadow="never" class="history-raw-card">
             <template #header>原始结果</template>
             <pre class="history-raw">{{ planResultJson || "暂无可展示结果" }}</pre>

@@ -8,6 +8,7 @@ const props = defineProps({
   grouped: { type: Object, required: true },
   aiSummary: { type: String, default: "" },
   summary: { type: String, default: "" },
+  recommendationMode: { type: String, default: "" },
   rankMeta: { type: Object, default: null },
   showSaveAction: { type: Boolean, default: false },
   saveDisabled: { type: Boolean, default: false }
@@ -44,13 +45,21 @@ const showRankPanel = computed(() =>
   || hasAnyRankFields.value
   || resolvedRankMeta.value.userRank != null
 );
+const resolvedRecommendationMode = computed(() => {
+  if (props.recommendationMode) {
+    return props.recommendationMode;
+  }
+  const firstItem = rushList.value[0] || safeList.value[0] || guaranteeList.value[0] || null;
+  return firstItem?.recommendationMode || "SCHOOL_FIRST";
+});
+const resultTargetText = computed(() => resolvedRecommendationMode.value === "MAJOR_FIRST" ? "学校+专业" : "院校");
 </script>
 
 <template>
   <section class="result-page">
     <el-card class="result-hero" shadow="never">
       <h2>推荐结果</h2>
-      <p>按冲刺、稳妥、保底查看推荐院校，统一对比录取位次与位次差。</p>
+      <p>按冲刺、稳妥、保底查看推荐{{ resultTargetText }}，统一对比录取位次与位次差。</p>
     </el-card>
 
     <el-card v-if="showRankPanel" class="rank-panel" shadow="never">
@@ -79,21 +88,14 @@ const showRankPanel = computed(() =>
         </div>
       </div>
 
-      <p class="rank-panel__hint">
-        <template v-if="resolvedRankMeta.userRank != null">
-          已根据当前分数换算用户位次，下面的院校结果统一按位次差展示。
-        </template>
-        <template v-else>
-          当前未命中可用位次映射，暂时无法展示位次推荐结果。
-        </template>
-      </p>
+
     </el-card>
 
     <el-card class="result-main" shadow="never">
       <template #header>
         <div class="panel-title-row result-main__header">
           <div class="panel-title-row">
-            <span>院校推荐</span>
+            <span>{{ resolvedRecommendationMode === "MAJOR_FIRST" ? "学校专业推荐" : "院校推荐" }}</span>
             <el-tag size="small" type="primary" effect="plain">冲刺 / 稳妥 / 保底</el-tag>
           </div>
           <el-button v-if="showSaveAction" type="primary" plain :disabled="saveDisabled" @click="emit('save-plan')">
@@ -117,25 +119,25 @@ const showRankPanel = computed(() =>
               <div v-if="rushList.length" class="cards-grid">
                 <UniversityCard v-for="(item, idx) in rushList" :key="'rush-' + idx" :item="item" strategy="rush" />
               </div>
-              <el-empty v-else description="暂无冲刺院校" :image-size="90" />
+              <el-empty v-else :description="'暂无冲刺' + resultTargetText" :image-size="90" />
             </el-tab-pane>
 
             <el-tab-pane :label="'稳妥 (' + safeList.length + ')'" name="safe">
               <div v-if="safeList.length" class="cards-grid">
                 <UniversityCard v-for="(item, idx) in safeList" :key="'safe-' + idx" :item="item" strategy="safe" />
               </div>
-              <el-empty v-else description="暂无稳妥院校" :image-size="90" />
+              <el-empty v-else :description="'暂无稳妥' + resultTargetText" :image-size="90" />
             </el-tab-pane>
 
             <el-tab-pane :label="'保底 (' + guaranteeList.length + ')'" name="guarantee">
               <div v-if="guaranteeList.length" class="cards-grid">
                 <UniversityCard v-for="(item, idx) in guaranteeList" :key="'guarantee-' + idx" :item="item" strategy="guarantee" />
               </div>
-              <el-empty v-else description="暂无保底院校" :image-size="90" />
+              <el-empty v-else :description="'暂无保底' + resultTargetText" :image-size="90" />
             </el-tab-pane>
           </el-tabs>
 
-          <el-empty v-if="!hasAnyData" description="暂无推荐数据，请先发起查询。" :image-size="100" />
+          <el-empty v-if="!hasAnyData" :description="'暂无推荐数据，请先发起' + (resolvedRecommendationMode === 'MAJOR_FIRST' ? '专业优先' : '学校优先') + '查询。'" :image-size="100" />
         </template>
       </el-skeleton>
     </el-card>

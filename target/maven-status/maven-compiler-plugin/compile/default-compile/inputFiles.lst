@@ -7,6 +7,7 @@ D:\Java\IntelliJIDEA\zhiyuan\src\main\java\com\zhiyuan\college\controller\Histor
 D:\Java\IntelliJIDEA\zhiyuan\src\main\java\com\zhiyuan\college\controller\RecommendationController.java
 D:\Java\IntelliJIDEA\zhiyuan\src\main\java\com\zhiyuan\college\mapper\AdmissionCutoffMapper.java
 D:\Java\IntelliJIDEA\zhiyuan\src\main\java\com\zhiyuan\college\mapper\ApplicationPlanMapper.java
+D:\Java\IntelliJIDEA\zhiyuan\src\main\java\com\zhiyuan\college\mapper\MajorAdmissionCutoffMapper.java
 D:\Java\IntelliJIDEA\zhiyuan\src\main\java\com\zhiyuan\college\mapper\RecommendationLogMapper.java
 D:\Java\IntelliJIDEA\zhiyuan\src\main\java\com\zhiyuan\college\mapper\ScoreRankMappingMapper.java
 D:\Java\IntelliJIDEA\zhiyuan\src\main\java\com\zhiyuan\college\mapper\UserAccountMapper.java
@@ -33,6 +34,7 @@ D:\Java\IntelliJIDEA\zhiyuan\src\main\java\com\zhiyuan\college\model\entity\Reco
 D:\Java\IntelliJIDEA\zhiyuan\src\main\java\com\zhiyuan\college\model\entity\ScoreRankMapping.java
 D:\Java\IntelliJIDEA\zhiyuan\src\main\java\com\zhiyuan\college\model\entity\University.java
 D:\Java\IntelliJIDEA\zhiyuan\src\main\java\com\zhiyuan\college\model\entity\UserAccount.java
+D:\Java\IntelliJIDEA\zhiyuan\src\main\java\com\zhiyuan\college\model\enums\RecommendationMode.java
 D:\Java\IntelliJIDEA\zhiyuan\src\main\java\com\zhiyuan\college\model\enums\StrategyType.java
 D:\Java\IntelliJIDEA\zhiyuan\src\main\java\com\zhiyuan\college\model\enums\SubjectType.java
 D:\Java\IntelliJIDEA\zhiyuan\src\main\java\com\zhiyuan\college\security\AuthInterceptor.java

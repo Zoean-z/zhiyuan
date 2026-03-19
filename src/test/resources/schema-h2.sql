@@ -17,6 +17,18 @@ CREATE TABLE admission_cutoff (
   CONSTRAINT fk_cutoff_university FOREIGN KEY (university_id) REFERENCES university(id)
 );
 
+CREATE TABLE major_admission_cutoff (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  university_id BIGINT NOT NULL,
+  major_name VARCHAR(120) NOT NULL,
+  admission_year INT NOT NULL,
+  province VARCHAR(64) NOT NULL,
+  subject_type VARCHAR(16) NOT NULL,
+  cutoff_score INT NULL,
+  min_rank INT NULL,
+  CONSTRAINT fk_major_cutoff_university FOREIGN KEY (university_id) REFERENCES university(id)
+);
+
 CREATE TABLE score_rank_mapping (
   id BIGINT PRIMARY KEY AUTO_INCREMENT,
   mapping_year INT NOT NULL,

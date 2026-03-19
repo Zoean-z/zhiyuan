@@ -12,6 +12,15 @@ INSERT INTO admission_cutoff (university_id, admission_year, province, subject_t
 (1, 2025, '浙江', '历史', 650, 4200),
 (2, 2025, '浙江', '历史', 618, 21000);
 
+INSERT INTO major_admission_cutoff (university_id, major_name, admission_year, province, subject_type, cutoff_score, min_rank) VALUES
+(1, '计算机科学与技术', 2025, '浙江', '物理', 660, 4500),
+(2, '计算机科学与技术', 2025, '浙江', '物理', 618, 24000),
+(2, '软件工程', 2025, '浙江', '物理', 614, 27000),
+(3, '计算机科学与技术', 2025, '浙江', '物理', 603, 36000),
+(4, '计算机科学与技术', 2025, '浙江', '物理', 590, NULL),
+(2, '法学', 2025, '浙江', '历史', 620, 19000),
+(4, '法学', 2025, '浙江', '历史', 592, NULL);
+
 INSERT INTO score_rank_mapping (mapping_year, province, subject_type, score, rank_value) VALUES
 (2025, '浙江', '物理', 620, 26000),
 (2025, '浙江', '物理', 630, 22000),

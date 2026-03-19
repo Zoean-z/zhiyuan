@@ -9,6 +9,7 @@ import com.zhiyuan.college.model.dto.HistoryDetailResponse;
 import com.zhiyuan.college.model.dto.HistoryRecordResponse;
 import com.zhiyuan.college.model.dto.RecommendationRequest;
 import com.zhiyuan.college.model.entity.RecommendationLog;
+import com.zhiyuan.college.model.enums.RecommendationMode;
 import java.util.List;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -30,10 +31,17 @@ public class HistoryService {
     }
 
     public void saveScoreHistory(Long userId, RecommendationRequest request, Object result) {
-        String content = String.format("分数:%s, 省份:%s, 科类:%s",
+        RecommendationMode mode = request.getRecommendationMode() == null
+                ? RecommendationMode.SCHOOL_FIRST
+                : request.getRecommendationMode();
+        String content = String.format("模式:%s, 分数:%s, 省份:%s, 科类:%s",
+                mode == RecommendationMode.MAJOR_FIRST ? "专业优先" : "学校优先",
                 safeValue(request.getScore()),
                 safeValue(request.getProvince()),
                 request.getSubjectType() == null ? "-" : request.getSubjectType().name());
+        if (mode == RecommendationMode.MAJOR_FIRST) {
+            content += String.format(", 专业:%s", safeValue(request.getMajorKeyword()));
+        }
         saveHistory(userId, QUERY_TYPE_SCORE, content, result);
     }
 
@@ -70,6 +78,14 @@ public class HistoryService {
                 log.getResultJson(),
                 log.getCreatedAt()
         );
+    }
+
+    public void deleteById(Long userId, Long id) {
+        RecommendationLog log = recommendationLogMapper.selectById(id);
+        if (log == null || !userId.equals(log.getUserId())) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "History record not found");
+        }
+        recommendationLogMapper.deleteById(id);
     }
 
     private void saveHistory(Long userId, String queryType, String queryContent, Object result) {

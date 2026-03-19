@@ -1,6 +1,7 @@
 package com.zhiyuan.college.model.dto;
 
 import com.zhiyuan.college.model.enums.SubjectType;
+import com.zhiyuan.college.model.enums.RecommendationMode;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
@@ -15,6 +16,8 @@ public class RecommendationRequest {
     private String province;
 
     private SubjectType subjectType;
+    private RecommendationMode recommendationMode;
+    private String majorKeyword;
 
     public Integer getScore() {
         return score;
@@ -38,5 +41,21 @@ public class RecommendationRequest {
 
     public void setSubjectType(SubjectType subjectType) {
         this.subjectType = subjectType;
+    }
+
+    public RecommendationMode getRecommendationMode() {
+        return recommendationMode;
+    }
+
+    public void setRecommendationMode(RecommendationMode recommendationMode) {
+        this.recommendationMode = recommendationMode;
+    }
+
+    public String getMajorKeyword() {
+        return majorKeyword;
+    }
+
+    public void setMajorKeyword(String majorKeyword) {
+        this.majorKeyword = majorKeyword;
     }
 }

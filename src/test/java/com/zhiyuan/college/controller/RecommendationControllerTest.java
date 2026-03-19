@@ -2,6 +2,7 @@ package com.zhiyuan.college.controller;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -54,6 +55,7 @@ class RecommendationControllerTest {
                         .content(requestJson))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.requestId").isNotEmpty())
+                .andExpect(jsonPath("$.recommendationMode").value("SCHOOL_FIRST"))
                 .andExpect(jsonPath("$.safe").isArray())
                 .andExpect(jsonPath("$.summary").isNotEmpty());
     }
@@ -84,7 +86,7 @@ class RecommendationControllerTest {
     }
 
     @Test
-    void recommend_shouldReturnEmptyWhenRankMappingMissing() throws Exception {
+    void recommend_shouldFallbackToScoreWhenRankMappingMissing() throws Exception {
         String token = loginAndGetToken("freshuser", "123456", 620, "HISTORY", "浙江");
         JsonNode meta = fetchMeta();
         String requestJson = objectMapper.writeValueAsString(Map.of(
@@ -102,9 +104,79 @@ class RecommendationControllerTest {
 
         JsonNode response = objectMapper.readTree(result.getResponse().getContentAsString());
         Assertions.assertTrue(response.get("userRank").isNull());
-        Assertions.assertEquals(0, response.get("rush").size());
+        Assertions.assertEquals("SCHOOL_FIRST", response.get("recommendationMode").asText());
+        Assertions.assertEquals(1, response.get("rush").size());
+        Assertions.assertFalse(response.get("rush").get(0).get("universityName").asText().isBlank());
+        Assertions.assertEquals("SCORE", response.get("rush").get(0).get("recommendationBasis").asText());
         Assertions.assertEquals(0, response.get("safe").size());
         Assertions.assertEquals(0, response.get("guarantee").size());
+    }
+
+    @Test
+    void recommendMajor_shouldReturnSchoolAndMajorResults() throws Exception {
+        String token = loginAndGetToken("testuser", "123456", 620, "PHYSICS", "浙江");
+        JsonNode meta = fetchMeta();
+        String requestJson = objectMapper.writeValueAsString(Map.of(
+                "score", 620,
+                "province", meta.get("provinces").get(0).asText(),
+                "subjectType", "PHYSICS",
+                "recommendationMode", "MAJOR_FIRST",
+                "majorKeyword", "计算机"
+        ));
+
+        mockMvc.perform(post("/api/recommendations")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(requestJson))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.recommendationMode").value("MAJOR_FIRST"))
+                .andExpect(jsonPath("$.rush[0].universityName").isNotEmpty())
+                .andExpect(jsonPath("$.rush[0].majorName").isNotEmpty())
+                .andExpect(jsonPath("$.rush[0].recommendationMode").value("MAJOR_FIRST"))
+                .andExpect(jsonPath("$.safe").isArray())
+                .andExpect(jsonPath("$.guarantee").isArray());
+    }
+
+    @Test
+    void recommendMajor_shouldFallbackToScoreWhenRankMissing() throws Exception {
+        String token = loginAndGetToken("freshuser", "123456", 620, "HISTORY", "浙江");
+        JsonNode meta = fetchMeta();
+        String requestJson = objectMapper.writeValueAsString(Map.of(
+                "score", 620,
+                "province", meta.get("provinces").get(0).asText(),
+                "subjectType", "HISTORY",
+                "recommendationMode", "MAJOR_FIRST",
+                "majorKeyword", "法学"
+        ));
+
+        mockMvc.perform(post("/api/recommendations")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(requestJson))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.recommendationMode").value("MAJOR_FIRST"))
+                .andExpect(jsonPath("$.userRank").isEmpty())
+                .andExpect(jsonPath("$.rush[0].majorName").isNotEmpty())
+                .andExpect(jsonPath("$.rush[0].recommendationBasis").value("SCORE"));
+    }
+
+    @Test
+    void recommendMajor_shouldRequireMajorKeyword() throws Exception {
+        String token = loginAndGetToken("testuser", "123456", 620, "PHYSICS", "浙江");
+        JsonNode meta = fetchMeta();
+        String requestJson = objectMapper.writeValueAsString(Map.of(
+                "score", 620,
+                "province", meta.get("provinces").get(0).asText(),
+                "subjectType", "PHYSICS",
+                "recommendationMode", "MAJOR_FIRST"
+        ));
+
+        mockMvc.perform(post("/api/recommendations")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(requestJson))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("majorKeyword is required when recommendationMode is MAJOR_FIRST"));
     }
 
     @Test
@@ -159,6 +231,18 @@ class RecommendationControllerTest {
         mockMvc.perform(get("/api/history/" + latestId)
                         .header("Authorization", "Bearer " + token2))
                 .andExpect(status().isNotFound());
+
+        mockMvc.perform(delete("/api/history/" + latestId)
+                        .header("Authorization", "Bearer " + token2))
+                .andExpect(status().isNotFound());
+
+        mockMvc.perform(delete("/api/history/" + latestId)
+                        .header("Authorization", "Bearer " + token1))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/history/" + latestId)
+                        .header("Authorization", "Bearer " + token1))
+                .andExpect(status().isNotFound());
     }
 
     @Test
@@ -167,6 +251,17 @@ class RecommendationControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.provinces").isArray())
                 .andExpect(jsonPath("$.subjectTypes").isArray());
+    }
+
+    @Test
+    void majorOptions_shouldReturnFuzzySuggestions() throws Exception {
+        mockMvc.perform(get("/api/meta/major-options")
+                        .param("keyword", "计算机")
+                        .param("province", "浙江")
+                        .param("subjectType", "PHYSICS"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").isArray())
+                .andExpect(jsonPath("$[0]").isNotEmpty());
     }
 
     @Test
@@ -332,6 +427,18 @@ class RecommendationControllerTest {
 
         mockMvc.perform(get("/api/plans/" + planId)
                         .header("Authorization", "Bearer " + token2))
+                .andExpect(status().isNotFound());
+
+        mockMvc.perform(delete("/api/plans/" + planId)
+                        .header("Authorization", "Bearer " + token2))
+                .andExpect(status().isNotFound());
+
+        mockMvc.perform(delete("/api/plans/" + planId)
+                        .header("Authorization", "Bearer " + token1))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/plans/" + planId)
+                        .header("Authorization", "Bearer " + token1))
                 .andExpect(status().isNotFound());
     }
 

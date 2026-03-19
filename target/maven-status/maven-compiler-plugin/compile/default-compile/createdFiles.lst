@@ -20,6 +20,7 @@ com\zhiyuan\college\config\WebConfig.class
 com\zhiyuan\college\model\dto\ParsedRequirement.class
 com\zhiyuan\college\service\AiExplanationService.class
 com\zhiyuan\college\service\RecommendationService.class
+com\zhiyuan\college\model\enums\RecommendationMode.class
 com\zhiyuan\college\model\entity\University.class
 com\zhiyuan\college\model\dto\FreeTextRecommendationRequest.class
 com\zhiyuan\college\service\RecommendationPolicyService$RecommendationDecision.class
@@ -41,6 +42,7 @@ com\zhiyuan\college\service\AiRequirementParserService.class
 com\zhiyuan\college\service\auth\AuthService$SessionInfo.class
 com\zhiyuan\college\mapper\UserAccountMapper.class
 com\zhiyuan\college\mapper\AdmissionCutoffMapper.class
+com\zhiyuan\college\mapper\MajorAdmissionCutoffMapper.class
 com\zhiyuan\college\model\enums\StrategyType.class
 com\zhiyuan\college\service\AiAdviceSummaryService.class
 com\zhiyuan\college\model\entity\ApplicationPlan.class

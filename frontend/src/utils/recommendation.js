@@ -3,6 +3,11 @@ export const SUBJECT_OPTIONS = [
   { value: "HISTORY", label: "历史" }
 ];
 
+export const RECOMMENDATION_MODE_OPTIONS = [
+  { value: "SCHOOL_FIRST", label: "学校优先" },
+  { value: "MAJOR_FIRST", label: "专业优先" }
+];
+
 export function readStoredAuth() {
   try {
     return JSON.parse(localStorage.getItem("zhiyuan_auth") || "null");
@@ -40,12 +45,15 @@ export function normalizeItem(item, fallbackStrategy) {
   const strategy = normalizeStrategy(
     pickValue(item, ["strategy", "strategyType", "type"]) || fallbackStrategy
   );
+  const recommendationMode = pickValue(item, ["recommendationMode"]) || "SCHOOL_FIRST";
   const recommendationBasis = pickValue(item, ["recommendationBasis", "basis"]);
   const userRank = pickValue(item, ["userRank"]);
   const minRank = pickValue(item, ["minRank", "minimumRank"]);
   const rankGap = pickValue(item, ["rankGap"]);
   return {
+    recommendationMode,
     universityName: pickValue(item, ["universityName", "schoolName", "name"]) || "未知院校",
+    majorName: pickValue(item, ["majorName", "major", "specialtyName"]) || "",
     cutoffScore: pickValue(item, ["cutoffScore", "cutoff", "lastYearCutoff"]),
     scoreGap: pickValue(item, ["scoreGap", "gap", "difference"]),
     userRank,
@@ -61,11 +69,15 @@ export function dedupeByUniversity(list) {
   const seen = new Set();
   const result = [];
   (list || []).forEach((item) => {
-    const name = String(pickValue(item, ["universityName", "schoolName", "name"]) || "")
+    const schoolName = String(pickValue(item, ["universityName", "schoolName", "name"]) || "")
       .trim()
       .toLowerCase();
-    if (!name || !seen.has(name)) {
-      if (name) seen.add(name);
+    const majorName = String(pickValue(item, ["majorName", "major", "specialtyName"]) || "")
+      .trim()
+      .toLowerCase();
+    const key = `${schoolName}::${majorName}`;
+    if (!schoolName || !seen.has(key)) {
+      if (schoolName) seen.add(key);
       result.push(item);
     }
   });
@@ -116,6 +128,10 @@ export function sourceTypeTag(type) {
 
 export function subjectTypeLabel(type) {
   return SUBJECT_OPTIONS.find((item) => item.value === type)?.label || type || "-";
+}
+
+export function recommendationModeLabel(mode) {
+  return RECOMMENDATION_MODE_OPTIONS.find((item) => item.value === mode)?.label || mode || "学校优先";
 }
 
 export function formatDateTime(value) {

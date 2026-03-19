@@ -5,6 +5,7 @@ public class AdmissionCutoffWithUniversity {
     private Long id;
     private Long universityId;
     private String universityName;
+    private String majorName;
     private String universityProvince;
     private Integer admissionYear;
     private String province;
@@ -34,6 +35,14 @@ public class AdmissionCutoffWithUniversity {
 
     public void setUniversityName(String universityName) {
         this.universityName = universityName;
+    }
+
+    public String getMajorName() {
+        return majorName;
+    }
+
+    public void setMajorName(String majorName) {
+        this.majorName = majorName;
     }
 
     public String getUniversityProvince() {

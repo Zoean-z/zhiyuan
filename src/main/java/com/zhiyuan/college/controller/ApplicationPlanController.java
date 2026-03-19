@@ -9,6 +9,7 @@ import com.zhiyuan.college.service.ApplicationPlanService;
 import jakarta.validation.Valid;
 import java.util.List;
 import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -40,6 +41,11 @@ public class ApplicationPlanController {
     @GetMapping("/{id}")
     public ApplicationPlanDetailResponse detail(@PathVariable("id") Long id) {
         return applicationPlanService.getById(currentUserId(), id);
+    }
+
+    @DeleteMapping("/{id}")
+    public void delete(@PathVariable("id") Long id) {
+        applicationPlanService.deleteById(currentUserId(), id);
     }
 
     private Long currentUserId() {

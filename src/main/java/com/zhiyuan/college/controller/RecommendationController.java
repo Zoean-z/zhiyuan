@@ -1,6 +1,7 @@
 package com.zhiyuan.college.controller;
 
 import com.zhiyuan.college.mapper.AdmissionCutoffMapper;
+import com.zhiyuan.college.mapper.MajorAdmissionCutoffMapper;
 import com.zhiyuan.college.model.dto.FinalAdviceRequest;
 import com.zhiyuan.college.model.dto.FinalAdviceResponse;
 import com.zhiyuan.college.model.dto.FreeTextRecommendationRequest;
@@ -23,6 +24,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -34,17 +36,20 @@ public class RecommendationController {
     private final FinalAdviceService finalAdviceService;
     private final FreeTextRecommendationService freeTextRecommendationService;
     private final AdmissionCutoffMapper admissionCutoffMapper;
+    private final MajorAdmissionCutoffMapper majorAdmissionCutoffMapper;
     private final HistoryService historyService;
 
     public RecommendationController(RecommendationService recommendationService,
                                     FinalAdviceService finalAdviceService,
                                     FreeTextRecommendationService freeTextRecommendationService,
                                     AdmissionCutoffMapper admissionCutoffMapper,
+                                    MajorAdmissionCutoffMapper majorAdmissionCutoffMapper,
                                     HistoryService historyService) {
         this.recommendationService = recommendationService;
         this.finalAdviceService = finalAdviceService;
         this.freeTextRecommendationService = freeTextRecommendationService;
         this.admissionCutoffMapper = admissionCutoffMapper;
+        this.majorAdmissionCutoffMapper = majorAdmissionCutoffMapper;
         this.historyService = historyService;
     }
 
@@ -74,6 +79,21 @@ public class RecommendationController {
                 .map(SubjectType::getDisplayName)
                 .toList();
         return new MetaOptionsResponse(provinces, subjectTypes);
+    }
+
+    @GetMapping("/meta/major-options")
+    public List<String> getMajorOptions(@RequestParam("keyword") String keyword,
+                                        @RequestParam(value = "province", required = false) String province,
+                                        @RequestParam(value = "subjectType", required = false) SubjectType subjectType) {
+        String normalizedKeyword = keyword == null ? "" : keyword.trim();
+        if (normalizedKeyword.isBlank()) {
+            return List.of();
+        }
+        return majorAdmissionCutoffMapper.findMajorSuggestions(
+                normalizedKeyword,
+                province == null || province.isBlank() ? null : province.trim(),
+                subjectType == null ? null : subjectType.getDbValue()
+        );
     }
 
     private Long currentUserId() {

@@ -1,7 +1,7 @@
 <script setup>
 import { formatDateTime, sourceTypeLabel, sourceTypeTag } from "../utils/recommendation";
 defineProps({ records: { type: Array, default: () => [] }, loading: { type: Boolean, default: false } });
-defineEmits(["refresh", "view"]);
+defineEmits(["refresh", "view", "delete"]);
 </script>
 
 <template>
@@ -24,9 +24,10 @@ defineEmits(["refresh", "view"]);
         </template>
       </el-table-column>
       <el-table-column prop="sourceQuery" label="来源内容" min-width="320" show-overflow-tooltip />
-      <el-table-column label="操作" width="120" fixed="right">
+      <el-table-column label="操作" width="160" fixed="right">
         <template #default="scope">
           <el-button type="primary" link @click="$emit('view', scope.row)">查看详情</el-button>
+          <el-button type="danger" link @click="$emit('delete', scope.row)">删除</el-button>
         </template>
       </el-table-column>
     </el-table>
