@@ -21,6 +21,10 @@ body {
     var(--bg);
 }
 
+#app {
+  min-height: 100vh;
+}
+
 .app-shell {
   min-height: 100vh;
 }

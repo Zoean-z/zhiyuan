@@ -1,4 +1,4 @@
-﻿package com.zhiyuan.college.controller;
+package com.zhiyuan.college.controller;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -15,6 +15,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
@@ -28,6 +29,9 @@ class RecommendationControllerTest {
 
     @Autowired
     private ObjectMapper objectMapper;
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
 
     @Test
     void recommend_shouldReturnGroupedResults() throws Exception {
@@ -207,6 +211,10 @@ class RecommendationControllerTest {
 
     @Test
     void login_shouldRequireScoreAtFirstLogin() throws Exception {
+        jdbcTemplate.update(
+                "UPDATE users SET score = NULL, subject_type = NULL, exam_province = NULL WHERE username = ?",
+                "freshuser");
+
         String requestJson = """
                 {
                   "username": "freshuser",
