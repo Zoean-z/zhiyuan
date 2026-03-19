@@ -43,6 +43,6 @@ public class AiAdviceSummaryService {
         if (normalized.length() <= 80) {
             return "AI总结：" + normalized;
         }
-        return "AI总结：" + normalized.substring(0, 80) + "。建议按‘冲稳保’比例完成最终志愿排序并核验近三年位次。";
+        return "AI总结：" + normalized.substring(0, 80) + "。建议核验近三年位次。";
     }
 }

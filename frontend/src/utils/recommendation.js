@@ -54,6 +54,9 @@ export function normalizeItem(item, fallbackStrategy) {
     recommendationMode,
     universityName: pickValue(item, ["universityName", "schoolName", "name"]) || "未知院校",
     majorName: pickValue(item, ["majorName", "major", "specialtyName"]) || "",
+    universityProvince: pickValue(item, ["universityProvince", "province"]),
+    universityTier: pickValue(item, ["universityTier", "tier"]),
+    universityTags: pickValue(item, ["universityTags", "tags"]),
     cutoffScore: pickValue(item, ["cutoffScore", "cutoff", "lastYearCutoff"]),
     scoreGap: pickValue(item, ["scoreGap", "gap", "difference"]),
     userRank,
@@ -63,6 +66,16 @@ export function normalizeItem(item, fallbackStrategy) {
     admissionProbability: pickValue(item, ["admissionProbability", "probability", "chance"]),
     strategy
   };
+}
+
+export function buildPlanItemKey(item, fallbackStrategy) {
+  const model = normalizeItem(item, fallbackStrategy);
+  return [
+    model.recommendationMode || "SCHOOL_FIRST",
+    String(model.universityName || "").trim().toLowerCase(),
+    String(model.majorName || "").trim().toLowerCase(),
+    model.strategy || normalizeStrategy(fallbackStrategy)
+  ].join("::");
 }
 
 export function dedupeByUniversity(list) {
@@ -132,6 +145,20 @@ export function subjectTypeLabel(type) {
 
 export function recommendationModeLabel(mode) {
   return RECOMMENDATION_MODE_OPTIONS.find((item) => item.value === mode)?.label || mode || "学校优先";
+}
+
+export function strategyLabel(strategy) {
+  const normalized = normalizeStrategy(strategy);
+  if (normalized === "rush") return "冲刺";
+  if (normalized === "guarantee") return "保底";
+  return "稳妥";
+}
+
+export function strategyTagType(strategy) {
+  const normalized = normalizeStrategy(strategy);
+  if (normalized === "rush") return "danger";
+  if (normalized === "guarantee") return "success";
+  return "warning";
 }
 
 export function formatDateTime(value) {

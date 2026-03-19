@@ -2,15 +2,19 @@
 import { ElMessage, ElMessageBox } from "element-plus";
 import { computed, onMounted, reactive, ref, watch } from "vue";
 import ApplicationPlanView from "./components/ApplicationPlanView.vue";
+import CurrentPlanPanel from "./components/CurrentPlanPanel.vue";
 import HistoryView from "./components/HistoryView.vue";
+import RecognizedConditionsPanel from "./components/RecognizedConditionsPanel.vue";
 import RecommendationResult from "./components/RecommendationResult.vue";
 import {
   RECOMMENDATION_MODE_OPTIONS,
   SUBJECT_OPTIONS,
+  buildPlanItemKey,
   buildGroupedFromResult,
   clearStoredAuth,
   formatDateTime,
   groupByStrategy,
+  normalizeItem,
   queryTypeLabel,
   readStoredAuth,
   recommendationModeLabel,
@@ -60,6 +64,7 @@ const saveSubmitting = ref(false);
 const saveForm = reactive({ planName: "" });
 const majorSuggestionLoading = ref(false);
 const majorSuggestions = ref([]);
+const currentPlanItems = ref([]);
 
 const loginForm = reactive({ username: "", password: "", score: "", subjectType: "", examProvince: "" });
 const scoreForm = reactive({ score: "", province: "", subjectType: "", recommendationMode: "SCHOOL_FIRST", majorKeyword: "" });
@@ -73,7 +78,9 @@ const userText = computed(() => {
 
 const historyHasResult = computed(() => historyGrouped.rush.length + historyGrouped.safe.length + historyGrouped.guarantee.length > 0);
 const planHasResult = computed(() => planGrouped.rush.length + planGrouped.safe.length + planGrouped.guarantee.length > 0);
-const canSavePlan = computed(() => latestResult.value && grouped.rush.length + grouped.safe.length + grouped.guarantee.length > 0);
+const canSavePlan = computed(() => currentPlanItems.value.length > 0);
+const selectedPlanKeys = computed(() => currentPlanItems.value.map((item) => item.planKey));
+const textParsedRequirement = computed(() => latestSourceType.value === "text" ? latestResult.value?.parsed || null : null);
 
 async function apiFetch(url, options) {
   const response = await fetch(url, options);
@@ -106,6 +113,59 @@ function resetResults() {
   latestSourceType.value = "";
   latestSourceQuery.value = "";
   latestRankMeta.value = null;
+}
+
+function addCurrentPlanItem(item, strategy) {
+  const normalized = normalizeItem(item, strategy);
+  const planKey = buildPlanItemKey(item, strategy);
+  if (currentPlanItems.value.some((entry) => entry.planKey === planKey)) {
+    ElMessage.warning("该条结果已加入当前方案");
+    return;
+  }
+  currentPlanItems.value = [...currentPlanItems.value, { ...normalized, planKey }];
+  ElMessage.success("已加入当前方案");
+}
+
+function removeCurrentPlanItem(item) {
+  currentPlanItems.value = currentPlanItems.value.filter((entry) => entry.planKey !== item.planKey);
+  ElMessage.success("已从当前方案移除");
+}
+
+function clearCurrentPlan() {
+  if (!currentPlanItems.value.length) {
+    return;
+  }
+  currentPlanItems.value = [];
+  ElMessage.success("当前方案已清空");
+}
+
+function buildPlanPayload() {
+  const groups = { rush: [], safe: [], guarantee: [] };
+  currentPlanItems.value.forEach((item) => {
+    groups[item.strategy || "safe"].push({
+      recommendationMode: item.recommendationMode,
+      universityName: item.universityName,
+      majorName: item.majorName || null,
+      universityProvince: item.universityProvince || null,
+      universityTier: item.universityTier || null,
+      universityTags: item.universityTags || null,
+      cutoffScore: item.cutoffScore,
+      scoreGap: item.scoreGap,
+      userRank: item.userRank,
+      minRank: item.minRank,
+      rankGap: item.rankGap,
+      recommendationBasis: item.recommendationBasis,
+      strategy: String(item.strategy || "safe").toUpperCase()
+    });
+  });
+  return {
+    recommendationMode: currentPlanItems.value[0]?.recommendationMode || latestResult.value?.recommendationMode || scoreForm.recommendationMode,
+    rush: groups.rush,
+    safe: groups.safe,
+    guarantee: groups.guarantee,
+    summary: resultSummary.value || `当前方案共选择 ${currentPlanItems.value.length} 条志愿结果。`,
+    aiSummary: aiSummary.value || ""
+  };
 }
 
 function fillScoreFromUser() {
@@ -226,6 +286,7 @@ async function logout() {
   auth.value = null;
   clearStoredAuth();
   resetResults();
+  currentPlanItems.value = [];
   historyRecords.value = [];
   planRecords.value = [];
   historyDialogVisible.value = false;
@@ -458,6 +519,10 @@ async function deletePlan(row) {
 }
 
 function openSavePlanDialog() {
+  if (!currentPlanItems.value.length) {
+    ElMessage.warning("当前方案为空，请先加入条目");
+    return;
+  }
   saveForm.planName = "";
   saveDialogVisible.value = true;
 }
@@ -467,25 +532,27 @@ async function savePlan() {
     ElMessage.warning("请输入方案名称");
     return;
   }
-  if (!latestResult.value || !latestSourceType.value) {
-    ElMessage.warning("请先生成推荐结果");
+  if (!currentPlanItems.value.length) {
+    ElMessage.warning("当前方案为空，请先加入条目");
     return;
   }
 
   saveSubmitting.value = true;
   try {
+    const payload = buildPlanPayload();
     await apiFetch("/api/plans", {
       method: "POST",
       headers: getAuthHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify({
         planName: saveForm.planName.trim(),
-        sourceType: latestSourceType.value,
-        sourceQuery: latestSourceQuery.value || sourceTypeLabel(latestSourceType.value),
-        resultJson: JSON.stringify(latestResult.value),
-        aiSummary: aiSummary.value || resultSummary.value || latestResult.value?.aiSummary || latestResult.value?.summary || ""
+        sourceType: latestSourceType.value || "score",
+        sourceQuery: latestSourceQuery.value || `手动选择 ${currentPlanItems.value.length} 条志愿结果`,
+        resultJson: JSON.stringify(payload),
+        aiSummary: payload.aiSummary || payload.summary || ""
       })
     });
     saveDialogVisible.value = false;
+    currentPlanItems.value = [];
     ElMessage.success("志愿方案保存成功");
     if (activePage.value === "plans") {
       await loadPlans();
@@ -603,74 +670,81 @@ watch(() => scoreForm.subjectType, () => {
       <el-main v-if="activePage === 'recommend'" class="app-main">
         <el-row :gutter="16">
           <el-col :xs="24" :lg="8">
-            <el-card class="query-card" shadow="never">
-              <template #header>
-                <div class="panel-title-row">
-                  <span>查询条件</span>
-                  <el-tag size="small" type="primary" effect="plain">分数查询 / 文本查询</el-tag>
-                </div>
-              </template>
+            <div class="recommend-side">
+              <el-card class="query-card" shadow="never">
+                <template #header>
+                  <div class="panel-title-row">
+                    <span>查询条件</span>
+                    <el-tag size="small" type="primary" effect="plain">分数查询 / 文本查询</el-tag>
+                  </div>
+                </template>
 
-              <el-tabs v-model="activeMode">
-                <el-tab-pane label="文本查询" name="text">
-                  <el-form label-position="top" :model="textForm">
-                    <el-form-item label="需求描述">
-                      <el-input v-model.trim="textForm.requirementText" type="textarea" :rows="7" placeholder="例如：我是江苏考生，620分，偏好计算机，想去华东地区，请给出冲刺/稳妥/保底院校建议。" />
-                    </el-form-item>
-                    <el-button type="primary" class="query-submit" :loading="loading" @click="queryByText">开始推荐</el-button>
-                  </el-form>
-                </el-tab-pane>
+                <el-tabs v-model="activeMode">
+                  <el-tab-pane label="文本查询" name="text">
+                    <el-form label-position="top" :model="textForm">
+                      <el-form-item label="需求描述">
+                        <el-input v-model.trim="textForm.requirementText" type="textarea" :rows="7" placeholder="例如：我是江苏考生，620分，偏好计算机，想去华东地区，请给出冲刺/稳妥/保底院校建议。" />
+                      </el-form-item>
+                      <el-button type="primary" class="query-submit" :loading="loading" @click="queryByText">开始推荐</el-button>
+                    </el-form>
+                  </el-tab-pane>
 
-                <el-tab-pane label="分数查询" name="score">
-                  <el-form label-position="top" :model="scoreForm">
-                    <el-form-item label="推荐模式">
-                      <el-radio-group v-model="scoreForm.recommendationMode">
-                        <el-radio-button v-for="opt in RECOMMENDATION_MODE_OPTIONS" :key="opt.value" :value="opt.value">
-                          {{ opt.label }}
-                        </el-radio-button>
-                      </el-radio-group>
-                    </el-form-item>
-                    <el-form-item label="分数">
-                      <el-input v-model="scoreForm.score" type="number" placeholder="请输入高考分数" />
-                    </el-form-item>
-                    <el-form-item label="省份">
-                      <el-select v-model="scoreForm.province" placeholder="请选择" style="width: 100%;">
-                        <el-option v-for="province in provinces" :key="province" :label="province" :value="province" />
-                      </el-select>
-                    </el-form-item>
-                    <el-form-item label="科类">
-                      <el-select v-model="scoreForm.subjectType" placeholder="请选择" style="width: 100%;">
-                        <el-option v-for="opt in SUBJECT_OPTIONS" :key="opt.value" :label="opt.label" :value="opt.value" />
-                      </el-select>
-                    </el-form-item>
-                    <el-form-item v-if="scoreForm.recommendationMode === 'MAJOR_FIRST'" label="专业">
-                      <el-select
-                        v-model="scoreForm.majorKeyword"
-                        filterable
-                        remote
-                        clearable
-                        allow-create
-                        default-first-option
-                        reserve-keyword
-                        :remote-method="loadMajorSuggestions"
-                        :loading="majorSuggestionLoading"
-                        placeholder="输入专业关键词，例如：计算机、法学、软件工程"
-                        style="width: 100%;"
-                      >
-                        <el-option v-for="item in majorSuggestions" :key="item" :label="item" :value="item" />
-                      </el-select>
-                    </el-form-item>
-                    <el-button type="primary" class="query-submit" :loading="loading" @click="queryByScore">开始推荐</el-button>
-                  </el-form>
-                </el-tab-pane>
-              </el-tabs>
+                  <el-tab-pane label="分数查询" name="score">
+                    <el-form label-position="top" :model="scoreForm">
+                      <el-form-item label="推荐模式">
+                        <el-radio-group v-model="scoreForm.recommendationMode">
+                          <el-radio-button v-for="opt in RECOMMENDATION_MODE_OPTIONS" :key="opt.value" :value="opt.value">
+                            {{ opt.label }}
+                          </el-radio-button>
+                        </el-radio-group>
+                      </el-form-item>
+                      <el-form-item label="分数">
+                        <el-input v-model="scoreForm.score" type="number" placeholder="请输入高考分数" />
+                      </el-form-item>
+                      <el-form-item label="省份">
+                        <el-select v-model="scoreForm.province" placeholder="请选择" style="width: 100%;">
+                          <el-option v-for="province in provinces" :key="province" :label="province" :value="province" />
+                        </el-select>
+                      </el-form-item>
+                      <el-form-item label="科类">
+                        <el-select v-model="scoreForm.subjectType" placeholder="请选择" style="width: 100%;">
+                          <el-option v-for="opt in SUBJECT_OPTIONS" :key="opt.value" :label="opt.label" :value="opt.value" />
+                        </el-select>
+                      </el-form-item>
+                      <el-form-item v-if="scoreForm.recommendationMode === 'MAJOR_FIRST'" label="专业">
+                        <el-select
+                          v-model="scoreForm.majorKeyword"
+                          filterable
+                          remote
+                          clearable
+                          allow-create
+                          default-first-option
+                          reserve-keyword
+                          :remote-method="loadMajorSuggestions"
+                          :loading="majorSuggestionLoading"
+                          placeholder="输入专业关键词，例如：计算机、法学、软件工程"
+                          style="width: 100%;"
+                        >
+                          <el-option v-for="item in majorSuggestions" :key="item" :label="item" :value="item" />
+                        </el-select>
+                      </el-form-item>
+                      <el-button type="primary" class="query-submit" :loading="loading" @click="queryByScore">开始推荐</el-button>
+                    </el-form>
+                  </el-tab-pane>
+                </el-tabs>
 
-              <div v-if="error" class="error">{{ error }}</div>
-            </el-card>
+                <div v-if="error" class="error">{{ error }}</div>
+              </el-card>
+
+              <CurrentPlanPanel :items="currentPlanItems" :save-disabled="!canSavePlan" :clearing-disabled="!currentPlanItems.length" @remove="removeCurrentPlanItem" @clear="clearCurrentPlan" @save="openSavePlanDialog" />
+            </div>
           </el-col>
 
           <el-col :xs="24" :lg="16">
-            <RecommendationResult :loading="loading" :grouped="grouped" :summary="resultSummary" :ai-summary="aiSummary" :recommendation-mode="latestResult?.recommendationMode || scoreForm.recommendationMode" :rank-meta="latestRankMeta" :show-save-action="true" :save-disabled="!canSavePlan" @save-plan="openSavePlanDialog" />
+            <div class="recommend-result-stack">
+              <RecognizedConditionsPanel v-if="textParsedRequirement" :parsed="textParsedRequirement" />
+              <RecommendationResult :loading="loading" :grouped="grouped" :summary="resultSummary" :ai-summary="aiSummary" :recommendation-mode="latestResult?.recommendationMode || latestResult?.parsed?.recommendationMode || scoreForm.recommendationMode" :rank-meta="latestRankMeta" :show-add-action="true" :selected-plan-keys="selectedPlanKeys" @add-item="addCurrentPlanItem" />
+            </div>
           </el-col>
         </el-row>
       </el-main>

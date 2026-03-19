@@ -37,10 +37,11 @@ body {
 .user-text { color: var(--muted); font-size: 13px; }
 .app-main { padding: 16px; }
 .query-card, .result-hero, .result-main, .summary-panel, .history-card, .history-raw-card { border: 1px solid var(--border); border-radius: 14px; }
+.recommend-side, .result-page { display: flex; flex-direction: column; gap: 12px; }
+.recommend-result-stack { display: flex; flex-direction: column; gap: 12px; }
 .panel-title-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .result-main__header { align-items: center; }
 .error { margin-top: 10px; color: #dc2626; font-size: 13px; }
-.result-page { display: flex; flex-direction: column; gap: 12px; }
 .result-hero h2 { margin: 0; font-size: 24px; }
 .result-hero p { margin: 8px 0 0; color: var(--muted); }
 .recommend-tabs .el-tabs__header { margin-bottom: 10px; }
@@ -53,12 +54,30 @@ body {
 .rank-panel__hint { margin: 12px 0 0; color: var(--muted); font-size: 13px; line-height: 1.6; }
 .university-card { border-radius: 12px; }
 .university-card__head { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
-.university-card__tags { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
+.university-card__title { min-width: 0; }
 .university-card__name { margin: 0; font-size: 16px; }
+.university-card__major { margin-top: 4px; color: var(--muted); font-size: 13px; }
+.university-card__tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
 .university-card__meta { margin-top: 10px; display: grid; gap: 6px; }
+.university-card__footer { margin-top: 12px; display: flex; justify-content: flex-end; }
 .meta-row { display: flex; justify-content: space-between; gap: 8px; color: var(--muted); font-size: 13px; }
 .meta-row strong { color: var(--text); }
 .meta-row--subtle span, .meta-row--subtle strong { color: #7b8798; }
+.current-plan-card { border: 1px solid var(--border); border-radius: 14px; }
+.current-plan-card__header { align-items: flex-start; }
+.current-plan-card__count { margin-top: 4px; color: var(--muted); font-size: 12px; }
+.current-plan-card__actions { display: flex; gap: 8px; }
+.current-plan-list { display: flex; flex-direction: column; gap: 10px; }
+.current-plan-item { display: flex; justify-content: space-between; gap: 12px; padding: 12px; border: 1px solid var(--border); border-radius: 12px; background: linear-gradient(180deg, #fbfdff 0%, #ffffff 100%); }
+.current-plan-item__main { min-width: 0; }
+.current-plan-item__title { font-weight: 600; line-height: 1.4; }
+.current-plan-item__subtitle { margin-top: 4px; color: var(--muted); font-size: 13px; }
+.current-plan-item__side { display: flex; align-items: center; gap: 8px; }
+.recognized-card { border: 1px solid var(--border); border-radius: 14px; }
+.recognized-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.recognized-item { padding: 12px; border: 1px solid var(--border); border-radius: 12px; background: #fbfdff; }
+.recognized-item span { display: block; color: var(--muted); font-size: 12px; }
+.recognized-item strong { display: block; margin-top: 6px; line-height: 1.5; }
 .summary-panel .summary-text { white-space: pre-wrap; line-height: 1.7; color: #334155; }
 .history-detail-meta { margin-bottom: 12px; }
 .history-raw { margin: 0; white-space: pre-wrap; word-break: break-all; font-size: 12px; color: #334155; line-height: 1.6; }
@@ -68,4 +87,7 @@ body {
   .app-header { flex-direction: column; align-items: flex-start; }
   .result-main__header { flex-direction: column; align-items: stretch; }
   .rank-panel__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .recognized-grid { grid-template-columns: 1fr; }
+  .current-plan-card__header, .current-plan-item { flex-direction: column; }
+  .current-plan-card__actions, .current-plan-item__side { width: 100%; justify-content: space-between; }
 }

@@ -7,6 +7,8 @@ public class AdmissionCutoffWithUniversity {
     private String universityName;
     private String majorName;
     private String universityProvince;
+    private String universityTier;
+    private String universityTags;
     private Integer admissionYear;
     private String province;
     private String subjectType;
@@ -51,6 +53,22 @@ public class AdmissionCutoffWithUniversity {
 
     public void setUniversityProvince(String universityProvince) {
         this.universityProvince = universityProvince;
+    }
+
+    public String getUniversityTier() {
+        return universityTier;
+    }
+
+    public void setUniversityTier(String universityTier) {
+        this.universityTier = universityTier;
+    }
+
+    public String getUniversityTags() {
+        return universityTags;
+    }
+
+    public void setUniversityTags(String universityTags) {
+        this.universityTags = universityTags;
     }
 
     public Integer getAdmissionYear() {

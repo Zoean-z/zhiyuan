@@ -7,6 +7,9 @@ public class RecommendationItemResponse {
     private RecommendationMode recommendationMode;
     private String universityName;
     private String majorName;
+    private String universityProvince;
+    private String universityTier;
+    private String universityTags;
     private Integer cutoffScore;
     private Integer scoreGap;
     private Integer userRank;
@@ -30,6 +33,9 @@ public class RecommendationItemResponse {
         this(RecommendationMode.SCHOOL_FIRST,
                 universityName,
                 null,
+                null,
+                null,
+                null,
                 cutoffScore,
                 scoreGap,
                 userRank,
@@ -44,6 +50,9 @@ public class RecommendationItemResponse {
     public RecommendationItemResponse(RecommendationMode recommendationMode,
                                       String universityName,
                                       String majorName,
+                                      String universityProvince,
+                                      String universityTier,
+                                      String universityTags,
                                       Integer cutoffScore,
                                       Integer scoreGap,
                                       Integer userRank,
@@ -56,6 +65,9 @@ public class RecommendationItemResponse {
         this.recommendationMode = recommendationMode;
         this.universityName = universityName;
         this.majorName = majorName;
+        this.universityProvince = universityProvince;
+        this.universityTier = universityTier;
+        this.universityTags = universityTags;
         this.cutoffScore = cutoffScore;
         this.scoreGap = scoreGap;
         this.userRank = userRank;
@@ -77,6 +89,18 @@ public class RecommendationItemResponse {
 
     public String getMajorName() {
         return majorName;
+    }
+
+    public String getUniversityProvince() {
+        return universityProvince;
+    }
+
+    public String getUniversityTier() {
+        return universityTier;
+    }
+
+    public String getUniversityTags() {
+        return universityTags;
     }
 
     public Integer getCutoffScore() {

@@ -13,6 +13,8 @@ public interface MajorAdmissionCutoffMapper {
                    u.name AS universityName,
                    m.major_name AS majorName,
                    u.province AS universityProvince,
+                   u.tier AS universityTier,
+                   u.tags AS universityTags,
                    m.admission_year AS admissionYear,
                    m.province,
                    m.subject_type AS subjectType,

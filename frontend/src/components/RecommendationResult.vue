@@ -2,6 +2,7 @@
 import { computed, ref } from "vue";
 import AiSummaryPanel from "./AiSummaryPanel.vue";
 import UniversityCard from "./UniversityCard.vue";
+import { buildPlanItemKey } from "../utils/recommendation";
 
 const props = defineProps({
   loading: { type: Boolean, default: false },
@@ -10,11 +11,11 @@ const props = defineProps({
   summary: { type: String, default: "" },
   recommendationMode: { type: String, default: "" },
   rankMeta: { type: Object, default: null },
-  showSaveAction: { type: Boolean, default: false },
-  saveDisabled: { type: Boolean, default: false }
+  showAddAction: { type: Boolean, default: false },
+  selectedPlanKeys: { type: Array, default: () => [] }
 });
 
-const emit = defineEmits(["save-plan"]);
+const emit = defineEmits(["add-item"]);
 const activeTab = ref("rush");
 const rushList = computed(() => (Array.isArray(props.grouped?.rush) ? props.grouped.rush : []));
 const safeList = computed(() => (Array.isArray(props.grouped?.safe) ? props.grouped.safe : []));
@@ -53,6 +54,11 @@ const resolvedRecommendationMode = computed(() => {
   return firstItem?.recommendationMode || "SCHOOL_FIRST";
 });
 const resultTargetText = computed(() => resolvedRecommendationMode.value === "MAJOR_FIRST" ? "学校+专业" : "院校");
+const selectedKeySet = computed(() => new Set(props.selectedPlanKeys));
+
+function isItemAdded(item, strategy) {
+  return selectedKeySet.value.has(buildPlanItemKey(item, strategy));
+}
 </script>
 
 <template>
@@ -98,9 +104,6 @@ const resultTargetText = computed(() => resolvedRecommendationMode.value === "MA
             <span>{{ resolvedRecommendationMode === "MAJOR_FIRST" ? "学校专业推荐" : "院校推荐" }}</span>
             <el-tag size="small" type="primary" effect="plain">冲刺 / 稳妥 / 保底</el-tag>
           </div>
-          <el-button v-if="showSaveAction" type="primary" plain :disabled="saveDisabled" @click="emit('save-plan')">
-            保存为志愿方案
-          </el-button>
         </div>
       </template>
 
@@ -117,21 +120,21 @@ const resultTargetText = computed(() => resolvedRecommendationMode.value === "MA
           <el-tabs v-model="activeTab" class="recommend-tabs">
             <el-tab-pane :label="'冲刺 (' + rushList.length + ')'" name="rush">
               <div v-if="rushList.length" class="cards-grid">
-                <UniversityCard v-for="(item, idx) in rushList" :key="'rush-' + idx" :item="item" strategy="rush" />
+                <UniversityCard v-for="(item, idx) in rushList" :key="'rush-' + idx" :item="item" strategy="rush" :show-add-action="showAddAction" :added="isItemAdded(item, 'rush')" @add="emit('add-item', item, 'rush')" />
               </div>
               <el-empty v-else :description="'暂无冲刺' + resultTargetText" :image-size="90" />
             </el-tab-pane>
 
             <el-tab-pane :label="'稳妥 (' + safeList.length + ')'" name="safe">
               <div v-if="safeList.length" class="cards-grid">
-                <UniversityCard v-for="(item, idx) in safeList" :key="'safe-' + idx" :item="item" strategy="safe" />
+                <UniversityCard v-for="(item, idx) in safeList" :key="'safe-' + idx" :item="item" strategy="safe" :show-add-action="showAddAction" :added="isItemAdded(item, 'safe')" @add="emit('add-item', item, 'safe')" />
               </div>
               <el-empty v-else :description="'暂无稳妥' + resultTargetText" :image-size="90" />
             </el-tab-pane>
 
             <el-tab-pane :label="'保底 (' + guaranteeList.length + ')'" name="guarantee">
               <div v-if="guaranteeList.length" class="cards-grid">
-                <UniversityCard v-for="(item, idx) in guaranteeList" :key="'guarantee-' + idx" :item="item" strategy="guarantee" />
+                <UniversityCard v-for="(item, idx) in guaranteeList" :key="'guarantee-' + idx" :item="item" strategy="guarantee" :show-add-action="showAddAction" :added="isItemAdded(item, 'guarantee')" @add="emit('add-item', item, 'guarantee')" />
               </div>
               <el-empty v-else :description="'暂无保底' + resultTargetText" :image-size="90" />
             </el-tab-pane>
