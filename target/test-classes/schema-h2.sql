@@ -17,6 +17,16 @@ CREATE TABLE admission_cutoff (
   CONSTRAINT fk_cutoff_university FOREIGN KEY (university_id) REFERENCES university(id)
 );
 
+CREATE TABLE score_rank_mapping (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  mapping_year INT NOT NULL,
+  province VARCHAR(64) NOT NULL,
+  subject_type VARCHAR(16) NOT NULL,
+  score INT NOT NULL,
+  rank_value INT NOT NULL,
+  CONSTRAINT uk_rank_mapping UNIQUE (mapping_year, province, subject_type, score)
+);
+
 CREATE TABLE users (
   id BIGINT PRIMARY KEY AUTO_INCREMENT,
   username VARCHAR(64) NOT NULL UNIQUE,
@@ -36,4 +46,16 @@ CREATE TABLE recommendation_log (
   result_json CLOB NOT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_log_user FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+CREATE TABLE application_plan (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  user_id BIGINT NOT NULL,
+  plan_name VARCHAR(128) NOT NULL,
+  source_type VARCHAR(16) NOT NULL,
+  source_query CLOB NOT NULL,
+  result_json CLOB NOT NULL,
+  ai_summary CLOB NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_plan_user FOREIGN KEY (user_id) REFERENCES users(id)
 );

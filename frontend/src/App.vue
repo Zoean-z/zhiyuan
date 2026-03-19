@@ -1,5 +1,7 @@
 <script setup>
+import { ElMessage } from "element-plus";
 import { computed, onMounted, reactive, ref } from "vue";
+import ApplicationPlanView from "./components/ApplicationPlanView.vue";
 import HistoryView from "./components/HistoryView.vue";
 import RecommendationResult from "./components/RecommendationResult.vue";
 import {
@@ -10,7 +12,9 @@ import {
   groupByStrategy,
   queryTypeLabel,
   readStoredAuth,
-  saveStoredAuth
+  saveStoredAuth,
+  sourceTypeLabel,
+  subjectTypeLabel
 } from "./utils/recommendation";
 
 const auth = ref(readStoredAuth());
@@ -22,6 +26,10 @@ const resultSummary = ref("");
 const aiSummary = ref("");
 const grouped = reactive({ rush: [], safe: [], guarantee: [] });
 const provinces = ref([]);
+const latestResult = ref(null);
+const latestSourceType = ref("");
+const latestSourceQuery = ref("");
+const latestRankMeta = ref(null);
 
 const historyLoading = ref(false);
 const historyRecords = ref([]);
@@ -33,33 +41,33 @@ const historyGrouped = reactive({ rush: [], safe: [], guarantee: [] });
 const historySummary = ref("");
 const historyAiSummary = ref("");
 
-const loginForm = reactive({
-  username: "",
-  password: "",
-  score: "",
-  subjectType: "",
-  examProvince: ""
-});
+const planLoading = ref(false);
+const planRecords = ref([]);
+const planDialogVisible = ref(false);
+const planDetailLoading = ref(false);
+const planDetail = ref(null);
+const planResultJson = ref("");
+const planGrouped = reactive({ rush: [], safe: [], guarantee: [] });
+const planSummary = ref("");
+const planAiSummary = ref("");
 
-const scoreForm = reactive({
-  score: "",
-  province: "",
-  subjectType: ""
-});
+const saveDialogVisible = ref(false);
+const saveSubmitting = ref(false);
+const saveForm = reactive({ planName: "" });
 
-const textForm = reactive({
-  requirementText: ""
-});
+const loginForm = reactive({ username: "", password: "", score: "", subjectType: "", examProvince: "" });
+const scoreForm = reactive({ score: "", province: "", subjectType: "" });
+const textForm = reactive({ requirementText: "" });
 
 const userText = computed(() => {
   if (!auth.value) return "";
   const user = auth.value.user || {};
-  return `用户：${user.username || "-"} | 分数：${user.score ?? "-"} | 科类：${user.subjectType || "-"} | 省份：${user.examProvince || "-"}`;
+  return `用户：${user.username || "-"} | 分数：${user.score ?? "-"} | 科类：${subjectTypeLabel(user.subjectType)} | 省份：${user.examProvince || "-"}`;
 });
 
-const historyHasResult = computed(
-  () => historyGrouped.rush.length + historyGrouped.safe.length + historyGrouped.guarantee.length > 0
-);
+const historyHasResult = computed(() => historyGrouped.rush.length + historyGrouped.safe.length + historyGrouped.guarantee.length > 0);
+const planHasResult = computed(() => planGrouped.rush.length + planGrouped.safe.length + planGrouped.guarantee.length > 0);
+const canSavePlan = computed(() => latestResult.value && grouped.rush.length + grouped.safe.length + grouped.guarantee.length > 0);
 
 async function apiFetch(url, options) {
   const response = await fetch(url, options);
@@ -88,6 +96,10 @@ function resetResults() {
   grouped.guarantee = [];
   resultSummary.value = "";
   aiSummary.value = "";
+  latestResult.value = null;
+  latestSourceType.value = "";
+  latestSourceQuery.value = "";
+  latestRankMeta.value = null;
 }
 
 function fillScoreFromUser() {
@@ -108,6 +120,20 @@ function resetHistoryDialog() {
   historyAiSummary.value = "";
 }
 
+function resetPlanDialog() {
+  planDetail.value = null;
+  planResultJson.value = "";
+  planGrouped.rush = [];
+  planGrouped.safe = [];
+  planGrouped.guarantee = [];
+  planSummary.value = "";
+  planAiSummary.value = "";
+}
+
+function buildScoreSourceQuery() {
+  return `分数：${scoreForm.score || "-"}，省份：${scoreForm.province || "-"}，科类：${subjectTypeLabel(scoreForm.subjectType)}`;
+}
+
 async function loadMetaOptions() {
   try {
     const data = await apiFetch("/api/meta/options", { method: "GET" });
@@ -121,10 +147,7 @@ async function login() {
   error.value = "";
   loading.value = true;
   try {
-    const payload = {
-      username: loginForm.username,
-      password: loginForm.password
-    };
+    const payload = { username: loginForm.username, password: loginForm.password };
     if (loginForm.score !== "") payload.score = Number(loginForm.score);
     if (loginForm.subjectType) payload.subjectType = loginForm.subjectType;
     if (loginForm.examProvince) payload.examProvince = loginForm.examProvince;
@@ -150,10 +173,7 @@ async function logout() {
   const token = auth.value?.token;
   if (token) {
     try {
-      await apiFetch("/api/auth/logout", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      await apiFetch("/api/auth/logout", { method: "POST", headers: { Authorization: `Bearer ${token}` } });
     } catch {
     }
   }
@@ -161,7 +181,10 @@ async function logout() {
   clearStoredAuth();
   resetResults();
   historyRecords.value = [];
+  planRecords.value = [];
   historyDialogVisible.value = false;
+  planDialogVisible.value = false;
+  saveDialogVisible.value = false;
 }
 
 async function queryByScore() {
@@ -182,6 +205,16 @@ async function queryByScore() {
     grouped.safe = Array.isArray(data?.safe) ? data.safe : [];
     grouped.guarantee = Array.isArray(data?.guarantee) ? data.guarantee : [];
     resultSummary.value = data?.summary || "";
+    aiSummary.value = data?.aiSummary || "";
+    latestResult.value = data;
+    latestSourceType.value = "score";
+    latestSourceQuery.value = buildScoreSourceQuery();
+    latestRankMeta.value = {
+      score: Number(scoreForm.score),
+      province: scoreForm.province || "",
+      subjectTypeLabel: subjectTypeLabel(scoreForm.subjectType),
+      userRank: data?.userRank ?? null
+    };
   } catch (ex) {
     error.value = ex.message;
   } finally {
@@ -205,6 +238,16 @@ async function queryByText() {
     grouped.guarantee = groupedData.guarantee;
     resultSummary.value = data?.summary || "";
     aiSummary.value = data?.aiSummary || "";
+    latestResult.value = data;
+    latestSourceType.value = "text";
+    latestSourceQuery.value = textForm.requirementText.trim();
+    const firstRanked = groupedData.rush[0] || groupedData.safe[0] || groupedData.guarantee[0] || null;
+    latestRankMeta.value = {
+      score: data?.parsed?.score ?? null,
+      province: data?.parsed?.candidateProvince || "",
+      subjectTypeLabel: subjectTypeLabel(data?.parsed?.subjectType),
+      userRank: firstRanked?.userRank ?? null
+    };
   } catch (ex) {
     error.value = ex.message;
   } finally {
@@ -215,10 +258,7 @@ async function queryByText() {
 async function loadHistory() {
   historyLoading.value = true;
   try {
-    historyRecords.value = await apiFetch("/api/history", {
-      method: "GET",
-      headers: getAuthHeaders()
-    });
+    historyRecords.value = await apiFetch("/api/history", { method: "GET", headers: getAuthHeaders() });
   } catch (ex) {
     error.value = ex.message;
     historyRecords.value = [];
@@ -232,10 +272,7 @@ async function openHistoryResult(row) {
   historyDetailLoading.value = true;
   resetHistoryDialog();
   try {
-    const detail = await apiFetch(`/api/history/${row.id}`, {
-      method: "GET",
-      headers: getAuthHeaders()
-    });
+    const detail = await apiFetch(`/api/history/${row.id}`, { method: "GET", headers: getAuthHeaders() });
     historyDetail.value = detail;
     historyResultJson.value = detail?.resultJson || "";
 
@@ -260,10 +297,99 @@ async function openHistoryResult(row) {
   }
 }
 
+async function loadPlans() {
+  planLoading.value = true;
+  try {
+    planRecords.value = await apiFetch("/api/plans", { method: "GET", headers: getAuthHeaders() });
+  } catch (ex) {
+    error.value = ex.message;
+    planRecords.value = [];
+  } finally {
+    planLoading.value = false;
+  }
+}
+
+async function openPlanDetail(row) {
+  planDialogVisible.value = true;
+  planDetailLoading.value = true;
+  resetPlanDialog();
+  try {
+    const detail = await apiFetch(`/api/plans/${row.id}`, { method: "GET", headers: getAuthHeaders() });
+    planDetail.value = detail;
+    planResultJson.value = detail?.resultJson || "";
+    planAiSummary.value = detail?.aiSummary || "";
+
+    let parsed = null;
+    try {
+      parsed = detail?.resultJson ? JSON.parse(detail.resultJson) : null;
+    } catch {
+      parsed = null;
+    }
+
+    const groupedData = buildGroupedFromResult(parsed || {});
+    planGrouped.rush = groupedData.rush;
+    planGrouped.safe = groupedData.safe;
+    planGrouped.guarantee = groupedData.guarantee;
+    planSummary.value = parsed?.summary || "";
+    if (!planAiSummary.value) {
+      planAiSummary.value = parsed?.aiSummary || parsed?.summary || "";
+    }
+  } catch (ex) {
+    error.value = ex.message;
+    resetPlanDialog();
+  } finally {
+    planDetailLoading.value = false;
+  }
+}
+
+function openSavePlanDialog() {
+  saveForm.planName = "";
+  saveDialogVisible.value = true;
+}
+
+async function savePlan() {
+  if (!saveForm.planName.trim()) {
+    ElMessage.warning("请输入方案名称");
+    return;
+  }
+  if (!latestResult.value || !latestSourceType.value) {
+    ElMessage.warning("请先生成推荐结果");
+    return;
+  }
+
+  saveSubmitting.value = true;
+  try {
+    await apiFetch("/api/plans", {
+      method: "POST",
+      headers: getAuthHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({
+        planName: saveForm.planName.trim(),
+        sourceType: latestSourceType.value,
+        sourceQuery: latestSourceQuery.value || sourceTypeLabel(latestSourceType.value),
+        resultJson: JSON.stringify(latestResult.value),
+        aiSummary: aiSummary.value || resultSummary.value || latestResult.value?.aiSummary || latestResult.value?.summary || ""
+      })
+    });
+    saveDialogVisible.value = false;
+    ElMessage.success("志愿方案保存成功");
+    if (activePage.value === "plans") {
+      await loadPlans();
+    }
+  } catch (ex) {
+    error.value = ex.message;
+    ElMessage.error(ex.message || "保存志愿方案失败");
+  } finally {
+    saveSubmitting.value = false;
+  }
+}
+
 async function switchPage(page) {
   activePage.value = page;
   if (page === "history") {
     await loadHistory();
+  }
+  if (page === "plans") {
+    await loadPlans();
   }
 }
 
@@ -292,12 +418,7 @@ onMounted(() => {
               </el-col>
               <el-col :span="24">
                 <el-form-item label="密码">
-                  <el-input
-                    v-model="loginForm.password"
-                    type="password"
-                    show-password
-                    placeholder="请输入密码"
-                  />
+                  <el-input v-model="loginForm.password" type="password" show-password placeholder="请输入密码" />
                 </el-form-item>
               </el-col>
             </el-row>
@@ -311,12 +432,7 @@ onMounted(() => {
               <el-col :xs="24" :sm="12">
                 <el-form-item label="科类（可选）">
                   <el-select v-model="loginForm.subjectType" placeholder="请选择" style="width: 100%;">
-                    <el-option
-                      v-for="opt in SUBJECT_OPTIONS"
-                      :key="opt.value"
-                      :label="opt.label"
-                      :value="opt.value"
-                    />
+                    <el-option v-for="opt in SUBJECT_OPTIONS" :key="opt.value" :label="opt.label" :value="opt.value" />
                   </el-select>
                 </el-form-item>
               </el-col>
@@ -345,12 +461,9 @@ onMounted(() => {
         </div>
         <el-space alignment="center" :size="12" wrap>
           <el-button-group>
-            <el-button :type="activePage === 'recommend' ? 'primary' : 'default'" @click="switchPage('recommend')">
-              推荐查询
-            </el-button>
-            <el-button :type="activePage === 'history' ? 'primary' : 'default'" @click="switchPage('history')">
-              历史记录
-            </el-button>
+            <el-button :type="activePage === 'recommend' ? 'primary' : 'default'" @click="switchPage('recommend')">推荐查询</el-button>
+            <el-button :type="activePage === 'history' ? 'primary' : 'default'" @click="switchPage('history')">历史记录</el-button>
+            <el-button :type="activePage === 'plans' ? 'primary' : 'default'" @click="switchPage('plans')">志愿方案</el-button>
           </el-button-group>
           <span class="user-text">{{ userText }}</span>
           <el-button type="info" plain @click="logout">退出登录</el-button>
@@ -372,16 +485,9 @@ onMounted(() => {
                 <el-tab-pane label="文本查询" name="text">
                   <el-form label-position="top" :model="textForm">
                     <el-form-item label="需求描述">
-                      <el-input
-                        v-model.trim="textForm.requirementText"
-                        type="textarea"
-                        :rows="7"
-                        placeholder="例如：我是江苏考生，620分，偏好计算机，想去华东地区，请给出冲刺/稳妥/保底院校建议。"
-                      />
+                      <el-input v-model.trim="textForm.requirementText" type="textarea" :rows="7" placeholder="例如：我是江苏考生，620分，偏好计算机，想去华东地区，请给出冲刺/稳妥/保底院校建议。" />
                     </el-form-item>
-                    <el-button type="primary" class="query-submit" :loading="loading" @click="queryByText">
-                      开始推荐
-                    </el-button>
+                    <el-button type="primary" class="query-submit" :loading="loading" @click="queryByText">开始推荐</el-button>
                   </el-form>
                 </el-tab-pane>
 
@@ -392,27 +498,15 @@ onMounted(() => {
                     </el-form-item>
                     <el-form-item label="省份">
                       <el-select v-model="scoreForm.province" placeholder="请选择" style="width: 100%;">
-                        <el-option
-                          v-for="province in provinces"
-                          :key="province"
-                          :label="province"
-                          :value="province"
-                        />
+                        <el-option v-for="province in provinces" :key="province" :label="province" :value="province" />
                       </el-select>
                     </el-form-item>
                     <el-form-item label="科类">
                       <el-select v-model="scoreForm.subjectType" placeholder="请选择" style="width: 100%;">
-                        <el-option
-                          v-for="opt in SUBJECT_OPTIONS"
-                          :key="opt.value"
-                          :label="opt.label"
-                          :value="opt.value"
-                        />
+                        <el-option v-for="opt in SUBJECT_OPTIONS" :key="opt.value" :label="opt.label" :value="opt.value" />
                       </el-select>
                     </el-form-item>
-                    <el-button type="primary" class="query-submit" :loading="loading" @click="queryByScore">
-                      开始推荐
-                    </el-button>
+                    <el-button type="primary" class="query-submit" :loading="loading" @click="queryByScore">开始推荐</el-button>
                   </el-form>
                 </el-tab-pane>
               </el-tabs>
@@ -422,61 +516,76 @@ onMounted(() => {
           </el-col>
 
           <el-col :xs="24" :lg="16">
-            <RecommendationResult
-              :loading="loading"
-              :grouped="grouped"
-              :summary="resultSummary"
-              :ai-summary="aiSummary"
-            />
+            <RecommendationResult :loading="loading" :grouped="grouped" :summary="resultSummary" :ai-summary="aiSummary" :rank-meta="latestRankMeta" :show-save-action="true" :save-disabled="!canSavePlan" @save-plan="openSavePlanDialog" />
           </el-col>
         </el-row>
       </el-main>
 
-      <el-main v-else class="app-main">
+      <el-main v-else-if="activePage === 'history'" class="app-main">
         <HistoryView :records="historyRecords" :loading="historyLoading" @refresh="loadHistory" @view="openHistoryResult" />
+      </el-main>
+
+      <el-main v-else class="app-main">
+        <ApplicationPlanView :records="planRecords" :loading="planLoading" @refresh="loadPlans" @view="openPlanDetail" />
       </el-main>
     </el-container>
 
-    <el-dialog
-      v-model="historyDialogVisible"
-      title="历史结果"
-      width="80%"
-      top="4vh"
-      destroy-on-close
-    >
+    <el-dialog v-model="saveDialogVisible" title="保存志愿方案" width="420px" destroy-on-close>
+      <el-form label-position="top" :model="saveForm">
+        <el-form-item label="方案名称" required>
+          <el-input v-model.trim="saveForm.planName" maxlength="50" placeholder="请输入方案名称" show-word-limit />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="saveDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="saveSubmitting" @click="savePlan">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="historyDialogVisible" title="历史结果" width="80%" top="4vh" destroy-on-close>
       <el-skeleton :loading="historyDetailLoading" animated>
         <template #template>
           <el-skeleton-item variant="h1" style="width: 50%;" />
           <el-skeleton-item variant="text" style="margin-top: 8px;" />
           <el-skeleton-item variant="text" />
         </template>
-
         <template #default>
           <div v-if="historyDetail" class="history-detail-meta">
             <el-descriptions :column="1" border>
-              <el-descriptions-item label="查询时间">
-                {{ formatDateTime(historyDetail.createdAt) }}
-              </el-descriptions-item>
-              <el-descriptions-item label="查询类型">
-                {{ queryTypeLabel(historyDetail.queryType) }}
-              </el-descriptions-item>
-              <el-descriptions-item label="查询内容">
-                {{ historyDetail.queryContent }}
-              </el-descriptions-item>
+              <el-descriptions-item label="查询时间">{{ formatDateTime(historyDetail.createdAt) }}</el-descriptions-item>
+              <el-descriptions-item label="查询类型">{{ queryTypeLabel(historyDetail.queryType) }}</el-descriptions-item>
+              <el-descriptions-item label="查询内容">{{ historyDetail.queryContent }}</el-descriptions-item>
             </el-descriptions>
           </div>
-
-          <RecommendationResult
-            v-if="historyHasResult"
-            :loading="false"
-            :grouped="historyGrouped"
-            :summary="historySummary"
-            :ai-summary="historyAiSummary"
-          />
-
+          <RecommendationResult v-if="historyHasResult" :loading="false" :grouped="historyGrouped" :summary="historySummary" :ai-summary="historyAiSummary" />
           <el-card v-else shadow="never" class="history-raw-card">
             <template #header>原始结果</template>
             <pre class="history-raw">{{ historyResultJson || "暂无可展示结果" }}</pre>
+          </el-card>
+        </template>
+      </el-skeleton>
+    </el-dialog>
+
+    <el-dialog v-model="planDialogVisible" title="方案详情" width="80%" top="4vh" destroy-on-close>
+      <el-skeleton :loading="planDetailLoading" animated>
+        <template #template>
+          <el-skeleton-item variant="h1" style="width: 50%;" />
+          <el-skeleton-item variant="text" style="margin-top: 8px;" />
+          <el-skeleton-item variant="text" />
+        </template>
+        <template #default>
+          <div v-if="planDetail" class="history-detail-meta">
+            <el-descriptions :column="1" border>
+              <el-descriptions-item label="方案名称">{{ planDetail.planName }}</el-descriptions-item>
+              <el-descriptions-item label="来源类型">{{ sourceTypeLabel(planDetail.sourceType) }}</el-descriptions-item>
+              <el-descriptions-item label="创建时间">{{ formatDateTime(planDetail.createdAt) }}</el-descriptions-item>
+              <el-descriptions-item label="来源内容">{{ planDetail.sourceQuery }}</el-descriptions-item>
+            </el-descriptions>
+          </div>
+          <RecommendationResult v-if="planHasResult" :loading="false" :grouped="planGrouped" :summary="planSummary" :ai-summary="planAiSummary" />
+          <el-card v-else shadow="never" class="history-raw-card">
+            <template #header>原始结果</template>
+            <pre class="history-raw">{{ planResultJson || "暂无可展示结果" }}</pre>
           </el-card>
         </template>
       </el-skeleton>

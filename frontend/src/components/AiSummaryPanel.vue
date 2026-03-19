@@ -2,14 +2,8 @@
 import { computed } from "vue";
 
 const props = defineProps({
-  aiSummary: {
-    type: String,
-    default: ""
-  },
-  summary: {
-    type: String,
-    default: ""
-  }
+  aiSummary: { type: String, default: "" },
+  summary: { type: String, default: "" }
 });
 
 const displaySummary = computed(() => props.aiSummary || props.summary || "");

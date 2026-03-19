@@ -23,6 +23,17 @@ CREATE TABLE IF NOT EXISTS admission_cutoff (
   INDEX idx_cutoff_query (province, subject_type, admission_year)
 );
 
+CREATE TABLE IF NOT EXISTS score_rank_mapping (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  mapping_year INT NOT NULL,
+  province VARCHAR(64) NOT NULL,
+  subject_type VARCHAR(16) NOT NULL,
+  score INT NOT NULL,
+  rank_value INT NOT NULL,
+  UNIQUE KEY uk_rank_mapping (mapping_year, province, subject_type, score),
+  INDEX idx_rank_mapping_lookup (province, subject_type, mapping_year, score)
+);
+
 CREATE TABLE IF NOT EXISTS users (
   id BIGINT PRIMARY KEY AUTO_INCREMENT,
   username VARCHAR(64) NOT NULL UNIQUE,
@@ -43,4 +54,17 @@ CREATE TABLE IF NOT EXISTS recommendation_log (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_log_user FOREIGN KEY (user_id) REFERENCES users(id),
   INDEX idx_log_user_created (user_id, created_at)
+);
+
+CREATE TABLE IF NOT EXISTS application_plan (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  user_id BIGINT NOT NULL,
+  plan_name VARCHAR(128) NOT NULL,
+  source_type VARCHAR(16) NOT NULL,
+  source_query TEXT NOT NULL,
+  result_json LONGTEXT NOT NULL,
+  ai_summary TEXT NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_plan_user FOREIGN KEY (user_id) REFERENCES users(id),
+  INDEX idx_plan_user_created (user_id, created_at)
 );

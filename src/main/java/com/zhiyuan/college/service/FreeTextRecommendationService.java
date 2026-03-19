@@ -8,12 +8,11 @@ import com.zhiyuan.college.model.dto.ParsedRequirement;
 import com.zhiyuan.college.model.dto.RecommendationItemResponse;
 import com.zhiyuan.college.model.dto.RecommendationRequest;
 import com.zhiyuan.college.model.entity.UserAccount;
-import com.zhiyuan.college.model.enums.StrategyType;
 import com.zhiyuan.college.model.enums.SubjectType;
 import com.zhiyuan.college.security.UserContext;
+import com.zhiyuan.college.service.RecommendationPolicyService.RecommendationDecision;
 import com.zhiyuan.college.service.auth.AuthService;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -26,17 +25,23 @@ public class FreeTextRecommendationService {
 
     private final AiRequirementParserService parserService;
     private final AdmissionCutoffMapper admissionCutoffMapper;
+    private final ScoreRankMappingService scoreRankMappingService;
+    private final RecommendationPolicyService recommendationPolicyService;
     private final AiExplanationService aiExplanationService;
     private final AiAdviceSummaryService aiAdviceSummaryService;
     private final AuthService authService;
 
     public FreeTextRecommendationService(AiRequirementParserService parserService,
                                          AdmissionCutoffMapper admissionCutoffMapper,
+                                         ScoreRankMappingService scoreRankMappingService,
+                                         RecommendationPolicyService recommendationPolicyService,
                                          AiExplanationService aiExplanationService,
                                          AiAdviceSummaryService aiAdviceSummaryService,
                                          AuthService authService) {
         this.parserService = parserService;
         this.admissionCutoffMapper = admissionCutoffMapper;
+        this.scoreRankMappingService = scoreRankMappingService;
+        this.recommendationPolicyService = recommendationPolicyService;
         this.aiExplanationService = aiExplanationService;
         this.aiAdviceSummaryService = aiAdviceSummaryService;
         this.authService = authService;
@@ -72,6 +77,10 @@ public class FreeTextRecommendationService {
         }
 
         List<AdmissionCutoffWithUniversity> cutoffs = loadCandidateCutoffs(parsed);
+        Integer userRank = scoreRankMappingService.resolveUserRank(
+                parsed.getCandidateProvince(),
+                parsed.getSubjectType().getDbValue(),
+                parsed.getScore());
 
         if (cutoffs.isEmpty()) {
             String finalAdvice = "当前条件下暂无可推荐院校数据，建议放宽地区或科类条件后重试。";
@@ -93,42 +102,32 @@ public class FreeTextRecommendationService {
                 continue;
             }
 
-            Integer gap = null;
-            Integer probability = null;
-            String strategy = null;
-
-            if (parsed.getScore() != null) {
-                gap = parsed.getScore() - cutoff.getCutoffScore();
-                StrategyType computed = classify(gap);
-                if (computed == null) {
-                    continue;
-                }
-                if (parsed.getStrategy() != null && parsed.getStrategy() != computed) {
-                    continue;
-                }
-                probability = estimateProbability(gap);
-                strategy = computed.name();
+            RecommendationDecision decision = recommendationPolicyService.evaluate(parsed.getScore(), userRank, cutoff);
+            if (decision == null) {
+                continue;
+            }
+            if (parsed.getStrategy() != null && parsed.getStrategy() != decision.strategy()) {
+                continue;
             }
 
             result.add(new RecommendationItemResponse(
                     cutoff.getUniversityName(),
                     cutoff.getCutoffScore(),
-                    gap,
-                    probability,
-                    strategy,
+                    decision.scoreGap(),
+                    decision.userRank(),
+                    decision.minRank(),
+                    decision.rankGap(),
+                    decision.admissionProbability(),
+                    decision.recommendationBasis(),
+                    decision.strategy().name(),
                     null
             ));
         }
 
         if (parsed.getScore() != null) {
-            result.sort(Comparator
-                    .comparing(RecommendationItemResponse::getAdmissionProbability, Comparator.nullsLast(Integer::compareTo)).reversed()
-                    .thenComparing(RecommendationItemResponse::getScoreGap, Comparator.nullsLast(Integer::compareTo)).reversed()
-                    .thenComparing(RecommendationItemResponse::getUniversityName));
+            result.sort(recommendationPolicyService.recommendationComparator());
         } else {
-            result.sort(Comparator
-                    .comparing(RecommendationItemResponse::getCutoffScore, Comparator.nullsLast(Integer::compareTo)).reversed()
-                    .thenComparing(RecommendationItemResponse::getUniversityName));
+            result.sort(recommendationPolicyService.recommendationComparator());
         }
 
         boolean hasMissingInfo = parsed.getScore() == null
@@ -149,7 +148,7 @@ public class FreeTextRecommendationService {
             aiReq.setProvince(parsed.getCandidateProvince());
             aiReq.setSubjectType(parsed.getSubjectType() == null ? SubjectType.PHYSICS : parsed.getSubjectType());
             aiExplanationService.enrichItems(aiReq, result);
-            summary = aiExplanationService.buildSummary(aiReq, result.size());
+            summary = aiExplanationService.buildSummary(aiReq, result.size(), userRank, hasRankBasedItem(result));
             hasAiExplanation = result.stream().anyMatch(item ->
                     item.getExplanation() != null && !item.getExplanation().isBlank());
         } else {
@@ -189,27 +188,7 @@ public class FreeTextRecommendationService {
                 + "。请按冲稳保梯度组合志愿，并核对招生章程、科目限制和近三年位次。系统建议：" + summary;
     }
 
-    private StrategyType classify(int gap) {
-        if (gap >= -10 && gap <= 5) {
-            return StrategyType.RUSH;
-        }
-        if (gap >= 6 && gap <= 20) {
-            return StrategyType.SAFE;
-        }
-        if (gap >= 21) {
-            return StrategyType.GUARANTEE;
-        }
-        return null;
-    }
-
-    private int estimateProbability(int gap) {
-        int base = 50 + gap * 2;
-        if (gap < 0) {
-            base = 40 + gap;
-        }
-        if (base < 5) {
-            return 5;
-        }
-        return Math.min(base, 99);
+    private boolean hasRankBasedItem(List<RecommendationItemResponse> items) {
+        return items.stream().anyMatch(item -> "RANK".equals(item.getRecommendationBasis()));
     }
 }

@@ -12,6 +12,11 @@ INSERT INTO admission_cutoff (university_id, admission_year, province, subject_t
 (1, 2025, '浙江', '历史', 650, 4200),
 (2, 2025, '浙江', '历史', 618, 21000);
 
+INSERT INTO score_rank_mapping (mapping_year, province, subject_type, score, rank_value) VALUES
+(2025, '浙江', '物理', 620, 26000),
+(2025, '浙江', '物理', 630, 22000),
+(2025, '浙江', '物理', 610, 31000);
+
 INSERT INTO users (id, username, password, score, subject_type, exam_province) VALUES
 (1, 'testuser', '123456', NULL, NULL, NULL);
 INSERT INTO users (id, username, password, score, subject_type, exam_province) VALUES

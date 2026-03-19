@@ -1,17 +1,6 @@
 <script setup>
 import { formatDateTime, queryTypeLabel, queryTypeTag } from "../utils/recommendation";
-
-defineProps({
-  records: {
-    type: Array,
-    default: () => []
-  },
-  loading: {
-    type: Boolean,
-    default: false
-  }
-});
-
+defineProps({ records: { type: Array, default: () => [] }, loading: { type: Boolean, default: false } });
 defineEmits(["refresh", "view"]);
 </script>
 
@@ -30,9 +19,7 @@ defineEmits(["refresh", "view"]);
       </el-table-column>
       <el-table-column label="查询类型" width="120">
         <template #default="scope">
-          <el-tag :type="queryTypeTag(scope.row.queryType)" effect="light">
-            {{ queryTypeLabel(scope.row.queryType) }}
-          </el-tag>
+          <el-tag :type="queryTypeTag(scope.row.queryType)" effect="light">{{ queryTypeLabel(scope.row.queryType) }}</el-tag>
         </template>
       </el-table-column>
       <el-table-column prop="queryContent" label="查询内容" min-width="320" show-overflow-tooltip />

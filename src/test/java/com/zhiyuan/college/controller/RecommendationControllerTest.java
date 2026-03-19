@@ -7,7 +7,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.nio.charset.StandardCharsets;
 import java.util.Comparator;
+import java.util.Map;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -57,7 +59,58 @@ class RecommendationControllerTest {
     }
 
     @Test
+    void recommend_shouldUseRankWhenRankMappingExists() throws Exception {
+        String token = loginAndGetToken("testuser", "123456", 620, "PHYSICS", "浙江");
+        JsonNode meta = fetchMeta();
+        String requestJson = objectMapper.writeValueAsString(Map.of(
+                "score", 620,
+                "province", meta.get("provinces").get(0).asText(),
+                "subjectType", "PHYSICS"
+        ));
+
+        MvcResult result = mockMvc.perform(post("/api/recommendations")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(requestJson))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        JsonNode response = objectMapper.readTree(result.getResponse().getContentAsString());
+        Assertions.assertEquals(26000, response.get("userRank").asInt());
+        Assertions.assertEquals("RANK", response.get("safe").get(0).get("recommendationBasis").asText());
+        Assertions.assertEquals(26000, response.get("safe").get(0).get("userRank").asInt());
+        Assertions.assertEquals(28000, response.get("safe").get(0).get("minRank").asInt());
+        Assertions.assertEquals(2000, response.get("safe").get(0).get("rankGap").asInt());
+    }
+
+    @Test
+    void recommend_shouldReturnEmptyWhenRankMappingMissing() throws Exception {
+        String token = loginAndGetToken("freshuser", "123456", 620, "HISTORY", "浙江");
+        JsonNode meta = fetchMeta();
+        String requestJson = objectMapper.writeValueAsString(Map.of(
+                "score", 620,
+                "province", meta.get("provinces").get(0).asText(),
+                "subjectType", "HISTORY"
+        ));
+
+        MvcResult result = mockMvc.perform(post("/api/recommendations")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(requestJson))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        JsonNode response = objectMapper.readTree(result.getResponse().getContentAsString());
+        Assertions.assertTrue(response.get("userRank").isNull());
+        Assertions.assertEquals(0, response.get("rush").size());
+        Assertions.assertEquals(0, response.get("safe").size());
+        Assertions.assertEquals(0, response.get("guarantee").size());
+    }
+
+    @Test
     void history_shouldSaveAndQueryCurrentUserOnly() throws Exception {
+        jdbcTemplate.update("DELETE FROM recommendation_log");
+
         String token1 = loginAndGetToken("testuser", "123456", 620, "PHYSICS", "浙江");
         String token2 = loginAndGetToken("freshuser", "123456", 610, "HISTORY", "浙江");
         JsonNode meta = fetchMeta();
@@ -228,11 +281,65 @@ class RecommendationControllerTest {
                 .andExpect(status().isBadRequest());
     }
 
+    @Test
+    void plans_shouldSaveListAndQueryCurrentUserOnly() throws Exception {
+        jdbcTemplate.update("DELETE FROM application_plan");
+
+        String token1 = loginAndGetToken("testuser", "123456", 620, "PHYSICS", "娴欐睙");
+        String token2 = loginAndGetToken("freshuser", "123456", 610, "HISTORY", "娴欐睙");
+
+        String requestJson = """
+                {
+                  "planName": "绋冲Ε鏂规",
+                  "sourceType": "score",
+                  "sourceQuery": "鍒嗘暟:620, 鐪佷唤:娴欐睙, 绉戠被:PHYSICS",
+                  "resultJson": "{\\"summary\\":\\"AI鎬荤粨\\",\\"safe\\":[]}",
+                  "aiSummary": "AI鎬荤粨"
+                }
+                """;
+
+        MvcResult saveResult = mockMvc.perform(post("/api/plans")
+                        .header("Authorization", "Bearer " + token1)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(requestJson))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.planName").value("绋冲Ε鏂规"))
+                .andExpect(jsonPath("$.sourceType").value("score"))
+                .andExpect(jsonPath("$.aiSummary").value("AI鎬荤粨"))
+                .andReturn();
+
+        Long planId = objectMapper.readTree(saveResult.getResponse().getContentAsString()).get("id").asLong();
+
+        mockMvc.perform(get("/api/plans")
+                        .header("Authorization", "Bearer " + token1))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].id").value(planId))
+                .andExpect(jsonPath("$[0].planName").value("绋冲Ε鏂规"))
+                .andExpect(jsonPath("$[0].sourceType").value("score"));
+
+        MvcResult emptyResult = mockMvc.perform(get("/api/plans")
+                        .header("Authorization", "Bearer " + token2))
+                .andExpect(status().isOk())
+                .andReturn();
+        Assertions.assertEquals(0, objectMapper.readTree(emptyResult.getResponse().getContentAsString()).size());
+
+        mockMvc.perform(get("/api/plans/" + planId)
+                        .header("Authorization", "Bearer " + token1))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(planId))
+                .andExpect(jsonPath("$.resultJson").isNotEmpty())
+                .andExpect(jsonPath("$.aiSummary").value("AI鎬荤粨"));
+
+        mockMvc.perform(get("/api/plans/" + planId)
+                        .header("Authorization", "Bearer " + token2))
+                .andExpect(status().isNotFound());
+    }
+
     private JsonNode fetchMeta() throws Exception {
         MvcResult result = mockMvc.perform(get("/api/meta/options"))
                 .andExpect(status().isOk())
                 .andReturn();
-        return objectMapper.readTree(result.getResponse().getContentAsString());
+        return objectMapper.readTree(result.getResponse().getContentAsString(StandardCharsets.UTF_8));
     }
 
     private String loginAndGetToken(String username, String password, Integer score, String subjectType, String examProvince) throws Exception {

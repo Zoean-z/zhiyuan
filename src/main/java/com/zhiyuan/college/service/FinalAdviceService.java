@@ -79,7 +79,7 @@ public class FinalAdviceService {
                 : "你关注的院校有：" + String.join("、", new ArrayList<>(preferred)) + "。";
 
         return "最终填报建议（" + strategyCn + "策略）：" +
-                "建议以" + request.getProvince() + resolvedRequest.getSubjectType().getDisplayName() + "类分数线为基准，" +
+                "建议以" + request.getProvince() + resolvedRequest.getSubjectType().getDisplayName() + "类近年录取位次为依据，" +
                 "按“冲-稳-保”梯度组合志愿。" +
                 schoolText +
                 preferredText +

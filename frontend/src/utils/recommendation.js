@@ -40,10 +40,18 @@ export function normalizeItem(item, fallbackStrategy) {
   const strategy = normalizeStrategy(
     pickValue(item, ["strategy", "strategyType", "type"]) || fallbackStrategy
   );
+  const recommendationBasis = pickValue(item, ["recommendationBasis", "basis"]);
+  const userRank = pickValue(item, ["userRank"]);
+  const minRank = pickValue(item, ["minRank", "minimumRank"]);
+  const rankGap = pickValue(item, ["rankGap"]);
   return {
     universityName: pickValue(item, ["universityName", "schoolName", "name"]) || "未知院校",
     cutoffScore: pickValue(item, ["cutoffScore", "cutoff", "lastYearCutoff"]),
     scoreGap: pickValue(item, ["scoreGap", "gap", "difference"]),
+    userRank,
+    minRank,
+    rankGap,
+    recommendationBasis,
     admissionProbability: pickValue(item, ["admissionProbability", "probability", "chance"]),
     strategy
   };
@@ -94,8 +102,20 @@ export function queryTypeLabel(type) {
   return type === "score" ? "分数查询" : type === "text" ? "文本查询" : "未知";
 }
 
+export function sourceTypeLabel(type) {
+  return type === "score" ? "分数查询" : type === "text" ? "文本查询" : "未知";
+}
+
 export function queryTypeTag(type) {
   return type === "score" ? "success" : type === "text" ? "warning" : "info";
+}
+
+export function sourceTypeTag(type) {
+  return type === "score" ? "success" : type === "text" ? "warning" : "info";
+}
+
+export function subjectTypeLabel(type) {
+  return SUBJECT_OPTIONS.find((item) => item.value === type)?.label || type || "-";
 }
 
 export function formatDateTime(value) {
