@@ -9,10 +9,18 @@ const props = defineProps({
   showAddAction: { type: Boolean, default: false }
 });
 
-const emit = defineEmits(["add"]);
+const emit = defineEmits(["add", "view-detail"]);
 const model = computed(() => normalizeItem(props.item, props.strategy));
 const resolvedStrategyLabel = computed(() => strategyLabel(model.value.strategy));
 const resolvedStrategyType = computed(() => strategyTagType(model.value.strategy));
+const isDirectAddMode = computed(() => model.value.recommendationMode === "MAJOR_FIRST" || !!model.value.majorName);
+const actionLabel = computed(() => {
+  if (!isDirectAddMode.value) {
+    return "查看专业";
+  }
+  return props.added ? "已加入" : "加入方案";
+});
+const actionDisabled = computed(() => isDirectAddMode.value && props.added);
 const showRankMetric = computed(() =>
   model.value.recommendationBasis === "RANK"
   || model.value.minRank != null
@@ -24,9 +32,7 @@ const schoolTags = computed(() => {
   if (model.value.universityProvince) {
     list.push(model.value.universityProvince);
   }
-  if (model.value.universityTier) {
-    list.push(model.value.universityTier);
-  }
+  (Array.isArray(model.value.schoolTags) ? model.value.schoolTags : []).forEach((item) => list.push(item));
   if (model.value.universityTags) {
     String(model.value.universityTags)
       .split(/[、,，\s]+/)
@@ -34,8 +40,16 @@ const schoolTags = computed(() => {
       .filter(Boolean)
       .forEach((item) => list.push(item));
   }
-  return Array.from(new Set(list)).slice(0, 3);
+  return Array.from(new Set(list.filter((item) => item !== "普通"))).slice(0, 5);
 });
+
+function handleAction() {
+  if (isDirectAddMode.value) {
+    emit("add", props.item, props.strategy);
+    return;
+  }
+  emit("view-detail", props.item, props.strategy);
+}
 </script>
 
 <template>
@@ -57,8 +71,8 @@ const schoolTags = computed(() => {
       <div v-if="showScoreMetric" class="meta-row"><span>分差</span><strong>{{ model.scoreGap ?? "-" }}</strong></div>
     </div>
     <div v-if="showAddAction" class="university-card__footer">
-      <el-button type="primary" plain :disabled="added" @click="emit('add', item, strategy)">
-        {{ added ? "已加入" : "加入方案" }}
+      <el-button type="primary" plain :disabled="actionDisabled" @click="handleAction">
+        {{ actionLabel }}
       </el-button>
     </div>
   </el-card>

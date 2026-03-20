@@ -3,6 +3,7 @@ import { computed, ref } from "vue";
 import AiSummaryPanel from "./AiSummaryPanel.vue";
 import UniversityCard from "./UniversityCard.vue";
 import { buildPlanItemKey } from "../utils/recommendation";
+import { UI_TEXT } from "../utils/ui";
 
 const props = defineProps({
   loading: { type: Boolean, default: false },
@@ -16,7 +17,7 @@ const props = defineProps({
   selectedPlanKeys: { type: Array, default: () => [] }
 });
 
-const emit = defineEmits(["add-item"]);
+const emit = defineEmits(["add-item", "view-school-detail"]);
 const activeTab = ref("rush");
 const rushList = computed(() => (Array.isArray(props.grouped?.rush) ? props.grouped.rush : []));
 const safeList = computed(() => (Array.isArray(props.grouped?.safe) ? props.grouped.safe : []));
@@ -127,9 +128,10 @@ function isItemAdded(item, strategy) {
                   :show-add-action="showAddAction"
                   :added="isItemAdded(item, 'rush')"
                   @add="emit('add-item', item, 'rush')"
+                  @view-detail="emit('view-school-detail', item, 'rush')"
                 />
               </div>
-              <el-empty v-else :description="'暂无冲刺' + resultTargetText" :image-size="90" />
+              <el-empty v-else :description="UI_TEXT.empty.noRush + resultTargetText" :image-size="90" />
             </el-tab-pane>
 
             <el-tab-pane :label="'稳妥 (' + safeList.length + ')'" name="safe">
@@ -142,9 +144,10 @@ function isItemAdded(item, strategy) {
                   :show-add-action="showAddAction"
                   :added="isItemAdded(item, 'safe')"
                   @add="emit('add-item', item, 'safe')"
+                  @view-detail="emit('view-school-detail', item, 'safe')"
                 />
               </div>
-              <el-empty v-else :description="'暂无稳妥' + resultTargetText" :image-size="90" />
+              <el-empty v-else :description="UI_TEXT.empty.noSafe + resultTargetText" :image-size="90" />
             </el-tab-pane>
 
             <el-tab-pane :label="'保底 (' + guaranteeList.length + ')'" name="guarantee">
@@ -157,15 +160,16 @@ function isItemAdded(item, strategy) {
                   :show-add-action="showAddAction"
                   :added="isItemAdded(item, 'guarantee')"
                   @add="emit('add-item', item, 'guarantee')"
+                  @view-detail="emit('view-school-detail', item, 'guarantee')"
                 />
               </div>
-              <el-empty v-else :description="'暂无保底' + resultTargetText" :image-size="90" />
+              <el-empty v-else :description="UI_TEXT.empty.noGuarantee + resultTargetText" :image-size="90" />
             </el-tab-pane>
           </el-tabs>
 
           <el-empty
             v-if="!hasAnyData"
-            :description="'暂无推荐数据，请先发起' + (resolvedRecommendationMode === 'MAJOR_FIRST' ? '专业优先' : '学校优先') + '查询。'"
+            :description="UI_TEXT.empty.recommendation + '，请先发起' + (resolvedRecommendationMode === 'MAJOR_FIRST' ? '专业优先' : '学校优先') + '查询。'"
             :image-size="100"
           />
         </template>

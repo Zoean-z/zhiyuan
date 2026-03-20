@@ -176,3 +176,146 @@ npm run build
 - 把前端构建进一步接入 Maven 打包流程
 - 为志愿方案增加删除/重命名
 - 为方案保存添加更细的前端校验
+
+---
+
+## 最近补充修改：学校层次标签改为多标签并存
+
+### 目标
+
+把原本单一的学校层次表示方式，调整为可并存标签方式，用于更准确表示：
+
+- `985`
+- `211`
+- `双一流`
+
+要求是三类标签可以同时存在，普通院校则三个标签均为 false。
+
+### 后端实现
+
+学校相关返回结构新增并使用：
+
+- `is985`
+- `is211`
+- `isDoubleFirstClass`
+- `schoolTags`
+
+实现要点：
+
+- 保留了原有 `tier / universityTier` 字段用于兼容旧代码和旧数据
+- 推荐结果返回时，额外携带三个布尔字段和 `schoolTags`
+- 学校优先、专业优先推荐结果都已兼容新字段
+- 自由文本推荐中 `schoolLevels` 的筛选逻辑改为基于布尔标签判断
+- “普通”学校按 `is985=false` 且 `is211=false` 且 `isDoubleFirstClass=false` 处理
+
+兼容处理：
+
+- 当前查询层仍可通过旧 `tier` 数据推导新布尔标签
+- 初始化数据和测试数据也已补齐布尔字段
+- 保证旧字段未删除、项目仍可正常运行
+
+### 前端实现
+
+推荐结果卡片的学校标签展示已调整为支持同时展示多个标签：
+
+- 同一学校可同时显示 `985`
+- 同一学校可同时显示 `211`
+- 同一学校可同时显示 `双一流`
+
+实现要点：
+
+- 前端优先读取后端返回的 `is985 / is211 / isDoubleFirstClass / schoolTags`
+- 如果读取到旧数据，则仍可根据 `universityTier` 做兼容推导
+- 学校优先、专业优先、历史结果、方案详情都可正常展示多标签
+
+### 本次涉及的主要文件
+
+#### 后端
+
+- `sql/schema.sql`
+- `sql/data.sql`
+- `src/test/resources/schema-h2.sql`
+- `src/test/resources/data-h2.sql`
+- `src/main/java/com/zhiyuan/college/model/entity/University.java`
+- `src/main/java/com/zhiyuan/college/model/dto/AdmissionCutoffWithUniversity.java`
+- `src/main/java/com/zhiyuan/college/model/dto/RecommendationItemResponse.java`
+- `src/main/java/com/zhiyuan/college/mapper/AdmissionCutoffMapper.java`
+- `src/main/java/com/zhiyuan/college/mapper/MajorAdmissionCutoffMapper.java`
+- `src/main/java/com/zhiyuan/college/service/RecommendationService.java`
+- `src/main/java/com/zhiyuan/college/service/FreeTextRecommendationService.java`
+- `src/main/java/com/zhiyuan/college/util/UniversityTagUtils.java`
+- `src/test/java/com/zhiyuan/college/controller/RecommendationControllerTest.java`
+
+#### 前端
+
+- `frontend/src/utils/recommendation.js`
+- `frontend/src/components/UniversityCard.vue`
+- `frontend/src/App.vue`
+
+### 验证结果
+
+- `.\mvnw.cmd test -q` 通过
+- `cd frontend && npm run build` 通过
+
+## 最近补充修改：前端错误提示中文化与常用提示统一
+
+### 目标
+
+统一当前前端用户可见的错误、成功、失败、空状态提示文案，避免直接向用户暴露英文异常和技术错误。
+
+### 实现内容
+
+新增轻量提示与错误处理工具：
+
+- `frontend/src/utils/ui.js`
+
+统一处理内容包括：
+
+- 请求状态码错误中文化
+  - `400` → 请求参数有误
+  - `401` → 登录状态已失效，请重新登录
+  - `403` → 无权限执行该操作
+  - `404` → 请求资源不存在
+  - `500` → 服务器异常，请稍后重试
+- 网络异常中文化
+  - 网络连接异常，请检查网络后重试
+- 超时中文化
+  - 请求超时，请稍后重试
+- 未知异常兜底
+  - 操作失败，请稍后重试
+  - 系统开小差了，请稍后重试
+
+### 前端改动要点
+
+- `App.vue` 中的请求入口增加了统一错误映射与超时处理
+- 登录、分数推荐、文本推荐、保存方案等常见入口增加了最小表单校验提示
+- 常见成功提示已统一，例如：
+  - 加入方案成功
+  - 保存方案成功
+  - 删除历史记录成功
+  - 删除方案成功
+- 常见失败提示已统一，例如：
+  - 查询推荐结果失败，请稍后重试
+  - 保存方案失败，请稍后重试
+  - 删除历史记录失败，请稍后重试
+  - 删除方案失败，请稍后重试
+- 常见空状态提示已统一，例如：
+  - 暂无历史记录
+  - 暂无志愿方案
+  - 当前方案为空
+  - 暂无推荐结果
+  - 暂无 AI 总结
+
+### 本次涉及的主要文件
+
+- `frontend/src/utils/ui.js`
+- `frontend/src/App.vue`
+- `frontend/src/components/HistoryView.vue`
+- `frontend/src/components/ApplicationPlanView.vue`
+- `frontend/src/components/CurrentPlanPanel.vue`
+- `frontend/src/components/RecommendationResult.vue`
+- `frontend/src/components/AiSummaryPanel.vue`
+
+### 验证结果
+
+- `cd frontend && npm run build` 通过

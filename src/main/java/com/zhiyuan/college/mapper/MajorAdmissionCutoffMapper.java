@@ -1,6 +1,7 @@
 package com.zhiyuan.college.mapper;
 
 import com.zhiyuan.college.model.dto.AdmissionCutoffWithUniversity;
+import com.zhiyuan.college.model.dto.SchoolMajorItemResponse;
 import java.util.List;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
@@ -14,6 +15,9 @@ public interface MajorAdmissionCutoffMapper {
                    m.major_name AS majorName,
                    u.province AS universityProvince,
                    u.tier AS universityTier,
+                   CASE WHEN u.tier = '985' THEN TRUE ELSE FALSE END AS is985,
+                   CASE WHEN u.tier IN ('985', '211') THEN TRUE ELSE FALSE END AS is211,
+                   CASE WHEN u.tier IN ('985', '211', '双一流') THEN TRUE ELSE FALSE END AS isDoubleFirstClass,
                    u.tags AS universityTags,
                    m.admission_year AS admissionYear,
                    m.province,
@@ -61,4 +65,29 @@ public interface MajorAdmissionCutoffMapper {
     List<String> findMajorSuggestions(@Param("keyword") String keyword,
                                       @Param("province") String province,
                                       @Param("subjectType") String subjectType);
+
+    @Select("""
+            SELECT m.major_name AS majorName,
+                   m.cutoff_score AS cutoffScore,
+                   m.min_rank AS minRank
+            FROM major_admission_cutoff m
+            WHERE m.university_id = #{universityId}
+              AND m.province = #{province}
+              AND m.subject_type = #{subjectType}
+              AND m.admission_year = (
+                SELECT MAX(m2.admission_year)
+                FROM major_admission_cutoff m2
+                WHERE m2.province = #{province}
+                  AND m2.subject_type = #{subjectType}
+              )
+            ORDER BY
+              CASE WHEN m.cutoff_score IS NULL THEN 1 ELSE 0 END,
+              m.cutoff_score DESC,
+              CASE WHEN m.min_rank IS NULL THEN 1 ELSE 0 END,
+              m.min_rank ASC,
+              m.major_name ASC
+            """)
+    List<SchoolMajorItemResponse> findLatestMajorsByUniversityIdAndProvinceAndSubject(@Param("universityId") Long universityId,
+                                                                                       @Param("province") String province,
+                                                                                       @Param("subjectType") String subjectType);
 }

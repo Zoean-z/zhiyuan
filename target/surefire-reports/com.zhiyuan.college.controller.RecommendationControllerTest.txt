@@ -1,4 +1,4 @@
 -------------------------------------------------------------------------------
 Test set: com.zhiyuan.college.controller.RecommendationControllerTest
 -------------------------------------------------------------------------------
-Tests run: 23, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 8.152 s -- in com.zhiyuan.college.controller.RecommendationControllerTest
+Tests run: 26, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 4.390 s -- in com.zhiyuan.college.controller.RecommendationControllerTest

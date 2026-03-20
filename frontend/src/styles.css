@@ -100,6 +100,23 @@ body {
 .summary-panel .summary-text { white-space: pre-wrap; line-height: 1.7; color: #334155; }
 .history-detail-meta { margin-bottom: 12px; }
 .history-raw { margin: 0; white-space: pre-wrap; word-break: break-all; font-size: 12px; color: #334155; line-height: 1.6; }
+.school-detail-drawer__body { display: flex; flex-direction: column; gap: 16px; }
+.school-detail-drawer__hero { padding: 16px; border: 1px solid var(--border); border-radius: 14px; background: linear-gradient(180deg, #f8fbff 0%, #ffffff 100%); }
+.school-detail-drawer__title-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.school-detail-drawer__name { margin: 0; font-size: 22px; line-height: 1.3; }
+.school-detail-drawer__province { margin-top: 6px; color: var(--muted); font-size: 14px; }
+.school-detail-drawer__tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.school-detail-drawer__intro { margin-top: 12px; color: #334155; line-height: 1.7; }
+.school-detail-drawer__section { border: 1px solid var(--border); border-radius: 14px; padding: 16px; }
+.school-detail-drawer__section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.school-detail-drawer__count { color: var(--muted); font-size: 13px; }
+.school-detail-drawer__major-list { display: flex; flex-direction: column; gap: 10px; }
+.school-detail-drawer__major-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px; border: 1px solid var(--border); border-radius: 12px; background: #fbfdff; }
+.school-detail-drawer__major-main { min-width: 0; }
+.school-detail-drawer__major-name { font-weight: 600; line-height: 1.5; }
+.school-detail-drawer__major-meta { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 6px; color: var(--muted); font-size: 13px; }
+.school-detail-drawer__footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; }
+.school-detail-drawer__footer-text { color: var(--muted); font-size: 13px; }
 
 @media (max-width: 1200px) { .cards-grid { grid-template-columns: 1fr; } }
 @media (max-width: 760px) {
@@ -109,4 +126,5 @@ body {
   .recognized-grid { grid-template-columns: 1fr; }
   .current-plan-card__header, .current-plan-item { flex-direction: column; }
   .current-plan-card__actions, .current-plan-item__side { width: 100%; justify-content: space-between; }
+  .school-detail-drawer__section-head, .school-detail-drawer__footer, .school-detail-drawer__major-item { flex-direction: column; align-items: flex-start; }
 }

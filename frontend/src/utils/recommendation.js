@@ -41,6 +41,55 @@ export function normalizeStrategy(value) {
   return "safe";
 }
 
+function splitTags(value) {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item || "").trim()).filter(Boolean);
+  }
+  if (typeof value === "string") {
+    return value
+      .split(/[、,，\s]+/)
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+  return [];
+}
+
+function inferTagFlag(explicitValue, tier, schoolTags, expectedTag, tierMatches) {
+  if (explicitValue !== null && explicitValue !== undefined) {
+    return Boolean(explicitValue);
+  }
+  if (schoolTags.includes(expectedTag)) {
+    return true;
+  }
+  return tierMatches.includes(String(tier || "").trim());
+}
+
+export function normalizeSchoolTags(item) {
+  const tier = pickValue(item, ["universityTier", "tier"]);
+  const schoolTags = splitTags(pickValue(item, ["schoolTags"]));
+  const is985 = inferTagFlag(pickValue(item, ["is985"]), tier, schoolTags, "985", ["985"]);
+  const is211 = inferTagFlag(pickValue(item, ["is211"]), tier, schoolTags, "211", ["985", "211"]);
+  const isDoubleFirstClass = inferTagFlag(
+    pickValue(item, ["isDoubleFirstClass"]),
+    tier,
+    schoolTags,
+    "双一流",
+    ["985", "211", "双一流"]
+  );
+
+  const normalized = [];
+  if (is985) normalized.push("985");
+  if (is211) normalized.push("211");
+  if (isDoubleFirstClass) normalized.push("双一流");
+  schoolTags.forEach((tag) => {
+    if (tag !== "普通" && !normalized.includes(tag)) {
+      normalized.push(tag);
+    }
+  });
+
+  return { is985, is211, isDoubleFirstClass, schoolTags: normalized };
+}
+
 export function normalizeItem(item, fallbackStrategy) {
   const strategy = normalizeStrategy(
     pickValue(item, ["strategy", "strategyType", "type"]) || fallbackStrategy
@@ -50,12 +99,18 @@ export function normalizeItem(item, fallbackStrategy) {
   const userRank = pickValue(item, ["userRank"]);
   const minRank = pickValue(item, ["minRank", "minimumRank"]);
   const rankGap = pickValue(item, ["rankGap"]);
+  const schoolTagModel = normalizeSchoolTags(item);
   return {
     recommendationMode,
+    universityId: pickValue(item, ["universityId", "schoolId", "id"]),
     universityName: pickValue(item, ["universityName", "schoolName", "name"]) || "未知院校",
     majorName: pickValue(item, ["majorName", "major", "specialtyName"]) || "",
     universityProvince: pickValue(item, ["universityProvince", "province"]),
     universityTier: pickValue(item, ["universityTier", "tier"]),
+    is985: schoolTagModel.is985,
+    is211: schoolTagModel.is211,
+    isDoubleFirstClass: schoolTagModel.isDoubleFirstClass,
+    schoolTags: schoolTagModel.schoolTags,
     universityTags: pickValue(item, ["universityTags", "tags"]),
     cutoffScore: pickValue(item, ["cutoffScore", "cutoff", "lastYearCutoff"]),
     scoreGap: pickValue(item, ["scoreGap", "gap", "difference"]),
@@ -72,6 +127,7 @@ export function buildPlanItemKey(item, fallbackStrategy) {
   const model = normalizeItem(item, fallbackStrategy);
   return [
     model.recommendationMode || "SCHOOL_FIRST",
+    model.universityId ?? "",
     String(model.universityName || "").trim().toLowerCase(),
     String(model.majorName || "").trim().toLowerCase(),
     model.strategy || normalizeStrategy(fallbackStrategy)

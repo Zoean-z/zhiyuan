@@ -8,6 +8,7 @@ import com.zhiyuan.college.model.dto.RecommendationRequest;
 import com.zhiyuan.college.model.dto.RecommendationResponse;
 import com.zhiyuan.college.model.enums.RecommendationMode;
 import com.zhiyuan.college.service.RecommendationPolicyService.RecommendationDecision;
+import com.zhiyuan.college.util.UniversityTagUtils;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -76,10 +77,19 @@ public class RecommendationService {
             }
             RecommendationItemResponse item = new RecommendationItemResponse(
                     RecommendationMode.SCHOOL_FIRST,
+                    cutoff.getUniversityId(),
                     cutoff.getUniversityName(),
                     null,
                     cutoff.getUniversityProvince(),
                     cutoff.getUniversityTier(),
+                    cutoff.getIs985(),
+                    cutoff.getIs211(),
+                    cutoff.getIsDoubleFirstClass(),
+                    UniversityTagUtils.buildSchoolTags(
+                            cutoff.getIs985(),
+                            cutoff.getIs211(),
+                            cutoff.getIsDoubleFirstClass(),
+                            cutoff.getUniversityTier()),
                     cutoff.getUniversityTags(),
                     cutoff.getCutoffScore(),
                     decision.scoreGap(),
@@ -145,10 +155,19 @@ public class RecommendationService {
             }
             RecommendationItemResponse item = new RecommendationItemResponse(
                     RecommendationMode.MAJOR_FIRST,
+                    cutoff.getUniversityId(),
                     cutoff.getUniversityName(),
                     cutoff.getMajorName(),
                     cutoff.getUniversityProvince(),
                     cutoff.getUniversityTier(),
+                    cutoff.getIs985(),
+                    cutoff.getIs211(),
+                    cutoff.getIsDoubleFirstClass(),
+                    UniversityTagUtils.buildSchoolTags(
+                            cutoff.getIs985(),
+                            cutoff.getIs211(),
+                            cutoff.getIsDoubleFirstClass(),
+                            cutoff.getUniversityTier()),
                     cutoff.getUniversityTags(),
                     cutoff.getCutoffScore(),
                     decision.scoreGap(),

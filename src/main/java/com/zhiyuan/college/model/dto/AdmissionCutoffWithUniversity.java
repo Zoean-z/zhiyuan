@@ -8,6 +8,9 @@ public class AdmissionCutoffWithUniversity {
     private String majorName;
     private String universityProvince;
     private String universityTier;
+    private Boolean is985;
+    private Boolean is211;
+    private Boolean isDoubleFirstClass;
     private String universityTags;
     private Integer admissionYear;
     private String province;
@@ -61,6 +64,30 @@ public class AdmissionCutoffWithUniversity {
 
     public void setUniversityTier(String universityTier) {
         this.universityTier = universityTier;
+    }
+
+    public Boolean getIs985() {
+        return is985;
+    }
+
+    public void setIs985(Boolean is985) {
+        this.is985 = is985;
+    }
+
+    public Boolean getIs211() {
+        return is211;
+    }
+
+    public void setIs211(Boolean is211) {
+        this.is211 = is211;
+    }
+
+    public Boolean getIsDoubleFirstClass() {
+        return isDoubleFirstClass;
+    }
+
+    public void setIsDoubleFirstClass(Boolean isDoubleFirstClass) {
+        this.isDoubleFirstClass = isDoubleFirstClass;
     }
 
     public String getUniversityTags() {

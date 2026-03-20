@@ -2,6 +2,7 @@ package com.zhiyuan.college.controller;
 
 import com.zhiyuan.college.mapper.AdmissionCutoffMapper;
 import com.zhiyuan.college.mapper.MajorAdmissionCutoffMapper;
+import com.zhiyuan.college.mapper.UniversityMapper;
 import com.zhiyuan.college.model.dto.FinalAdviceRequest;
 import com.zhiyuan.college.model.dto.FinalAdviceResponse;
 import com.zhiyuan.college.model.dto.FreeTextRecommendationRequest;
@@ -9,17 +10,20 @@ import com.zhiyuan.college.model.dto.FreeTextRecommendationResponse;
 import com.zhiyuan.college.model.dto.MetaOptionsResponse;
 import com.zhiyuan.college.model.dto.RecommendationRequest;
 import com.zhiyuan.college.model.dto.RecommendationResponse;
+import com.zhiyuan.college.model.dto.SchoolDetailResponse;
 import com.zhiyuan.college.model.entity.UserAccount;
 import com.zhiyuan.college.model.enums.SubjectType;
 import com.zhiyuan.college.service.FinalAdviceService;
 import com.zhiyuan.college.service.FreeTextRecommendationService;
 import com.zhiyuan.college.service.HistoryService;
 import com.zhiyuan.college.service.RecommendationService;
+import com.zhiyuan.college.service.SchoolDetailService;
 import com.zhiyuan.college.security.UserContext;
 import jakarta.validation.Valid;
 import java.util.Arrays;
 import java.util.List;
 import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -37,6 +41,7 @@ public class RecommendationController {
     private final FreeTextRecommendationService freeTextRecommendationService;
     private final AdmissionCutoffMapper admissionCutoffMapper;
     private final MajorAdmissionCutoffMapper majorAdmissionCutoffMapper;
+    private final SchoolDetailService schoolDetailService;
     private final HistoryService historyService;
 
     public RecommendationController(RecommendationService recommendationService,
@@ -44,12 +49,14 @@ public class RecommendationController {
                                     FreeTextRecommendationService freeTextRecommendationService,
                                     AdmissionCutoffMapper admissionCutoffMapper,
                                     MajorAdmissionCutoffMapper majorAdmissionCutoffMapper,
+                                    SchoolDetailService schoolDetailService,
                                     HistoryService historyService) {
         this.recommendationService = recommendationService;
         this.finalAdviceService = finalAdviceService;
         this.freeTextRecommendationService = freeTextRecommendationService;
         this.admissionCutoffMapper = admissionCutoffMapper;
         this.majorAdmissionCutoffMapper = majorAdmissionCutoffMapper;
+        this.schoolDetailService = schoolDetailService;
         this.historyService = historyService;
     }
 
@@ -93,6 +100,24 @@ public class RecommendationController {
                 normalizedKeyword,
                 province == null || province.isBlank() ? null : province.trim(),
                 subjectType == null ? null : subjectType.getDbValue()
+        );
+    }
+
+    @GetMapping("/recommendations/schools/{universityId}/majors")
+    public SchoolDetailResponse getSchoolDetail(@PathVariable("universityId") Long universityId,
+                                                @RequestParam("province") String province,
+                                                @RequestParam("subjectType") SubjectType subjectType) {
+        if (province == null || province.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "province is required");
+        }
+        if (subjectType == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "subjectType is required");
+        }
+
+        return schoolDetailService.getSchoolDetail(
+                universityId,
+                province.trim(),
+                subjectType.getDbValue()
         );
     }
 

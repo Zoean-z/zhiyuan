@@ -10,6 +10,7 @@ D:\Java\IntelliJIDEA\zhiyuan\src\main\java\com\zhiyuan\college\mapper\Applicatio
 D:\Java\IntelliJIDEA\zhiyuan\src\main\java\com\zhiyuan\college\mapper\MajorAdmissionCutoffMapper.java
 D:\Java\IntelliJIDEA\zhiyuan\src\main\java\com\zhiyuan\college\mapper\RecommendationLogMapper.java
 D:\Java\IntelliJIDEA\zhiyuan\src\main\java\com\zhiyuan\college\mapper\ScoreRankMappingMapper.java
+D:\Java\IntelliJIDEA\zhiyuan\src\main\java\com\zhiyuan\college\mapper\UniversityMapper.java
 D:\Java\IntelliJIDEA\zhiyuan\src\main\java\com\zhiyuan\college\mapper\UserAccountMapper.java
 D:\Java\IntelliJIDEA\zhiyuan\src\main\java\com\zhiyuan\college\model\dto\AdmissionCutoffWithUniversity.java
 D:\Java\IntelliJIDEA\zhiyuan\src\main\java\com\zhiyuan\college\model\dto\ApplicationPlanCreateRequest.java
@@ -28,6 +29,8 @@ D:\Java\IntelliJIDEA\zhiyuan\src\main\java\com\zhiyuan\college\model\dto\ParsedR
 D:\Java\IntelliJIDEA\zhiyuan\src\main\java\com\zhiyuan\college\model\dto\RecommendationItemResponse.java
 D:\Java\IntelliJIDEA\zhiyuan\src\main\java\com\zhiyuan\college\model\dto\RecommendationRequest.java
 D:\Java\IntelliJIDEA\zhiyuan\src\main\java\com\zhiyuan\college\model\dto\RecommendationResponse.java
+D:\Java\IntelliJIDEA\zhiyuan\src\main\java\com\zhiyuan\college\model\dto\SchoolDetailResponse.java
+D:\Java\IntelliJIDEA\zhiyuan\src\main\java\com\zhiyuan\college\model\dto\SchoolMajorItemResponse.java
 D:\Java\IntelliJIDEA\zhiyuan\src\main\java\com\zhiyuan\college\model\entity\AdmissionCutoff.java
 D:\Java\IntelliJIDEA\zhiyuan\src\main\java\com\zhiyuan\college\model\entity\ApplicationPlan.java
 D:\Java\IntelliJIDEA\zhiyuan\src\main\java\com\zhiyuan\college\model\entity\RecommendationLog.java
@@ -51,4 +54,6 @@ D:\Java\IntelliJIDEA\zhiyuan\src\main\java\com\zhiyuan\college\service\QwenAiCli
 D:\Java\IntelliJIDEA\zhiyuan\src\main\java\com\zhiyuan\college\service\RecommendationHintService.java
 D:\Java\IntelliJIDEA\zhiyuan\src\main\java\com\zhiyuan\college\service\RecommendationPolicyService.java
 D:\Java\IntelliJIDEA\zhiyuan\src\main\java\com\zhiyuan\college\service\RecommendationService.java
+D:\Java\IntelliJIDEA\zhiyuan\src\main\java\com\zhiyuan\college\service\SchoolDetailService.java
 D:\Java\IntelliJIDEA\zhiyuan\src\main\java\com\zhiyuan\college\service\ScoreRankMappingService.java
+D:\Java\IntelliJIDEA\zhiyuan\src\main\java\com\zhiyuan\college\util\UniversityTagUtils.java

@@ -12,6 +12,7 @@ import com.zhiyuan.college.model.enums.SubjectType;
 import com.zhiyuan.college.model.enums.StrategyType;
 import com.zhiyuan.college.security.UserContext;
 import com.zhiyuan.college.service.auth.AuthService;
+import com.zhiyuan.college.util.UniversityTagUtils;
 import java.util.ArrayList;
 import java.util.List;
 import org.springframework.http.HttpStatus;
@@ -185,10 +186,13 @@ public class FreeTextRecommendationService {
         if (parsed.getSchoolLevels().isEmpty()) {
             return true;
         }
-        String tier = item.getUniversityTier() == null ? "" : item.getUniversityTier();
-        String tags = item.getUniversityTags() == null ? "" : item.getUniversityTags();
         for (String level : parsed.getSchoolLevels()) {
-            if (tier.contains(level) || tags.contains(level)) {
+            if (UniversityTagUtils.matchesSchoolLevel(
+                    level,
+                    item.getIs985(),
+                    item.getIs211(),
+                    item.getIsDoubleFirstClass(),
+                    item.getUniversityTier())) {
                 return true;
             }
         }

@@ -6,6 +6,7 @@ import CurrentPlanPanel from "./components/CurrentPlanPanel.vue";
 import HistoryView from "./components/HistoryView.vue";
 import RecognizedConditionsPanel from "./components/RecognizedConditionsPanel.vue";
 import RecommendationResult from "./components/RecommendationResult.vue";
+import SchoolDetailDrawer from "./components/SchoolDetailDrawer.vue";
 import {
   RECOMMENDATION_MODE_OPTIONS,
   SUBJECT_OPTIONS,
@@ -22,6 +23,7 @@ import {
   sourceTypeLabel,
   subjectTypeLabel
 } from "./utils/recommendation";
+import { UI_TEXT, createHttpError, normalizeUserError } from "./utils/ui";
 
 const auth = ref(readStoredAuth());
 const activePage = ref("recommend");
@@ -37,6 +39,7 @@ const latestResult = ref(null);
 const latestSourceType = ref("");
 const latestSourceQuery = ref("");
 const latestRankMeta = ref(null);
+const latestQueryContext = ref(null);
 
 const historyLoading = ref(false);
 const historyRecords = ref([]);
@@ -68,6 +71,11 @@ const saveForm = reactive({ planName: "" });
 const majorSuggestionLoading = ref(false);
 const majorSuggestions = ref([]);
 const currentPlanItems = ref([]);
+const schoolDetailVisible = ref(false);
+const schoolDetailLoading = ref(false);
+const schoolDetail = ref(null);
+const schoolDetailMajors = ref([]);
+const schoolDetailSourceItem = ref(null);
 
 const loginForm = reactive({ username: "", password: "", score: "", subjectType: "", examProvince: "" });
 const scoreForm = reactive({ score: "", province: "", subjectType: "", recommendationMode: "SCHOOL_FIRST", majorKeyword: "" });
@@ -85,20 +93,79 @@ const canSavePlan = computed(() => currentPlanItems.value.length > 0);
 const selectedPlanKeys = computed(() => currentPlanItems.value.map((item) => item.planKey));
 const textParsedRequirement = computed(() => latestSourceType.value === "text" ? latestResult.value?.parsed || null : null);
 
-async function apiFetch(url, options) {
-  const response = await fetch(url, options);
-  const isJson = response.headers.get("content-type")?.includes("application/json");
-  const data = isJson ? await response.json() : null;
-  if (!response.ok) {
-    throw new Error(data?.message || "请求失败");
+async function apiFetch(url, options = {}) {
+  const { timeoutMs = 15000, ...fetchOptions } = options;
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, { ...fetchOptions, signal: controller.signal });
+    const isJson = response.headers.get("content-type")?.includes("application/json");
+    const data = isJson ? await response.json() : null;
+    if (!response.ok) {
+      throw createHttpError(response, data, UI_TEXT.common.requestFailed);
+    }
+    return data;
+  } catch (ex) {
+    if (ex?.name === "AbortError") {
+      throw new Error(UI_TEXT.common.timeout);
+    }
+    throw ex;
+  } finally {
+    window.clearTimeout(timeoutId);
   }
-  return data;
+}
+
+function resolveErrorMessage(ex, fallbackMessage = UI_TEXT.common.operationFailed) {
+  return normalizeUserError(ex, fallbackMessage);
+}
+
+function applyError(ex, fallbackMessage, options = {}) {
+  const { notify = false } = options;
+  const message = resolveErrorMessage(ex, fallbackMessage);
+  error.value = message;
+  if (notify) {
+    ElMessage.error(message);
+  }
+  return message;
+}
+
+function validateLoginForm() {
+  if (!loginForm.username.trim()) {
+    return UI_TEXT.form.usernameRequired;
+  }
+  if (!loginForm.password) {
+    return UI_TEXT.form.passwordRequired;
+  }
+  return "";
+}
+
+function validateScoreForm() {
+  if (!scoreForm.recommendationMode) {
+    return UI_TEXT.form.recommendationModeRequired;
+  }
+  if (scoreForm.score === "" || Number.isNaN(Number(scoreForm.score))) {
+    return UI_TEXT.form.scoreRequired;
+  }
+  if (!scoreForm.province) {
+    return UI_TEXT.form.provinceRequired;
+  }
+  if (!scoreForm.subjectType) {
+    return UI_TEXT.form.subjectTypeRequired;
+  }
+  if (scoreForm.recommendationMode === "MAJOR_FIRST" && !scoreForm.majorKeyword.trim()) {
+    return UI_TEXT.form.majorRequired;
+  }
+  return "";
+}
+
+function validateTextForm() {
+  return textForm.requirementText.trim() ? "" : UI_TEXT.form.requirementTextRequired;
 }
 
 function getAuthHeaders(extraHeaders) {
   const token = auth.value?.token;
   if (!token) {
-    throw new Error("请先登录");
+    throw new Error(UI_TEXT.common.loginRequired);
   }
   return {
     ...(extraHeaders || {}),
@@ -117,22 +184,98 @@ function resetResults() {
   latestSourceType.value = "";
   latestSourceQuery.value = "";
   latestRankMeta.value = null;
+  latestQueryContext.value = null;
+  resetSchoolDetail();
+}
+
+function resetSchoolDetail() {
+  schoolDetailVisible.value = false;
+  schoolDetailLoading.value = false;
+  schoolDetail.value = null;
+  schoolDetailMajors.value = [];
+  schoolDetailSourceItem.value = null;
 }
 
 function addCurrentPlanItem(item, strategy) {
-  const normalized = normalizeItem(item, strategy);
-  const planKey = buildPlanItemKey(item, strategy);
-  if (currentPlanItems.value.some((entry) => entry.planKey === planKey)) {
+  const addedCount = appendCurrentPlanItems([{ ...item, strategy }]);
+  if (!addedCount) {
     ElMessage.warning("该条结果已加入当前方案");
     return;
   }
-  currentPlanItems.value = [...currentPlanItems.value, { ...normalized, planKey }];
-  ElMessage.success("已加入当前方案");
+  ElMessage.success(UI_TEXT.success.addToPlan);
+}
+
+function appendCurrentPlanItems(items) {
+  const nextItems = [...currentPlanItems.value];
+  let addedCount = 0;
+
+  (items || []).forEach((item) => {
+    const normalized = normalizeItem(item, item?.strategy);
+    const planKey = buildPlanItemKey({ ...item, ...normalized }, normalized.strategy);
+    if (nextItems.some((entry) => entry.planKey === planKey)) {
+      return;
+    }
+    nextItems.push({ ...normalized, planKey });
+    addedCount += 1;
+  });
+
+  if (addedCount > 0) {
+    currentPlanItems.value = nextItems;
+  }
+
+  return addedCount;
+}
+
+function buildSelectedMajorPlanItem(major) {
+  const sourceItem = schoolDetailSourceItem.value ? normalizeItem(schoolDetailSourceItem.value) : null;
+  const queryContext = latestQueryContext.value || {};
+  if (!sourceItem) {
+    return null;
+  }
+
+  return {
+    recommendationMode: sourceItem.recommendationMode || "SCHOOL_FIRST",
+    universityId: sourceItem.universityId,
+    universityName: sourceItem.universityName,
+    majorName: major?.majorName || "",
+    universityProvince: sourceItem.universityProvince,
+    universityTier: sourceItem.universityTier,
+    is985: sourceItem.is985,
+    is211: sourceItem.is211,
+    isDoubleFirstClass: sourceItem.isDoubleFirstClass,
+    schoolTags: Array.isArray(sourceItem.schoolTags) ? sourceItem.schoolTags : [],
+    universityTags: sourceItem.universityTags || null,
+    cutoffScore: major?.cutoffScore ?? null,
+    scoreGap: queryContext.score == null || major?.cutoffScore == null ? null : queryContext.score - major.cutoffScore,
+    userRank: sourceItem.userRank ?? null,
+    minRank: major?.minRank ?? null,
+    rankGap: sourceItem.userRank == null || major?.minRank == null ? null : major.minRank - sourceItem.userRank,
+    recommendationBasis: sourceItem.recommendationBasis,
+    admissionProbability: sourceItem.admissionProbability,
+    strategy: sourceItem.strategy
+  };
+}
+
+function addSelectedMajorsToPlan(majors) {
+  if (!Array.isArray(majors) || !majors.length) {
+    ElMessage.warning(UI_TEXT.form.selectMajorRequired);
+    return;
+  }
+
+  const items = majors.map((major) => buildSelectedMajorPlanItem(major)).filter(Boolean);
+  const addedCount = appendCurrentPlanItems(items);
+  if (!addedCount) {
+    ElMessage.warning("所选专业已在当前方案中");
+    return;
+  }
+
+  ElMessage.success(`加入方案成功，共 ${addedCount} 个专业`);
+  resetSchoolDetail();
 }
 
 function removeCurrentPlanItem(item) {
   currentPlanItems.value = currentPlanItems.value.filter((entry) => entry.planKey !== item.planKey);
-  ElMessage.success("已从当前方案移除");
+  ElMessage.success(UI_TEXT.success.removeFromPlan);
 }
 
 function clearCurrentPlan() {
@@ -140,7 +283,7 @@ function clearCurrentPlan() {
     return;
   }
   currentPlanItems.value = [];
-  ElMessage.success("当前方案已清空");
+  ElMessage.success(UI_TEXT.success.clearCurrentPlan);
 }
 
 function buildPlanPayload() {
@@ -148,10 +291,15 @@ function buildPlanPayload() {
   currentPlanItems.value.forEach((item) => {
     groups[item.strategy || "safe"].push({
       recommendationMode: item.recommendationMode,
+      universityId: item.universityId ?? null,
       universityName: item.universityName,
       majorName: item.majorName || null,
       universityProvince: item.universityProvince || null,
       universityTier: item.universityTier || null,
+      is985: item.is985 === true,
+      is211: item.is211 === true,
+      isDoubleFirstClass: item.isDoubleFirstClass === true,
+      schoolTags: Array.isArray(item.schoolTags) ? item.schoolTags : [],
       universityTags: item.universityTags || null,
       cutoffScore: item.cutoffScore,
       scoreGap: item.scoreGap,
@@ -226,7 +374,8 @@ async function loadMetaOptions() {
   try {
     const data = await apiFetch("/api/meta/options", { method: "GET" });
     provinces.value = Array.isArray(data?.provinces) ? data.provinces : [];
-  } catch {
+  } catch (ex) {
+    console.error("[loadMetaOptions]", ex);
     provinces.value = [];
   }
 }
@@ -249,15 +398,59 @@ async function loadMajorSuggestions(query) {
     }
     const data = await apiFetch(`/api/meta/major-options?${params.toString()}`, { method: "GET" });
     majorSuggestions.value = Array.isArray(data) ? data : [];
-  } catch {
+  } catch (ex) {
+    console.error("[loadMajorSuggestions]", ex);
     majorSuggestions.value = [];
   } finally {
     majorSuggestionLoading.value = false;
   }
 }
 
+async function openSchoolDetail(item, strategy) {
+  const normalized = normalizeItem(item, strategy);
+  const queryContext = latestQueryContext.value || {};
+  if (!normalized.universityId) {
+    ElMessage.warning(UI_TEXT.common.operationFailed);
+    return;
+  }
+  if (!queryContext.province || !queryContext.subjectType) {
+    ElMessage.warning(UI_TEXT.common.operationFailed);
+    return;
+  }
+
+  schoolDetailVisible.value = true;
+  schoolDetailLoading.value = true;
+  schoolDetailSourceItem.value = { ...normalized, strategy };
+  schoolDetail.value = normalized;
+  schoolDetailMajors.value = [];
+
+  try {
+    const params = new URLSearchParams({
+      province: queryContext.province,
+      subjectType: queryContext.subjectType
+    });
+    const data = await apiFetch(
+      `/api/recommendations/schools/${normalized.universityId}/majors?${params.toString()}`,
+      { method: "GET", headers: getAuthHeaders() }
+    );
+    schoolDetail.value = normalizeItem({ ...data, strategy });
+    schoolDetailMajors.value = Array.isArray(data?.majors) ? data.majors : [];
+  } catch (ex) {
+    ElMessage.error(applyError(ex, UI_TEXT.failure.loadSchoolDetail));
+    resetSchoolDetail();
+  } finally {
+    schoolDetailLoading.value = false;
+  }
+}
+
 async function login() {
   error.value = "";
+  const validationMessage = validateLoginForm();
+  if (validationMessage) {
+    error.value = validationMessage;
+    ElMessage.warning(validationMessage);
+    return;
+  }
   loading.value = true;
   try {
     const payload = { username: loginForm.username, password: loginForm.password };
@@ -276,7 +469,7 @@ async function login() {
     activePage.value = "recommend";
     fillScoreFromUser();
   } catch (ex) {
-    error.value = ex.message;
+    applyError(ex, UI_TEXT.failure.login);
   } finally {
     loading.value = false;
   }
@@ -303,9 +496,10 @@ async function logout() {
 
 async function queryByScore() {
   error.value = "";
-  if (scoreForm.recommendationMode === "MAJOR_FIRST" && !scoreForm.majorKeyword.trim()) {
-    error.value = "专业优先模式下请输入专业";
-    ElMessage.warning("专业优先模式下请输入专业");
+  const validationMessage = validateScoreForm();
+  if (validationMessage) {
+    error.value = validationMessage;
+    ElMessage.warning(validationMessage);
     return;
   }
   loading.value = true;
@@ -337,8 +531,14 @@ async function queryByScore() {
       subjectTypeLabel: subjectTypeLabel(scoreForm.subjectType),
       userRank: data?.userRank ?? null
     };
+    latestQueryContext.value = {
+      score: Number(scoreForm.score),
+      province: scoreForm.province || "",
+      subjectType: scoreForm.subjectType || "",
+      userRank: data?.userRank ?? null
+    };
   } catch (ex) {
-    error.value = ex.message;
+    applyError(ex, UI_TEXT.failure.queryRecommendation);
   } finally {
     loading.value = false;
   }
@@ -346,6 +546,12 @@ async function queryByScore() {
 
 async function queryByText() {
   error.value = "";
+  const validationMessage = validateTextForm();
+  if (validationMessage) {
+    error.value = validationMessage;
+    ElMessage.warning(validationMessage);
+    return;
+  }
   loading.value = true;
   resetResults();
   try {
@@ -371,8 +577,14 @@ async function queryByText() {
       subjectTypeLabel: subjectTypeLabel(data?.parsed?.subjectType),
       userRank: firstRanked?.userRank ?? null
     };
+    latestQueryContext.value = {
+      score: data?.parsed?.score ?? null,
+      province: data?.parsed?.candidateProvince || "",
+      subjectType: data?.parsed?.subjectType || "",
+      userRank: firstRanked?.userRank ?? null
+    };
   } catch (ex) {
-    error.value = ex.message;
+    applyError(ex, UI_TEXT.failure.queryFreeText);
   } finally {
     loading.value = false;
   }
@@ -383,7 +595,7 @@ async function loadHistory() {
   try {
     historyRecords.value = await apiFetch("/api/history", { method: "GET", headers: getAuthHeaders() });
   } catch (ex) {
-    error.value = ex.message;
+    applyError(ex, UI_TEXT.failure.loadHistory, { notify: true });
     historyRecords.value = [];
   } finally {
     historyLoading.value = false;
@@ -420,7 +632,7 @@ async function openHistoryResult(row) {
       || groupedData.guarantee[0]?.recommendationMode
       || "";
   } catch (ex) {
-    error.value = ex.message;
+    applyError(ex, UI_TEXT.failure.loadHistoryDetail, { notify: true });
     resetHistoryDialog();
   } finally {
     historyDetailLoading.value = false;
@@ -444,11 +656,10 @@ async function deleteHistoryRecord(row) {
       historyDialogVisible.value = false;
       resetHistoryDialog();
     }
-    ElMessage.success("历史记录已删除");
+    ElMessage.success(UI_TEXT.success.deleteHistory);
     await loadHistory();
   } catch (ex) {
-    error.value = ex.message;
-    ElMessage.error(ex.message || "删除历史记录失败");
+    ElMessage.error(applyError(ex, UI_TEXT.failure.deleteHistory));
   }
 }
 
@@ -457,7 +668,7 @@ async function loadPlans() {
   try {
     planRecords.value = await apiFetch("/api/plans", { method: "GET", headers: getAuthHeaders() });
   } catch (ex) {
-    error.value = ex.message;
+    applyError(ex, UI_TEXT.failure.loadPlans, { notify: true });
     planRecords.value = [];
   } finally {
     planLoading.value = false;
@@ -497,7 +708,7 @@ async function openPlanDetail(row) {
       || groupedData.guarantee[0]?.recommendationMode
       || "";
   } catch (ex) {
-    error.value = ex.message;
+    applyError(ex, UI_TEXT.failure.loadPlanDetail, { notify: true });
     resetPlanDialog();
   } finally {
     planDetailLoading.value = false;
@@ -521,17 +732,16 @@ async function deletePlan(row) {
       planDialogVisible.value = false;
       resetPlanDialog();
     }
-    ElMessage.success("志愿方案已删除");
+    ElMessage.success(UI_TEXT.success.deletePlan);
     await loadPlans();
   } catch (ex) {
-    error.value = ex.message;
-    ElMessage.error(ex.message || "删除志愿方案失败");
+    ElMessage.error(applyError(ex, UI_TEXT.failure.deletePlan));
   }
 }
 
 function openSavePlanDialog() {
   if (!currentPlanItems.value.length) {
-    ElMessage.warning("当前方案为空，请先加入条目");
+    ElMessage.warning(UI_TEXT.form.currentPlanEmpty);
     return;
   }
   saveForm.planName = "";
@@ -540,11 +750,11 @@ function openSavePlanDialog() {
 
 async function savePlan() {
   if (!saveForm.planName.trim()) {
-    ElMessage.warning("请输入方案名称");
+    ElMessage.warning(UI_TEXT.form.planNameRequired);
     return;
   }
   if (!currentPlanItems.value.length) {
-    ElMessage.warning("当前方案为空，请先加入条目");
+    ElMessage.warning(UI_TEXT.form.currentPlanEmpty);
     return;
   }
 
@@ -564,13 +774,12 @@ async function savePlan() {
     });
     saveDialogVisible.value = false;
     currentPlanItems.value = [];
-    ElMessage.success("志愿方案保存成功");
+    ElMessage.success(UI_TEXT.success.savePlan);
     if (activePage.value === "plans") {
       await loadPlans();
     }
   } catch (ex) {
-    error.value = ex.message;
-    ElMessage.error(ex.message || "保存志愿方案失败");
+    ElMessage.error(applyError(ex, UI_TEXT.failure.savePlan));
   } finally {
     saveSubmitting.value = false;
   }
@@ -754,7 +963,19 @@ watch(() => scoreForm.subjectType, () => {
           <el-col :xs="24" :lg="16">
             <div class="recommend-result-stack">
               <RecognizedConditionsPanel v-if="textParsedRequirement" :parsed="textParsedRequirement" />
-              <RecommendationResult :loading="loading" :grouped="grouped" :summary="resultSummary" :ai-summary="aiSummary" :tips="resultTips" :recommendation-mode="latestResult?.recommendationMode || latestResult?.parsed?.recommendationMode || scoreForm.recommendationMode" :rank-meta="latestRankMeta" :show-add-action="true" :selected-plan-keys="selectedPlanKeys" @add-item="addCurrentPlanItem" />
+              <RecommendationResult
+                :loading="loading"
+                :grouped="grouped"
+                :summary="resultSummary"
+                :ai-summary="aiSummary"
+                :tips="resultTips"
+                :recommendation-mode="latestResult?.recommendationMode || latestResult?.parsed?.recommendationMode || scoreForm.recommendationMode"
+                :rank-meta="latestRankMeta"
+                :show-add-action="true"
+                :selected-plan-keys="selectedPlanKeys"
+                @add-item="addCurrentPlanItem"
+                @view-school-detail="openSchoolDetail"
+              />
             </div>
           </el-col>
         </el-row>
@@ -768,6 +989,14 @@ watch(() => scoreForm.subjectType, () => {
         <ApplicationPlanView :records="planRecords" :loading="planLoading" @refresh="loadPlans" @view="openPlanDetail" @delete="deletePlan" />
       </el-main>
     </el-container>
+
+    <SchoolDetailDrawer
+      v-model="schoolDetailVisible"
+      :loading="schoolDetailLoading"
+      :school="schoolDetail"
+      :majors="schoolDetailMajors"
+      @add-selected="addSelectedMajorsToPlan"
+    />
 
     <el-dialog v-model="saveDialogVisible" title="保存志愿方案" width="420px" destroy-on-close>
       <el-form label-position="top" :model="saveForm">
@@ -799,7 +1028,7 @@ watch(() => scoreForm.subjectType, () => {
           <RecommendationResult v-if="historyHasResult" :loading="false" :grouped="historyGrouped" :summary="historySummary" :ai-summary="historyAiSummary" :tips="historyTips" :recommendation-mode="historyRecommendationMode" />
           <el-card v-else shadow="never" class="history-raw-card">
             <template #header>原始结果</template>
-            <pre class="history-raw">{{ historyResultJson || "暂无可展示结果" }}</pre>
+            <pre class="history-raw">{{ historyResultJson || UI_TEXT.common.noDisplayContent }}</pre>
           </el-card>
         </template>
       </el-skeleton>
@@ -824,7 +1053,7 @@ watch(() => scoreForm.subjectType, () => {
           <RecommendationResult v-if="planHasResult" :loading="false" :grouped="planGrouped" :summary="planSummary" :ai-summary="planAiSummary" :tips="planTips" :recommendation-mode="planRecommendationMode" />
           <el-card v-else shadow="never" class="history-raw-card">
             <template #header>原始结果</template>
-            <pre class="history-raw">{{ planResultJson || "暂无可展示结果" }}</pre>
+            <pre class="history-raw">{{ planResultJson || UI_TEXT.common.noDisplayContent }}</pre>
           </el-card>
         </template>
       </el-skeleton>

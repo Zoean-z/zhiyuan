@@ -1,6 +1,7 @@
 <script setup>
 import { computed } from "vue";
 import { strategyLabel, strategyTagType } from "../utils/recommendation";
+import { UI_TEXT } from "../utils/ui";
 
 const props = defineProps({
   items: { type: Array, default: () => [] },
@@ -40,6 +41,6 @@ const itemCount = computed(() => props.items.length);
       </div>
     </div>
 
-    <el-empty v-else description="当前方案为空，请从右侧推荐结果中加入条目" :image-size="90" />
+    <el-empty v-else :description="UI_TEXT.empty.currentPlan" :image-size="90" />
   </el-card>
 </template>

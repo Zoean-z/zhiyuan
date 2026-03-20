@@ -16,6 +16,12 @@ public class University {
 
     private String tier;
 
+    private Boolean is985;
+
+    private Boolean is211;
+
+    private Boolean isDoubleFirstClass;
+
     private String tags;
 
     public Long getId() {
@@ -48,6 +54,30 @@ public class University {
 
     public void setTier(String tier) {
         this.tier = tier;
+    }
+
+    public Boolean getIs985() {
+        return is985;
+    }
+
+    public void setIs985(Boolean is985) {
+        this.is985 = is985;
+    }
+
+    public Boolean getIs211() {
+        return is211;
+    }
+
+    public void setIs211(Boolean is211) {
+        this.is211 = is211;
+    }
+
+    public Boolean getIsDoubleFirstClass() {
+        return isDoubleFirstClass;
+    }
+
+    public void setIsDoubleFirstClass(Boolean isDoubleFirstClass) {
+        this.isDoubleFirstClass = isDoubleFirstClass;
     }
 
     public String getTags() {

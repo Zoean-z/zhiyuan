@@ -14,6 +14,7 @@ com\zhiyuan\college\model\dto\ApplicationPlanCreateRequest.class
 com\zhiyuan\college\model\dto\FinalAdviceResponse.class
 com\zhiyuan\college\model\dto\LoginRequest.class
 com\zhiyuan\college\model\dto\RecommendationResponse.class
+com\zhiyuan\college\service\SchoolDetailService.class
 com\zhiyuan\college\service\FinalAdviceService$1.class
 com\zhiyuan\college\service\FreeTextRecommendationService.class
 com\zhiyuan\college\config\WebConfig.class
@@ -28,12 +29,14 @@ com\zhiyuan\college\model\dto\FinalAdviceRequest.class
 com\zhiyuan\college\mapper\ScoreRankMappingMapper.class
 com\zhiyuan\college\service\ApplicationPlanService.class
 com\zhiyuan\college\service\RecommendationPolicyService.class
+com\zhiyuan\college\model\dto\SchoolDetailResponse.class
 com\zhiyuan\college\model\dto\RecommendationRequest.class
 com\zhiyuan\college\model\dto\ApplicationPlanDetailResponse.class
 com\zhiyuan\college\security\AuthInterceptor.class
 com\zhiyuan\college\service\ScoreRankMappingService.class
 com\zhiyuan\college\service\RecommendationService$1.class
 com\zhiyuan\college\model\enums\SubjectType.class
+com\zhiyuan\college\mapper\UniversityMapper.class
 com\zhiyuan\college\service\FreeTextRecommendationService$1.class
 com\zhiyuan\college\model\dto\MetaOptionsResponse.class
 com\zhiyuan\college\controller\RecommendationController.class
@@ -44,7 +47,9 @@ com\zhiyuan\college\mapper\UserAccountMapper.class
 com\zhiyuan\college\mapper\AdmissionCutoffMapper.class
 com\zhiyuan\college\mapper\MajorAdmissionCutoffMapper.class
 com\zhiyuan\college\model\enums\StrategyType.class
+com\zhiyuan\college\model\dto\SchoolMajorItemResponse.class
 com\zhiyuan\college\service\AiAdviceSummaryService.class
+com\zhiyuan\college\util\UniversityTagUtils.class
 com\zhiyuan\college\model\entity\ApplicationPlan.class
 com\zhiyuan\college\service\AiRequirementParserService$1.class
 com\zhiyuan\college\model\dto\FreeTextRecommendationResponse.class

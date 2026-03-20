@@ -1,5 +1,6 @@
 <script setup>
 import { computed } from "vue";
+import { UI_TEXT } from "../utils/ui";
 
 const props = defineProps({
   aiSummary: { type: String, default: "" },
@@ -26,6 +27,6 @@ const displayTips = computed(() => (Array.isArray(props.tips) ? props.tips.filte
       </ul>
     </div>
     <div v-if="displaySummary" class="summary-text">{{ displaySummary }}</div>
-    <el-empty v-else-if="!displayTips.length" description="暂无 AI 总结" :image-size="90" />
+    <el-empty v-else-if="!displayTips.length" :description="UI_TEXT.empty.aiSummary" :image-size="90" />
   </el-card>
 </template>

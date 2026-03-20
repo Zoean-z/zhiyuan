@@ -122,6 +122,30 @@ class RecommendationControllerTest {
     }
 
     @Test
+    void recommend_shouldExposeMultipleSchoolTagsFor985University() throws Exception {
+        String token = loginAndGetToken("testuser", "123456", 660, "PHYSICS", "浙江");
+        String requestJson = objectMapper.writeValueAsString(Map.of(
+                "score", 660,
+                "province", "浙江",
+                "subjectType", "PHYSICS"
+        ));
+
+        mockMvc.perform(post("/api/recommendations")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(requestJson))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.rush[0].universityName").value("浙江大学"))
+                .andExpect(jsonPath("$.rush[0].universityId").value(1))
+                .andExpect(jsonPath("$.rush[0].is985").value(true))
+                .andExpect(jsonPath("$.rush[0].is211").value(true))
+                .andExpect(jsonPath("$.rush[0].isDoubleFirstClass").value(true))
+                .andExpect(jsonPath("$.rush[0].schoolTags[0]").value("985"))
+                .andExpect(jsonPath("$.rush[0].schoolTags[1]").value("211"))
+                .andExpect(jsonPath("$.rush[0].schoolTags[2]").value("双一流"));
+    }
+
+    @Test
     void recommendMajor_shouldReturnSchoolAndMajorResults() throws Exception {
         String token = loginAndGetToken("testuser", "123456", 620, "PHYSICS", "浙江");
         JsonNode meta = fetchMeta();
@@ -144,6 +168,21 @@ class RecommendationControllerTest {
                 .andExpect(jsonPath("$.rush[0].recommendationMode").value("MAJOR_FIRST"))
                 .andExpect(jsonPath("$.safe").isArray())
                 .andExpect(jsonPath("$.guarantee").isArray());
+    }
+
+    @Test
+    void schoolDetail_shouldReturnMajorsForSelectedSchool() throws Exception {
+        String token = loginAndGetToken("testuser", "123456", 620, "PHYSICS", "娴欐睙");
+
+        mockMvc.perform(get("/api/recommendations/schools/1/majors")
+                        .header("Authorization", "Bearer " + token)
+                        .param("province", "娴欐睙")
+                        .param("subjectType", "PHYSICS"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.universityId").value(1))
+                .andExpect(jsonPath("$.schoolTags").isArray())
+                .andExpect(jsonPath("$.majors").isArray())
+                .andExpect(jsonPath("$.majors[0].majorName").isNotEmpty());
     }
 
     @Test
@@ -353,7 +392,13 @@ class RecommendationControllerTest {
                 .andExpect(jsonPath("$.parsed.provinces[0]").value("江苏"))
                 .andExpect(jsonPath("$.parsed.schoolLevels[0]").value("211"))
                 .andExpect(jsonPath("$.parsed.riskPreference").value("稳"))
-                .andExpect(jsonPath("$.recommendations").isArray());
+                .andExpect(jsonPath("$.recommendations").isArray())
+                .andExpect(jsonPath("$.recommendations[0].universityProvince").value("江苏"))
+                .andExpect(jsonPath("$.recommendations[0].is985").value(false))
+                .andExpect(jsonPath("$.recommendations[0].is211").value(true))
+                .andExpect(jsonPath("$.recommendations[0].isDoubleFirstClass").value(true))
+                .andExpect(jsonPath("$.recommendations[0].schoolTags[0]").value("211"))
+                .andExpect(jsonPath("$.recommendations[0].schoolTags[1]").value("双一流"));
     }
 
     @Test
@@ -418,6 +463,32 @@ class RecommendationControllerTest {
                 .andExpect(jsonPath("$.parsed.riskPreference").value("稳"))
                 .andExpect(jsonPath("$.recommendations").isArray())
                 .andExpect(jsonPath("$.recommendations[0].universityTags").value(org.hamcrest.Matchers.containsString("医药类")));
+    }
+
+    @Test
+    void recommendByText_shouldFilterOrdinarySchoolsUsingBooleanTags() throws Exception {
+        String token = loginAndGetToken("testuser", "123456", 620, "PHYSICS", "浙江");
+        String requestJson = """
+                {
+                  "requirementText": "推荐一些浙江的普通学校"
+                }
+                """;
+
+        MvcResult result = mockMvc.perform(post("/api/recommendations/free-text")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(requestJson))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        JsonNode response = objectMapper.readTree(result.getResponse().getContentAsString());
+        Assertions.assertTrue(response.get("recommendations").isArray());
+        Assertions.assertTrue(response.get("recommendations").size() >= 1);
+        JsonNode first = response.get("recommendations").get(0);
+        Assertions.assertFalse(first.get("is985").asBoolean());
+        Assertions.assertFalse(first.get("is211").asBoolean());
+        Assertions.assertFalse(first.get("isDoubleFirstClass").asBoolean());
+        Assertions.assertEquals(0, first.get("schoolTags").size());
     }
 
     @Test
@@ -659,4 +730,5 @@ class RecommendationControllerTest {
 
         return objectMapper.readTree(result.getResponse().getContentAsString()).get("token").asText();
     }
+
 }

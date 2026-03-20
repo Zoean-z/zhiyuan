@@ -1,5 +1,6 @@
 <script setup>
 import { formatDateTime, sourceTypeLabel, sourceTypeTag } from "../utils/recommendation";
+import { UI_TEXT } from "../utils/ui";
 defineProps({ records: { type: Array, default: () => [] }, loading: { type: Boolean, default: false } });
 defineEmits(["refresh", "view", "delete"]);
 </script>
@@ -32,6 +33,6 @@ defineEmits(["refresh", "view", "delete"]);
       </el-table-column>
     </el-table>
 
-    <el-empty v-else :image-size="100" description="暂无志愿方案" />
+    <el-empty v-else :image-size="100" :description="UI_TEXT.empty.plans" />
   </el-card>
 </template>
