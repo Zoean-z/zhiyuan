@@ -9,17 +9,20 @@ public class FreeTextRecommendationResponse {
     private String summary;
     private String finalAdvice;
     private String aiSummary;
+    private List<String> tips;
 
     public FreeTextRecommendationResponse(ParsedRequirement parsed,
                                           List<RecommendationItemResponse> recommendations,
                                           String summary,
                                           String finalAdvice,
-                                          String aiSummary) {
+                                          String aiSummary,
+                                          List<String> tips) {
         this.parsed = parsed;
         this.recommendations = recommendations;
         this.summary = summary;
         this.finalAdvice = finalAdvice;
         this.aiSummary = aiSummary;
+        this.tips = tips;
     }
 
     public ParsedRequirement getParsed() {
@@ -40,5 +43,9 @@ public class FreeTextRecommendationResponse {
 
     public String getAiSummary() {
         return aiSummary;
+    }
+
+    public List<String> getTips() {
+        return tips;
     }
 }

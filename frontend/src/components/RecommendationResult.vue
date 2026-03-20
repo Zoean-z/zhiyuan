@@ -9,6 +9,7 @@ const props = defineProps({
   grouped: { type: Object, required: true },
   aiSummary: { type: String, default: "" },
   summary: { type: String, default: "" },
+  tips: { type: Array, default: () => [] },
   recommendationMode: { type: String, default: "" },
   rankMeta: { type: Object, default: null },
   showAddAction: { type: Boolean, default: false },
@@ -65,7 +66,7 @@ function isItemAdded(item, strategy) {
   <section class="result-page">
     <el-card class="result-hero" shadow="never">
       <h2>推荐结果</h2>
-      <p>按冲刺、稳妥、保底查看推荐{{ resultTargetText }}，统一对比录取位次与位次差。</p>
+      <p>按冲刺、稳妥、保底查看推荐{{ resultTargetText }}，统一对比录取分数与位次参考。</p>
     </el-card>
 
     <el-card v-if="showRankPanel" class="rank-panel" shadow="never">
@@ -93,8 +94,6 @@ function isItemAdded(item, strategy) {
           <strong>{{ resolvedRankMeta.userRank ?? "-" }}</strong>
         </div>
       </div>
-
-
     </el-card>
 
     <el-card class="result-main" shadow="never">
@@ -120,31 +119,59 @@ function isItemAdded(item, strategy) {
           <el-tabs v-model="activeTab" class="recommend-tabs">
             <el-tab-pane :label="'冲刺 (' + rushList.length + ')'" name="rush">
               <div v-if="rushList.length" class="cards-grid">
-                <UniversityCard v-for="(item, idx) in rushList" :key="'rush-' + idx" :item="item" strategy="rush" :show-add-action="showAddAction" :added="isItemAdded(item, 'rush')" @add="emit('add-item', item, 'rush')" />
+                <UniversityCard
+                  v-for="(item, idx) in rushList"
+                  :key="'rush-' + idx"
+                  :item="item"
+                  strategy="rush"
+                  :show-add-action="showAddAction"
+                  :added="isItemAdded(item, 'rush')"
+                  @add="emit('add-item', item, 'rush')"
+                />
               </div>
               <el-empty v-else :description="'暂无冲刺' + resultTargetText" :image-size="90" />
             </el-tab-pane>
 
             <el-tab-pane :label="'稳妥 (' + safeList.length + ')'" name="safe">
               <div v-if="safeList.length" class="cards-grid">
-                <UniversityCard v-for="(item, idx) in safeList" :key="'safe-' + idx" :item="item" strategy="safe" :show-add-action="showAddAction" :added="isItemAdded(item, 'safe')" @add="emit('add-item', item, 'safe')" />
+                <UniversityCard
+                  v-for="(item, idx) in safeList"
+                  :key="'safe-' + idx"
+                  :item="item"
+                  strategy="safe"
+                  :show-add-action="showAddAction"
+                  :added="isItemAdded(item, 'safe')"
+                  @add="emit('add-item', item, 'safe')"
+                />
               </div>
               <el-empty v-else :description="'暂无稳妥' + resultTargetText" :image-size="90" />
             </el-tab-pane>
 
             <el-tab-pane :label="'保底 (' + guaranteeList.length + ')'" name="guarantee">
               <div v-if="guaranteeList.length" class="cards-grid">
-                <UniversityCard v-for="(item, idx) in guaranteeList" :key="'guarantee-' + idx" :item="item" strategy="guarantee" :show-add-action="showAddAction" :added="isItemAdded(item, 'guarantee')" @add="emit('add-item', item, 'guarantee')" />
+                <UniversityCard
+                  v-for="(item, idx) in guaranteeList"
+                  :key="'guarantee-' + idx"
+                  :item="item"
+                  strategy="guarantee"
+                  :show-add-action="showAddAction"
+                  :added="isItemAdded(item, 'guarantee')"
+                  @add="emit('add-item', item, 'guarantee')"
+                />
               </div>
               <el-empty v-else :description="'暂无保底' + resultTargetText" :image-size="90" />
             </el-tab-pane>
           </el-tabs>
 
-          <el-empty v-if="!hasAnyData" :description="'暂无推荐数据，请先发起' + (resolvedRecommendationMode === 'MAJOR_FIRST' ? '专业优先' : '学校优先') + '查询。'" :image-size="100" />
+          <el-empty
+            v-if="!hasAnyData"
+            :description="'暂无推荐数据，请先发起' + (resolvedRecommendationMode === 'MAJOR_FIRST' ? '专业优先' : '学校优先') + '查询。'"
+            :image-size="100"
+          />
         </template>
       </el-skeleton>
     </el-card>
 
-    <AiSummaryPanel :ai-summary="aiSummary" :summary="summary" />
+    <AiSummaryPanel :ai-summary="aiSummary" :summary="summary" :tips="tips" />
   </section>
 </template>

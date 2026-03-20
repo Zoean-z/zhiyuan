@@ -30,6 +30,7 @@ const loading = ref(false);
 const error = ref("");
 const resultSummary = ref("");
 const aiSummary = ref("");
+const resultTips = ref([]);
 const grouped = reactive({ rush: [], safe: [], guarantee: [] });
 const provinces = ref([]);
 const latestResult = ref(null);
@@ -46,6 +47,7 @@ const historyResultJson = ref("");
 const historyGrouped = reactive({ rush: [], safe: [], guarantee: [] });
 const historySummary = ref("");
 const historyAiSummary = ref("");
+const historyTips = ref([]);
 const historyRecommendationMode = ref("");
 
 const planLoading = ref(false);
@@ -57,6 +59,7 @@ const planResultJson = ref("");
 const planGrouped = reactive({ rush: [], safe: [], guarantee: [] });
 const planSummary = ref("");
 const planAiSummary = ref("");
+const planTips = ref([]);
 const planRecommendationMode = ref("");
 
 const saveDialogVisible = ref(false);
@@ -109,6 +112,7 @@ function resetResults() {
   grouped.guarantee = [];
   resultSummary.value = "";
   aiSummary.value = "";
+  resultTips.value = [];
   latestResult.value = null;
   latestSourceType.value = "";
   latestSourceQuery.value = "";
@@ -164,7 +168,8 @@ function buildPlanPayload() {
     safe: groups.safe,
     guarantee: groups.guarantee,
     summary: resultSummary.value || `当前方案共选择 ${currentPlanItems.value.length} 条志愿结果。`,
-    aiSummary: aiSummary.value || ""
+    aiSummary: aiSummary.value || "",
+    tips: resultTips.value
   };
 }
 
@@ -188,6 +193,7 @@ function resetHistoryDialog() {
   historyGrouped.guarantee = [];
   historySummary.value = "";
   historyAiSummary.value = "";
+  historyTips.value = [];
   historyRecommendationMode.value = "";
 }
 
@@ -199,6 +205,7 @@ function resetPlanDialog() {
   planGrouped.guarantee = [];
   planSummary.value = "";
   planAiSummary.value = "";
+  planTips.value = [];
   planRecommendationMode.value = "";
 }
 
@@ -320,6 +327,7 @@ async function queryByScore() {
     grouped.guarantee = Array.isArray(data?.guarantee) ? data.guarantee : [];
     resultSummary.value = data?.summary || "";
     aiSummary.value = data?.aiSummary || "";
+    resultTips.value = Array.isArray(data?.tips) ? data.tips : [];
     latestResult.value = data;
     latestSourceType.value = "score";
     latestSourceQuery.value = buildScoreSourceQuery();
@@ -352,6 +360,7 @@ async function queryByText() {
     grouped.guarantee = groupedData.guarantee;
     resultSummary.value = data?.summary || "";
     aiSummary.value = data?.aiSummary || "";
+    resultTips.value = Array.isArray(data?.tips) ? data.tips : [];
     latestResult.value = data;
     latestSourceType.value = "text";
     latestSourceQuery.value = textForm.requirementText.trim();
@@ -403,6 +412,7 @@ async function openHistoryResult(row) {
     historyGrouped.guarantee = groupedData.guarantee;
     historySummary.value = parsed?.summary || "";
     historyAiSummary.value = parsed?.aiSummary || "";
+    historyTips.value = Array.isArray(parsed?.tips) ? parsed.tips : [];
     historyRecommendationMode.value =
       parsed?.recommendationMode
       || groupedData.rush[0]?.recommendationMode
@@ -476,6 +486,7 @@ async function openPlanDetail(row) {
     planGrouped.safe = groupedData.safe;
     planGrouped.guarantee = groupedData.guarantee;
     planSummary.value = parsed?.summary || "";
+    planTips.value = Array.isArray(parsed?.tips) ? parsed.tips : [];
     if (!planAiSummary.value) {
       planAiSummary.value = parsed?.aiSummary || parsed?.summary || "";
     }
@@ -743,7 +754,7 @@ watch(() => scoreForm.subjectType, () => {
           <el-col :xs="24" :lg="16">
             <div class="recommend-result-stack">
               <RecognizedConditionsPanel v-if="textParsedRequirement" :parsed="textParsedRequirement" />
-              <RecommendationResult :loading="loading" :grouped="grouped" :summary="resultSummary" :ai-summary="aiSummary" :recommendation-mode="latestResult?.recommendationMode || latestResult?.parsed?.recommendationMode || scoreForm.recommendationMode" :rank-meta="latestRankMeta" :show-add-action="true" :selected-plan-keys="selectedPlanKeys" @add-item="addCurrentPlanItem" />
+              <RecommendationResult :loading="loading" :grouped="grouped" :summary="resultSummary" :ai-summary="aiSummary" :tips="resultTips" :recommendation-mode="latestResult?.recommendationMode || latestResult?.parsed?.recommendationMode || scoreForm.recommendationMode" :rank-meta="latestRankMeta" :show-add-action="true" :selected-plan-keys="selectedPlanKeys" @add-item="addCurrentPlanItem" />
             </div>
           </el-col>
         </el-row>
@@ -785,7 +796,7 @@ watch(() => scoreForm.subjectType, () => {
               <el-descriptions-item label="查询内容">{{ historyDetail.queryContent }}</el-descriptions-item>
             </el-descriptions>
           </div>
-          <RecommendationResult v-if="historyHasResult" :loading="false" :grouped="historyGrouped" :summary="historySummary" :ai-summary="historyAiSummary" :recommendation-mode="historyRecommendationMode" />
+          <RecommendationResult v-if="historyHasResult" :loading="false" :grouped="historyGrouped" :summary="historySummary" :ai-summary="historyAiSummary" :tips="historyTips" :recommendation-mode="historyRecommendationMode" />
           <el-card v-else shadow="never" class="history-raw-card">
             <template #header>原始结果</template>
             <pre class="history-raw">{{ historyResultJson || "暂无可展示结果" }}</pre>
@@ -810,7 +821,7 @@ watch(() => scoreForm.subjectType, () => {
               <el-descriptions-item label="来源内容">{{ planDetail.sourceQuery }}</el-descriptions-item>
             </el-descriptions>
           </div>
-          <RecommendationResult v-if="planHasResult" :loading="false" :grouped="planGrouped" :summary="planSummary" :ai-summary="planAiSummary" :recommendation-mode="planRecommendationMode" />
+          <RecommendationResult v-if="planHasResult" :loading="false" :grouped="planGrouped" :summary="planSummary" :ai-summary="planAiSummary" :tips="planTips" :recommendation-mode="planRecommendationMode" />
           <el-card v-else shadow="never" class="history-raw-card">
             <template #header>原始结果</template>
             <pre class="history-raw">{{ planResultJson || "暂无可展示结果" }}</pre>

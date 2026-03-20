@@ -49,5 +49,6 @@ com\zhiyuan\college\model\entity\ApplicationPlan.class
 com\zhiyuan\college\service\AiRequirementParserService$1.class
 com\zhiyuan\college\model\dto\FreeTextRecommendationResponse.class
 com\zhiyuan\college\model\dto\AdmissionCutoffWithUniversity.class
+com\zhiyuan\college\service\RecommendationHintService.class
 com\zhiyuan\college\CollegeRecommendationApplication.class
 com\zhiyuan\college\mapper\ApplicationPlanMapper.class

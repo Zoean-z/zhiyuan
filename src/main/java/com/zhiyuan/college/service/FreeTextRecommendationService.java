@@ -27,17 +27,20 @@ public class FreeTextRecommendationService {
     private final RecommendationService recommendationService;
     private final AiExplanationService aiExplanationService;
     private final AiAdviceSummaryService aiAdviceSummaryService;
+    private final RecommendationHintService recommendationHintService;
     private final AuthService authService;
 
     public FreeTextRecommendationService(AiRequirementParserService parserService,
                                          RecommendationService recommendationService,
                                          AiExplanationService aiExplanationService,
                                          AiAdviceSummaryService aiAdviceSummaryService,
+                                         RecommendationHintService recommendationHintService,
                                          AuthService authService) {
         this.parserService = parserService;
         this.recommendationService = recommendationService;
         this.aiExplanationService = aiExplanationService;
         this.aiAdviceSummaryService = aiAdviceSummaryService;
+        this.recommendationHintService = recommendationHintService;
         this.authService = authService;
     }
 
@@ -79,8 +82,9 @@ public class FreeTextRecommendationService {
         String summary = buildSummary(parsed, recommendationRequest, response.getUserRank(), result);
         String finalAdvice = buildFinalAdvice(parsed, result, summary);
         String aiSummary = aiAdviceSummaryService.summarize(summary + "\n" + finalAdvice);
+        List<String> tips = recommendationHintService.buildTips(parsed, result.size());
 
-        return new FreeTextRecommendationResponse(parsed, result, summary, finalAdvice, aiSummary);
+        return new FreeTextRecommendationResponse(parsed, result, summary, finalAdvice, aiSummary, tips);
     }
 
     private RecommendationRequest buildRecommendationRequest(ParsedRequirement parsed) {

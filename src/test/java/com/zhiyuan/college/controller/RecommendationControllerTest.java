@@ -170,6 +170,32 @@ class RecommendationControllerTest {
     }
 
     @Test
+    void recommendMajor_shouldReturnTipsWhenResultsAreFew() throws Exception {
+        String token = loginAndGetToken("freshuser", "123456", 620, "HISTORY", "浙江");
+        JsonNode meta = fetchMeta();
+        String requestJson = objectMapper.writeValueAsString(Map.of(
+                "score", 620,
+                "province", meta.get("provinces").get(0).asText(),
+                "subjectType", "HISTORY",
+                "recommendationMode", "MAJOR_FIRST",
+                "majorKeyword", "法学"
+        ));
+
+        MvcResult result = mockMvc.perform(post("/api/recommendations")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(requestJson))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        JsonNode response = objectMapper.readTree(result.getResponse().getContentAsString());
+        Assertions.assertTrue(response.get("tips").isArray());
+        Assertions.assertTrue(response.get("tips").size() >= 2);
+        Assertions.assertFalse(response.get("tips").get(0).asText().isBlank());
+        Assertions.assertFalse(response.get("tips").get(1).asText().isBlank());
+    }
+
+    @Test
     void recommendMajor_shouldRequireMajorKeyword() throws Exception {
         String token = loginAndGetToken("testuser", "123456", 620, "PHYSICS", "浙江");
         JsonNode meta = fetchMeta();
@@ -392,6 +418,30 @@ class RecommendationControllerTest {
                 .andExpect(jsonPath("$.parsed.riskPreference").value("稳"))
                 .andExpect(jsonPath("$.recommendations").isArray())
                 .andExpect(jsonPath("$.recommendations[0].universityTags").value(org.hamcrest.Matchers.containsString("医药类")));
+    }
+
+    @Test
+    void recommendByText_shouldReturnZeroResultTipsWithRelevantSuggestions() throws Exception {
+        String token = loginAndGetToken("testuser", "123456", 620, "PHYSICS", "浙江");
+        String requestJson = """
+                {
+                  "requirementText": "推荐一些北京的985师范类护理学专业，保一点"
+                }
+                """;
+
+        MvcResult result = mockMvc.perform(post("/api/recommendations/free-text")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(requestJson))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        JsonNode response = objectMapper.readTree(result.getResponse().getContentAsString());
+        Assertions.assertEquals(0, response.get("recommendations").size());
+        Assertions.assertTrue(response.get("tips").isArray());
+        Assertions.assertTrue(response.get("tips").size() >= 4);
+        Assertions.assertFalse(response.get("tips").get(0).asText().isBlank());
+        Assertions.assertFalse(response.get("tips").get(1).asText().isBlank());
     }
 
     @Test

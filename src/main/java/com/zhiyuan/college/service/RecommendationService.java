@@ -25,17 +25,20 @@ public class RecommendationService {
     private final ScoreRankMappingService scoreRankMappingService;
     private final RecommendationPolicyService recommendationPolicyService;
     private final AiExplanationService aiExplanationService;
+    private final RecommendationHintService recommendationHintService;
 
     public RecommendationService(AdmissionCutoffMapper admissionCutoffMapper,
                                  MajorAdmissionCutoffMapper majorAdmissionCutoffMapper,
                                  ScoreRankMappingService scoreRankMappingService,
                                  RecommendationPolicyService recommendationPolicyService,
-                                 AiExplanationService aiExplanationService) {
+                                 AiExplanationService aiExplanationService,
+                                 RecommendationHintService recommendationHintService) {
         this.admissionCutoffMapper = admissionCutoffMapper;
         this.majorAdmissionCutoffMapper = majorAdmissionCutoffMapper;
         this.scoreRankMappingService = scoreRankMappingService;
         this.recommendationPolicyService = recommendationPolicyService;
         this.aiExplanationService = aiExplanationService;
+        this.recommendationHintService = recommendationHintService;
     }
 
     public RecommendationResponse recommend(RecommendationRequest request) {
@@ -105,6 +108,7 @@ public class RecommendationService {
 
         int total = rush.size() + safe.size() + guarantee.size();
         String summary = aiExplanationService.buildSummary(request, total, userRank, hasRankBasedItem(rush, safe, guarantee));
+        List<String> tips = recommendationHintService.buildTips(request, total);
 
         return new RecommendationResponse(
                 UUID.randomUUID().toString(),
@@ -113,7 +117,8 @@ public class RecommendationService {
                 rush,
                 safe,
                 guarantee,
-                summary
+                summary,
+                tips
         );
     }
 
@@ -172,6 +177,7 @@ public class RecommendationService {
 
         int total = rush.size() + safe.size() + guarantee.size();
         String summary = aiExplanationService.buildSummary(request, total, userRank, hasRankBasedItem(rush, safe, guarantee));
+        List<String> tips = recommendationHintService.buildTips(request, total);
 
         return new RecommendationResponse(
                 UUID.randomUUID().toString(),
@@ -180,7 +186,8 @@ public class RecommendationService {
                 rush,
                 safe,
                 guarantee,
-                summary
+                summary,
+                tips
         );
     }
 
