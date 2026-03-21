@@ -95,7 +95,7 @@ public class AiRequirementParserService {
                 - recommendationMode: 枚举字符串，值只能是 SCHOOL_FIRST 或 MAJOR_FIRST，无法识别则为 null
                 - schoolLevels: 字符串数组，只能包含 985、211、双一流、普通
                 - schoolTypes: 字符串数组，只能包含 医药类、师范类、财经类、理工类、综合类、政法类、农林类、语言类、艺术类
-                - provinces: 字符串数组，表示目标院校地区偏好
+                - provinces: 字符串数组，表示目标院校地区偏好，如果是大范围比如华东沿海，离某个地区距离近等，则根据理解输出符合要求的省份
                 - majorKeywords: 字符串数组，表示专业关键词
                 - normalizedMajors: 字符串数组，表示标准化后的专业名称
                 - riskPreference: 字符串，只能是 冲、稳、保，无法识别则为 null

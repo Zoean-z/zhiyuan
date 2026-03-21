@@ -27,13 +27,13 @@ init-db.bat
 如果需要自定义连接参数：
 
 ```bat
-init-db.bat localhost 3306 root 1234 college_recommendation
+init-db.bat localhost 3306 root 123456 college_recommendation
 ```
 
 检查数据库连接：
 
 ```bat
-check-db.bat localhost 3306 root 1234
+check-db.bat localhost 3306 root 123456
 ```
 
 ## 后端启动

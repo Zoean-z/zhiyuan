@@ -169,7 +169,7 @@ npm run build
 
 - `.\mvnw.cmd test -q` 通过
 - `cd frontend && npm run build` 通过
-- 数据库密码当前统一为 `1234`
+- 数据库密码当前统一为 `123456`
 
 ## 后续可继续做但本次未做
 
