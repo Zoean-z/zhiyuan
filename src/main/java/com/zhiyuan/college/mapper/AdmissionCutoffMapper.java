@@ -66,4 +66,35 @@ public interface AdmissionCutoffMapper extends BaseMapper<AdmissionCutoff> {
 
     @Select("SELECT DISTINCT province FROM admission_cutoff ORDER BY province")
     List<String> findDistinctProvinces();
+
+    @Select("""
+            <script>
+            SELECT id,
+                   university_id AS universityId,
+                   admission_year AS admissionYear,
+                   province,
+                   subject_type AS subjectType,
+                   cutoff_score AS cutoffScore,
+                   min_rank AS minRank
+            FROM admission_cutoff
+            WHERE 1 = 1
+            <if test="universityId != null">
+              AND university_id = #{universityId}
+            </if>
+            <if test="province != null and province != ''">
+              AND province = #{province}
+            </if>
+            <if test="subjectType != null and subjectType != ''">
+              AND subject_type = #{subjectType}
+            </if>
+            <if test="admissionYear != null">
+              AND admission_year = #{admissionYear}
+            </if>
+            ORDER BY admission_year DESC, university_id ASC, subject_type ASC, id DESC
+            </script>
+            """)
+    List<AdmissionCutoff> findAdminList(@Param("universityId") Long universityId,
+                                        @Param("province") String province,
+                                        @Param("subjectType") String subjectType,
+                                        @Param("admissionYear") Integer admissionYear);
 }

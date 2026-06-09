@@ -30,16 +30,17 @@ public class SchoolDetailService {
 
         List<SchoolMajorItemResponse> majors = queryMajors(
                 """
-                SELECT major_name, cutoff_score, min_rank
-                FROM major_admission_cutoff
-                WHERE university_id = ?
-                  AND province = ?
-                  AND subject_type = ?
+                SELECT COALESCE(maj.name, mac.major_name) AS major_name, mac.cutoff_score, mac.min_rank
+                FROM major_admission_cutoff mac
+                LEFT JOIN major maj ON maj.id = mac.major_id
+                WHERE mac.university_id = ?
+                  AND mac.province = ?
+                  AND mac.subject_type = ?
                 ORDER BY admission_year DESC,
-                         CASE WHEN cutoff_score IS NULL THEN 1 ELSE 0 END,
-                         cutoff_score DESC,
-                         CASE WHEN min_rank IS NULL THEN 1 ELSE 0 END,
-                         min_rank ASC,
+                         CASE WHEN mac.cutoff_score IS NULL THEN 1 ELSE 0 END,
+                         mac.cutoff_score DESC,
+                         CASE WHEN mac.min_rank IS NULL THEN 1 ELSE 0 END,
+                         mac.min_rank ASC,
                          major_name ASC
                 """,
                 universityId,
@@ -50,14 +51,15 @@ public class SchoolDetailService {
         if (majors.isEmpty()) {
             majors = queryMajors(
                     """
-                    SELECT major_name, cutoff_score, min_rank
-                    FROM major_admission_cutoff
-                    WHERE university_id = ?
+                    SELECT COALESCE(maj.name, mac.major_name) AS major_name, mac.cutoff_score, mac.min_rank
+                    FROM major_admission_cutoff mac
+                    LEFT JOIN major maj ON maj.id = mac.major_id
+                    WHERE mac.university_id = ?
                     ORDER BY admission_year DESC,
-                             CASE WHEN cutoff_score IS NULL THEN 1 ELSE 0 END,
-                             cutoff_score DESC,
-                             CASE WHEN min_rank IS NULL THEN 1 ELSE 0 END,
-                             min_rank ASC,
+                             CASE WHEN mac.cutoff_score IS NULL THEN 1 ELSE 0 END,
+                             mac.cutoff_score DESC,
+                             CASE WHEN mac.min_rank IS NULL THEN 1 ELSE 0 END,
+                             mac.min_rank ASC,
                              major_name ASC
                     """,
                     universityId
@@ -80,6 +82,14 @@ public class SchoolDetailService {
                 university.getTags(),
                 majors
         );
+    }
+
+    public SchoolDetailResponse getSchoolDetailByName(String universityName, String province, String subjectType) {
+        University university = universityMapper.findByExactName(universityName == null ? null : universityName.trim());
+        if (university == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "school name not found in current dataset");
+        }
+        return getSchoolDetail(university.getId(), province, subjectType);
     }
 
     private List<SchoolMajorItemResponse> queryMajors(String sql, Object... args) {

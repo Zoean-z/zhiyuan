@@ -1,6 +1,7 @@
 package com.zhiyuan.college.config;
 
 import jakarta.validation.ConstraintViolationException;
+import jakarta.servlet.http.HttpServletRequest;
 import java.util.HashMap;
 import java.util.Map;
 import org.slf4j.Logger;
@@ -20,47 +21,61 @@ public class GlobalExceptionHandler {
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
-    public ResponseEntity<Map<String, Object>> handleValidation(MethodArgumentNotValidException ex) {
+    public ResponseEntity<Map<String, Object>> handleValidation(MethodArgumentNotValidException ex,
+                                                                HttpServletRequest request) {
         Map<String, String> details = new HashMap<>();
         for (FieldError fieldError : ex.getBindingResult().getFieldErrors()) {
             details.put(fieldError.getField(), fieldError.getDefaultMessage());
         }
-        Map<String, Object> response = new HashMap<>();
-        response.put("message", "Invalid request parameters");
+        Map<String, Object> response = baseResponse("VALIDATION_ERROR", "Invalid request parameters", request);
         response.put("details", details);
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
     }
 
     @ExceptionHandler(ConstraintViolationException.class)
-    public ResponseEntity<Map<String, String>> handleConstraint(ConstraintViolationException ex) {
-        Map<String, String> response = new HashMap<>();
-        response.put("message", ex.getMessage());
+    public ResponseEntity<Map<String, Object>> handleConstraint(ConstraintViolationException ex,
+                                                                HttpServletRequest request) {
+        Map<String, Object> response = baseResponse("CONSTRAINT_VIOLATION", ex.getMessage(), request);
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
     }
 
     @ExceptionHandler(ResponseStatusException.class)
-    public ResponseEntity<Map<String, String>> handleResponseStatus(ResponseStatusException ex) {
-        Map<String, String> response = new HashMap<>();
-        response.put("message", ex.getReason() == null ? ex.getMessage() : ex.getReason());
+    public ResponseEntity<Map<String, Object>> handleResponseStatus(ResponseStatusException ex,
+                                                                    HttpServletRequest request) {
+        Map<String, Object> response = baseResponse(
+                "REQUEST_FAILED",
+                ex.getReason() == null ? ex.getMessage() : ex.getReason(),
+                request);
         return ResponseEntity.status(ex.getStatusCode()).body(response);
     }
 
     @ExceptionHandler(NoResourceFoundException.class)
-    public ResponseEntity<Map<String, String>> handleNoResource(NoResourceFoundException ex) {
+    public ResponseEntity<Map<String, Object>> handleNoResource(NoResourceFoundException ex,
+                                                                HttpServletRequest request) {
         String resourcePath = ex.getResourcePath();
         if ("favicon.ico".equals(resourcePath) || "/favicon.ico".equals(resourcePath)) {
             return ResponseEntity.noContent().build();
         }
-        Map<String, String> response = new HashMap<>();
-        response.put("message", "Resource not found: " + resourcePath);
+        Map<String, Object> response = baseResponse("RESOURCE_NOT_FOUND", "Resource not found: " + resourcePath, request);
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response);
     }
 
     @ExceptionHandler(Exception.class)
-    public ResponseEntity<Map<String, String>> handleException(Exception ex) {
+    public ResponseEntity<Map<String, Object>> handleException(Exception ex,
+                                                               HttpServletRequest request) {
         log.error("Unhandled exception", ex);
-        Map<String, String> response = new HashMap<>();
-        response.put("message", ex.getMessage() == null ? "Internal server error" : ex.getMessage());
+        Map<String, Object> response = baseResponse(
+                "INTERNAL_SERVER_ERROR",
+                ex.getMessage() == null ? "Internal server error" : ex.getMessage(),
+                request);
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
+    }
+
+    private Map<String, Object> baseResponse(String code, String message, HttpServletRequest request) {
+        Map<String, Object> response = new HashMap<>();
+        response.put("code", code);
+        response.put("message", message);
+        response.put("requestId", request == null ? null : request.getAttribute(RequestTraceFilter.REQUEST_ID_ATTRIBUTE));
+        return response;
     }
 }

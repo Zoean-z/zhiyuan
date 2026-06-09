@@ -13,7 +13,7 @@ USE college_recommendation;
 --   AND province = '浙江'
 --   AND subject_type = '物理';
 
-LOAD DATA LOCAL INFILE 'D:/Java/IntelliJIDEA/zhiyuan/sql/score-rank-mapping-template.csv'
+LOAD DATA LOCAL INFILE 'D:/data/score-rank-mapping-template.csv'
 INTO TABLE score_rank_mapping
 CHARACTER SET utf8mb4
 FIELDS TERMINATED BY ','

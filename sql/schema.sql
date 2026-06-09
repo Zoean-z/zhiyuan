@@ -14,6 +14,19 @@ CREATE TABLE IF NOT EXISTS university (
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS major (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  name VARCHAR(120) NOT NULL,
+  category VARCHAR(64) NULL,
+  degree_type VARCHAR(64) NULL,
+  tags VARCHAR(255) NULL,
+  subject_requirement VARCHAR(255) NULL,
+  description TEXT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uk_major_name (name)
+);
+
 SET @is_985_exists = (
   SELECT COUNT(*)
   FROM INFORMATION_SCHEMA.COLUMNS
@@ -59,6 +72,7 @@ CREATE TABLE IF NOT EXISTS admission_cutoff (
 CREATE TABLE IF NOT EXISTS major_admission_cutoff (
   id BIGINT PRIMARY KEY AUTO_INCREMENT,
   university_id BIGINT NOT NULL,
+  major_id BIGINT NULL,
   major_name VARCHAR(120) NOT NULL,
   admission_year INT NOT NULL,
   province VARCHAR(64) NOT NULL,
@@ -66,8 +80,19 @@ CREATE TABLE IF NOT EXISTS major_admission_cutoff (
   cutoff_score INT NULL,
   min_rank INT NULL,
   CONSTRAINT fk_major_cutoff_university FOREIGN KEY (university_id) REFERENCES university(id),
+  CONSTRAINT fk_major_cutoff_major FOREIGN KEY (major_id) REFERENCES major(id),
   INDEX idx_major_cutoff_query (province, subject_type, admission_year, major_name)
 );
+
+SET @major_id_exists = (
+  SELECT COUNT(*)
+  FROM INFORMATION_SCHEMA.COLUMNS
+  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'major_admission_cutoff' AND COLUMN_NAME = 'major_id'
+);
+SET @sql = IF(@major_id_exists = 0, 'ALTER TABLE major_admission_cutoff ADD COLUMN major_id BIGINT NULL AFTER university_id', 'SELECT 1');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
 CREATE TABLE IF NOT EXISTS score_rank_mapping (
   id BIGINT PRIMARY KEY AUTO_INCREMENT,
@@ -87,9 +112,20 @@ CREATE TABLE IF NOT EXISTS users (
   score INT NULL,
   subject_type VARCHAR(16) NULL,
   exam_province VARCHAR(64) NULL,
+  role VARCHAR(16) NOT NULL DEFAULT 'USER',
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
+
+SET @user_role_exists = (
+  SELECT COUNT(*)
+  FROM INFORMATION_SCHEMA.COLUMNS
+  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users' AND COLUMN_NAME = 'role'
+);
+SET @sql = IF(@user_role_exists = 0, 'ALTER TABLE users ADD COLUMN role VARCHAR(16) NOT NULL DEFAULT ''USER''', 'SELECT 1');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
 
 CREATE TABLE IF NOT EXISTS recommendation_log (
   id BIGINT PRIMARY KEY AUTO_INCREMENT,
@@ -113,4 +149,91 @@ CREATE TABLE IF NOT EXISTS application_plan (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_plan_user FOREIGN KEY (user_id) REFERENCES users(id),
   INDEX idx_plan_user_created (user_id, created_at)
+);
+
+CREATE TABLE IF NOT EXISTS recommendation_task (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  user_id BIGINT NULL,
+  request_id VARCHAR(64) NOT NULL,
+  source_type VARCHAR(16) NOT NULL,
+  raw_query TEXT NOT NULL,
+  request_json LONGTEXT NULL,
+  parsed_requirement_json LONGTEXT NULL,
+  result_json LONGTEXT NULL,
+  status VARCHAR(32) NOT NULL,
+  recommendation_mode VARCHAR(32) NULL,
+  result_count INT NOT NULL DEFAULT 0,
+  duration_ms BIGINT NULL,
+  error_message TEXT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_task_user FOREIGN KEY (user_id) REFERENCES users(id),
+  UNIQUE KEY uk_task_request_id (request_id),
+  INDEX idx_task_user_created (user_id, created_at),
+  INDEX idx_task_source_created (source_type, created_at)
+);
+
+SET @task_duration_exists = (
+  SELECT COUNT(*)
+  FROM INFORMATION_SCHEMA.COLUMNS
+  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'recommendation_task' AND COLUMN_NAME = 'duration_ms'
+);
+SET @sql = IF(@task_duration_exists = 0, 'ALTER TABLE recommendation_task ADD COLUMN duration_ms BIGINT NULL AFTER result_count', 'SELECT 1');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @task_error_exists = (
+  SELECT COUNT(*)
+  FROM INFORMATION_SCHEMA.COLUMNS
+  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'recommendation_task' AND COLUMN_NAME = 'error_message'
+);
+SET @sql = IF(@task_error_exists = 0, 'ALTER TABLE recommendation_task ADD COLUMN error_message TEXT NULL AFTER duration_ms', 'SELECT 1');
+PREPARE stmt FROM @sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+CREATE TABLE IF NOT EXISTS ai_parse_log (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  task_id BIGINT NULL,
+  request_id VARCHAR(64) NOT NULL,
+  provider VARCHAR(64) NULL,
+  model_name VARCHAR(64) NULL,
+  parse_mode VARCHAR(32) NOT NULL,
+  success_flag TINYINT(1) NOT NULL DEFAULT 1,
+  requirement_text TEXT NOT NULL,
+  raw_response LONGTEXT NULL,
+  parsed_json LONGTEXT NULL,
+  error_message TEXT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_ai_parse_task FOREIGN KEY (task_id) REFERENCES recommendation_task(id),
+  INDEX idx_ai_parse_task_created (task_id, created_at),
+  INDEX idx_ai_parse_request_created (request_id, created_at)
+);
+
+CREATE TABLE IF NOT EXISTS agent_conversation (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  user_id BIGINT NOT NULL,
+  title VARCHAR(128) NOT NULL,
+  status VARCHAR(16) NOT NULL DEFAULT 'ACTIVE',
+  last_message_at TIMESTAMP NULL,
+  message_count INT NOT NULL DEFAULT 0,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_agent_conversation_user FOREIGN KEY (user_id) REFERENCES users(id),
+  INDEX idx_agent_conversation_user_updated (user_id, updated_at),
+  INDEX idx_agent_conversation_user_last_message (user_id, last_message_at)
+);
+
+CREATE TABLE IF NOT EXISTS agent_message (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  conversation_id BIGINT NOT NULL,
+  role VARCHAR(16) NOT NULL,
+  message_type VARCHAR(32) NOT NULL,
+  content TEXT NOT NULL,
+  tool_name VARCHAR(64) NULL,
+  payload_json LONGTEXT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_agent_message_conversation FOREIGN KEY (conversation_id) REFERENCES agent_conversation(id),
+  INDEX idx_agent_message_conversation_created (conversation_id, created_at)
 );

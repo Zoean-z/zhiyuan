@@ -3,34 +3,52 @@ package com.zhiyuan.college.service.auth;
 import com.zhiyuan.college.mapper.UserAccountMapper;
 import com.zhiyuan.college.model.dto.LoginRequest;
 import com.zhiyuan.college.model.dto.LoginResponse;
+import com.zhiyuan.college.model.dto.RegisterRequest;
 import com.zhiyuan.college.model.entity.UserAccount;
-import java.time.Instant;
+import com.zhiyuan.college.model.enums.UserRole;
+import com.zhiyuan.college.security.JwtTokenService;
+import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.JwtException;
+import java.time.Duration;
 import java.util.Map;
-import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class AuthService {
 
+    private static final String BLACKLIST_PREFIX = "auth:blacklist:";
+
     private final UserAccountMapper userAccountMapper;
-    private final long tokenTtlSeconds;
-    private final Map<String, SessionInfo> sessions = new ConcurrentHashMap<>();
+    private final JwtTokenService jwtTokenService;
+    private final PasswordEncoder passwordEncoder;
+    private final StringRedisTemplate stringRedisTemplate;
+    private final boolean redisCacheEnabled;
+    private final Map<String, Long> localBlacklist = new ConcurrentHashMap<>();
 
     public AuthService(UserAccountMapper userAccountMapper,
-                       @Value("${auth.token-ttl-seconds:86400}") long tokenTtlSeconds) {
+                       JwtTokenService jwtTokenService,
+                       PasswordEncoder passwordEncoder,
+                       StringRedisTemplate stringRedisTemplate,
+                       @Value("${cache.redis.enabled:false}") boolean redisCacheEnabled) {
         this.userAccountMapper = userAccountMapper;
-        this.tokenTtlSeconds = tokenTtlSeconds;
+        this.jwtTokenService = jwtTokenService;
+        this.passwordEncoder = passwordEncoder;
+        this.stringRedisTemplate = stringRedisTemplate;
+        this.redisCacheEnabled = redisCacheEnabled;
     }
 
     public LoginResponse login(LoginRequest request) {
         UserAccount user = userAccountMapper.findByUsername(request.getUsername());
-        if (user == null || !user.getPassword().equals(request.getPassword())) {
+        if (user == null || !passwordMatches(request.getPassword(), user)) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid username or password");
         }
+        user.setRole(UserRole.fromValue(userAccountMapper.findRoleByUsername(request.getUsername())));
 
         if (user.getScore() == null && request.getScore() == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Score is required at first login");
@@ -59,26 +77,68 @@ public class AuthService {
             userAccountMapper.updateById(user);
         }
 
-        String token = UUID.randomUUID().toString().replace("-", "");
-        long expireAtEpochSecond = Instant.now().getEpochSecond() + tokenTtlSeconds;
-        sessions.put(token, new SessionInfo(user.getId(), expireAtEpochSecond));
-        return new LoginResponse(token, user.getUsername(), user.getScore(), user.getSubjectType(), user.getExamProvince());
+        String token = jwtTokenService.generateToken(user.getId(), user.getUsername(), user.getRole().name());
+        return new LoginResponse(token, user.getUsername(), user.getScore(), user.getSubjectType(), user.getExamProvince(), user.getRole());
+    }
+
+    public LoginResponse register(RegisterRequest request) {
+        String username = normalizeUsername(request.getUsername());
+        if (userAccountMapper.findByUsername(username) != null) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "用户名已存在");
+        }
+        if (request.getScore() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "注册时必须填写分数");
+        }
+        if (request.getSubjectType() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "注册时必须选择科类");
+        }
+        if (isBlank(request.getExamProvince())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "注册时必须选择省份");
+        }
+
+        UserAccount user = new UserAccount();
+        user.setUsername(username);
+        user.setPassword(passwordEncoder.encode(request.getPassword()));
+        user.setScore(request.getScore());
+        user.setSubjectType(request.getSubjectType());
+        user.setExamProvince(request.getExamProvince().trim());
+        user.setRole(UserRole.USER);
+        userAccountMapper.insert(user);
+
+        String token = jwtTokenService.generateToken(user.getId(), user.getUsername(), user.getRole().name());
+        return new LoginResponse(token, user.getUsername(), user.getScore(), user.getSubjectType(), user.getExamProvince(), user.getRole());
     }
 
     public UserAccount validateToken(String token) {
-        SessionInfo sessionInfo = sessions.get(token);
-        if (sessionInfo == null) {
+        if (isBlacklisted(token)) {
             return null;
         }
-        if (sessionInfo.expireAtEpochSecond() < Instant.now().getEpochSecond()) {
-            sessions.remove(token);
+        try {
+            Claims claims = jwtTokenService.parseClaims(token);
+            Long userId = Long.valueOf(claims.getSubject());
+            UserAccount user = userAccountMapper.findByIdCompat(userId);
+            if (user != null) {
+                Object roleClaim = claims.get("role");
+                if (roleClaim instanceof String roleValue && !roleValue.isBlank()) {
+                    user.setRole(UserRole.fromValue(roleValue));
+                }
+            }
+            return user;
+        } catch (JwtException | IllegalArgumentException ex) {
             return null;
         }
-        return userAccountMapper.findByIdCompat(sessionInfo.userId());
     }
 
     public void logout(String token) {
-        sessions.remove(token);
+        try {
+            long ttlSeconds = jwtTokenService.remainingSeconds(token);
+            if (ttlSeconds <= 0) {
+                return;
+            }
+            blacklistToken(jwtTokenService.extractJti(token), ttlSeconds);
+        } catch (JwtException ex) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid or expired token");
+        }
     }
 
     public void updateScore(Long userId, Integer score) {
@@ -92,5 +152,58 @@ public class AuthService {
         return value == null || value.isBlank();
     }
 
-    private record SessionInfo(Long userId, long expireAtEpochSecond) {}
+    private String normalizeUsername(String username) {
+        return username == null ? "" : username.trim();
+    }
+
+    private boolean passwordMatches(String rawPassword, UserAccount user) {
+        String storedPassword = user.getPassword();
+        if (storedPassword == null) {
+            return false;
+        }
+        if (storedPassword.startsWith("$2a$") || storedPassword.startsWith("$2b$") || storedPassword.startsWith("$2y$")) {
+            return passwordEncoder.matches(rawPassword, storedPassword);
+        }
+        if (!storedPassword.equals(rawPassword)) {
+            return false;
+        }
+        UserAccount update = new UserAccount();
+        update.setId(user.getId());
+        update.setPassword(passwordEncoder.encode(rawPassword));
+        userAccountMapper.updateById(update);
+        user.setPassword(update.getPassword());
+        return true;
+    }
+
+    private boolean isBlacklisted(String token) {
+        cleanupLocalBlacklist();
+        String jti = jwtTokenService.extractJti(token);
+        if (localBlacklist.containsKey(jti)) {
+            return true;
+        }
+        if (!redisCacheEnabled) {
+            return false;
+        }
+        try {
+            return Boolean.TRUE.equals(stringRedisTemplate.hasKey(BLACKLIST_PREFIX + jti));
+        } catch (Exception ex) {
+            return false;
+        }
+    }
+
+    private void blacklistToken(String jti, long ttlSeconds) {
+        localBlacklist.put(jti, System.currentTimeMillis() + ttlSeconds * 1000);
+        if (!redisCacheEnabled) {
+            return;
+        }
+        try {
+            stringRedisTemplate.opsForValue().set(BLACKLIST_PREFIX + jti, "1", Duration.ofSeconds(ttlSeconds));
+        } catch (Exception ignore) {
+        }
+    }
+
+    private void cleanupLocalBlacklist() {
+        long now = System.currentTimeMillis();
+        localBlacklist.entrySet().removeIf(entry -> entry.getValue() <= now);
+    }
 }

@@ -10,6 +10,7 @@ const props = defineProps({
   grouped: { type: Object, required: true },
   aiSummary: { type: String, default: "" },
   summary: { type: String, default: "" },
+  finalAdvice: { type: String, default: "" },
   tips: { type: Array, default: () => [] },
   recommendationMode: { type: String, default: "" },
   rankMeta: { type: Object, default: null },
@@ -176,6 +177,6 @@ function isItemAdded(item, strategy) {
       </el-skeleton>
     </el-card>
 
-    <AiSummaryPanel :ai-summary="aiSummary" :summary="summary" :tips="tips" />
+    <AiSummaryPanel :ai-summary="aiSummary" :summary="summary" :final-advice="finalAdvice" :tips="tips" />
   </section>
 </template>

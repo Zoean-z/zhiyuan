@@ -27,19 +27,22 @@ public class RecommendationService {
     private final RecommendationPolicyService recommendationPolicyService;
     private final AiExplanationService aiExplanationService;
     private final RecommendationHintService recommendationHintService;
+    private final RecommendationCacheService recommendationCacheService;
 
     public RecommendationService(AdmissionCutoffMapper admissionCutoffMapper,
                                  MajorAdmissionCutoffMapper majorAdmissionCutoffMapper,
                                  ScoreRankMappingService scoreRankMappingService,
                                  RecommendationPolicyService recommendationPolicyService,
                                  AiExplanationService aiExplanationService,
-                                 RecommendationHintService recommendationHintService) {
+                                 RecommendationHintService recommendationHintService,
+                                 RecommendationCacheService recommendationCacheService) {
         this.admissionCutoffMapper = admissionCutoffMapper;
         this.majorAdmissionCutoffMapper = majorAdmissionCutoffMapper;
         this.scoreRankMappingService = scoreRankMappingService;
         this.recommendationPolicyService = recommendationPolicyService;
         this.aiExplanationService = aiExplanationService;
         this.recommendationHintService = recommendationHintService;
+        this.recommendationCacheService = recommendationCacheService;
     }
 
     public RecommendationResponse recommend(RecommendationRequest request) {
@@ -51,12 +54,16 @@ public class RecommendationService {
         }
         RecommendationMode mode = resolveMode(request);
         request.setRecommendationMode(mode);
-
-        if (mode == RecommendationMode.MAJOR_FIRST) {
-            return recommendMajorFirst(request);
+        RecommendationResponse cached = recommendationCacheService.getRecommendation(request);
+        if (cached != null) {
+            return cached;
         }
 
-        return recommendSchoolFirst(request);
+        RecommendationResponse response = mode == RecommendationMode.MAJOR_FIRST
+                ? recommendMajorFirst(request)
+                : recommendSchoolFirst(request);
+        recommendationCacheService.cacheRecommendation(request, response);
+        return response;
     }
 
     private RecommendationResponse recommendSchoolFirst(RecommendationRequest request) {
@@ -99,6 +106,9 @@ public class RecommendationService {
                     decision.admissionProbability(),
                     decision.recommendationBasis(),
                     decision.strategy().name(),
+                    null,
+                    null,
+                    null,
                     null
             );
             switch (decision.strategy()) {
@@ -177,6 +187,9 @@ public class RecommendationService {
                     decision.admissionProbability(),
                     decision.recommendationBasis(),
                     decision.strategy().name(),
+                    null,
+                    null,
+                    null,
                     null
             );
             switch (decision.strategy()) {

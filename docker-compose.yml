@@ -1,0 +1,80 @@
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: zhiyuan-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-123456}
+      MYSQL_DATABASE: ${DB_NAME:-college_recommendation}
+      MYSQL_USER: ${DB_APP_USER:-zhiyuan}
+      MYSQL_PASSWORD: ${DB_APP_PASSWORD:-zhiyuan123}
+    ports:
+      - "${DB_HOST_PORT:-3307}:3306"
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./sql/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ./sql/data.sql:/docker-entrypoint-initdb.d/02-data.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-p${DB_PASSWORD:-123456}"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+
+  redis:
+    image: redis:7.4-alpine
+    container_name: zhiyuan-redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_HOST_PORT:-6380}:6379"
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: zhiyuan-backend
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      SERVER_PORT: 8080
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_NAME: ${DB_NAME:-college_recommendation}
+      DB_USER: ${DB_APP_USER:-zhiyuan}
+      DB_PASSWORD: ${DB_APP_PASSWORD:-zhiyuan123}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      REDIS_DATABASE: ${REDIS_DATABASE:-0}
+      REDIS_TIMEOUT: ${REDIS_TIMEOUT:-3s}
+      CACHE_REDIS_ENABLED: ${CACHE_REDIS_ENABLED:-true}
+      AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:-change-this-jwt-secret}
+      AUTH_JWT_ISSUER: ${AUTH_JWT_ISSUER:-zhiyuan}
+      AUTH_TOKEN_TTL_SECONDS: ${AUTH_TOKEN_TTL_SECONDS:-86400}
+      QWEN_ENABLED: ${QWEN_ENABLED:-false}
+      QWEN_BASE_URL: ${QWEN_BASE_URL:-https://api.deepseek.com}
+      QWEN_MODEL: ${QWEN_MODEL:-deepseek-v4-flash}
+      QWEN_API_KEY: ${QWEN_API_KEY:-}
+      SPRINGDOC_SWAGGER_UI_PATH: ${SPRINGDOC_SWAGGER_UI_PATH:-/swagger-ui.html}
+      SPRINGDOC_API_DOCS_PATH: ${SPRINGDOC_API_DOCS_PATH:-/v3/api-docs}
+    ports:
+      - "${SERVER_HOST_PORT:-8080}:8080"
+
+volumes:
+  mysql-data:
+  redis-data:

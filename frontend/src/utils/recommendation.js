@@ -119,7 +119,11 @@ export function normalizeItem(item, fallbackStrategy) {
     rankGap,
     recommendationBasis,
     admissionProbability: pickValue(item, ["admissionProbability", "probability", "chance"]),
-    strategy
+    strategy,
+    strategyLabel: pickValue(item, ["strategyLabel"]) || strategyLabel(strategy),
+    riskScore: pickValue(item, ["riskScore"]),
+    matchReasons: Array.isArray(pickValue(item, ["matchReasons"])) ? pickValue(item, ["matchReasons"]) : [],
+    explanation: pickValue(item, ["explanation"])
   };
 }
 
@@ -215,6 +219,12 @@ export function strategyTagType(strategy) {
   if (normalized === "rush") return "danger";
   if (normalized === "guarantee") return "success";
   return "warning";
+}
+
+export function recommendationBasisLabel(value) {
+  if (value === "RANK") return "位次依据";
+  if (value === "SCORE") return "分数依据";
+  return "综合判断";
 }
 
 export function formatDateTime(value) {

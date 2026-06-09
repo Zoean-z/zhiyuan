@@ -2,6 +2,7 @@ package com.zhiyuan.college.controller;
 
 import com.zhiyuan.college.model.dto.LoginRequest;
 import com.zhiyuan.college.model.dto.LoginResponse;
+import com.zhiyuan.college.model.dto.RegisterRequest;
 import com.zhiyuan.college.service.auth.AuthService;
 import jakarta.validation.Valid;
 import java.util.Map;
@@ -27,6 +28,11 @@ public class AuthController {
     @PostMapping("/login")
     public LoginResponse login(@Valid @RequestBody LoginRequest request) {
         return authService.login(request);
+    }
+
+    @PostMapping("/register")
+    public LoginResponse register(@Valid @RequestBody RegisterRequest request) {
+        return authService.register(request);
     }
 
     @PostMapping("/logout")

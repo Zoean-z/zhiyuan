@@ -1,6 +1,7 @@
 <script setup>
 import { ElMessage, ElMessageBox } from "element-plus";
 import { computed, onMounted, reactive, ref, watch } from "vue";
+import AgentWorkspace from "./components/AgentWorkspace.vue";
 import ApplicationPlanView from "./components/ApplicationPlanView.vue";
 import CurrentPlanPanel from "./components/CurrentPlanPanel.vue";
 import HistoryView from "./components/HistoryView.vue";
@@ -26,12 +27,14 @@ import {
 import { UI_TEXT, createHttpError, normalizeUserError } from "./utils/ui";
 
 const auth = ref(readStoredAuth());
+const authMode = ref("login");
 const activePage = ref("recommend");
 const activeMode = ref("text");
 const loading = ref(false);
 const error = ref("");
 const resultSummary = ref("");
 const aiSummary = ref("");
+const finalAdvice = ref("");
 const resultTips = ref([]);
 const grouped = reactive({ rush: [], safe: [], guarantee: [] });
 const provinces = ref([]);
@@ -50,6 +53,7 @@ const historyResultJson = ref("");
 const historyGrouped = reactive({ rush: [], safe: [], guarantee: [] });
 const historySummary = ref("");
 const historyAiSummary = ref("");
+const historyFinalAdvice = ref("");
 const historyTips = ref([]);
 const historyRecommendationMode = ref("");
 
@@ -62,6 +66,7 @@ const planResultJson = ref("");
 const planGrouped = reactive({ rush: [], safe: [], guarantee: [] });
 const planSummary = ref("");
 const planAiSummary = ref("");
+const planFinalAdvice = ref("");
 const planTips = ref([]);
 const planRecommendationMode = ref("");
 
@@ -136,6 +141,15 @@ function validateLoginForm() {
   if (!loginForm.password) {
     return UI_TEXT.form.passwordRequired;
   }
+  if (authMode.value === "register" && (loginForm.score === "" || Number.isNaN(Number(loginForm.score)))) {
+    return UI_TEXT.form.registerScoreRequired;
+  }
+  if (authMode.value === "register" && !loginForm.subjectType) {
+    return UI_TEXT.form.registerSubjectTypeRequired;
+  }
+  if (authMode.value === "register" && !loginForm.examProvince) {
+    return UI_TEXT.form.registerProvinceRequired;
+  }
   return "";
 }
 
@@ -179,6 +193,7 @@ function resetResults() {
   grouped.guarantee = [];
   resultSummary.value = "";
   aiSummary.value = "";
+  finalAdvice.value = "";
   resultTips.value = [];
   latestResult.value = null;
   latestSourceType.value = "";
@@ -196,13 +211,19 @@ function resetSchoolDetail() {
   schoolDetailSourceItem.value = null;
 }
 
-function addCurrentPlanItem(item, strategy) {
+async function addCurrentPlanItem(item, strategy) {
   const addedCount = appendCurrentPlanItems([{ ...item, strategy }]);
   if (!addedCount) {
     ElMessage.warning("该条结果已加入当前方案");
     return;
   }
-  ElMessage.success(UI_TEXT.success.addToPlan);
+  try {
+    await upsertCurrentPlanDraft();
+    ElMessage.success(UI_TEXT.success.addToPlan);
+  } catch (ex) {
+    ElMessage.error(applyError(ex, UI_TEXT.failure.savePlan));
+    await loadCurrentPlanDraft();
+  }
 }
 
 function appendCurrentPlanItems(items) {
@@ -252,11 +273,15 @@ function buildSelectedMajorPlanItem(major) {
     rankGap: sourceItem.userRank == null || major?.minRank == null ? null : major.minRank - sourceItem.userRank,
     recommendationBasis: sourceItem.recommendationBasis,
     admissionProbability: sourceItem.admissionProbability,
-    strategy: sourceItem.strategy
+    strategy: sourceItem.strategy,
+    strategyLabel: sourceItem.strategyLabel || null,
+    riskScore: sourceItem.riskScore ?? null,
+    matchReasons: Array.isArray(sourceItem.matchReasons) ? sourceItem.matchReasons : [],
+    explanation: sourceItem.explanation || null
   };
 }
 
-function addSelectedMajorsToPlan(majors) {
+async function addSelectedMajorsToPlan(majors) {
   if (!Array.isArray(majors) || !majors.length) {
     ElMessage.warning(UI_TEXT.form.selectMajorRequired);
     return;
@@ -269,21 +294,39 @@ function addSelectedMajorsToPlan(majors) {
     return;
   }
 
-  ElMessage.success(`加入方案成功，共 ${addedCount} 个专业`);
-  resetSchoolDetail();
+  try {
+    await upsertCurrentPlanDraft();
+    ElMessage.success(`加入方案成功，共 ${addedCount} 个专业`);
+    resetSchoolDetail();
+  } catch (ex) {
+    ElMessage.error(applyError(ex, UI_TEXT.failure.savePlan));
+    await loadCurrentPlanDraft();
+  }
 }
 
-function removeCurrentPlanItem(item) {
+async function removeCurrentPlanItem(item) {
   currentPlanItems.value = currentPlanItems.value.filter((entry) => entry.planKey !== item.planKey);
-  ElMessage.success(UI_TEXT.success.removeFromPlan);
+  try {
+    await upsertCurrentPlanDraft();
+    ElMessage.success(UI_TEXT.success.removeFromPlan);
+  } catch (ex) {
+    ElMessage.error(applyError(ex, UI_TEXT.failure.savePlan));
+    await loadCurrentPlanDraft();
+  }
 }
 
-function clearCurrentPlan() {
+async function clearCurrentPlan() {
   if (!currentPlanItems.value.length) {
     return;
   }
   currentPlanItems.value = [];
-  ElMessage.success(UI_TEXT.success.clearCurrentPlan);
+  try {
+    await deleteCurrentPlanDraft();
+    ElMessage.success(UI_TEXT.success.clearCurrentPlan);
+  } catch (ex) {
+    ElMessage.error(applyError(ex, UI_TEXT.failure.savePlan));
+    await loadCurrentPlanDraft();
+  }
 }
 
 function buildPlanPayload() {
@@ -307,7 +350,11 @@ function buildPlanPayload() {
       minRank: item.minRank,
       rankGap: item.rankGap,
       recommendationBasis: item.recommendationBasis,
-      strategy: String(item.strategy || "safe").toUpperCase()
+      strategy: String(item.strategy || "safe").toUpperCase(),
+      strategyLabel: item.strategyLabel || null,
+      riskScore: item.riskScore ?? null,
+      matchReasons: Array.isArray(item.matchReasons) ? item.matchReasons : [],
+      explanation: item.explanation || null
     });
   });
   return {
@@ -317,8 +364,83 @@ function buildPlanPayload() {
     guarantee: groups.guarantee,
     summary: resultSummary.value || `当前方案共选择 ${currentPlanItems.value.length} 条志愿结果。`,
     aiSummary: aiSummary.value || "",
+    finalAdvice: finalAdvice.value || "",
     tips: resultTips.value
   };
+}
+
+async function loadCurrentPlanDraft() {
+  if (!auth.value?.token) {
+    currentPlanItems.value = [];
+    return;
+  }
+  try {
+    const detail = await apiFetch("/api/plans/current", { method: "GET", headers: getAuthHeaders() });
+    let parsed = null;
+    try {
+      parsed = detail?.resultJson ? JSON.parse(detail.resultJson) : null;
+    } catch {
+      parsed = null;
+    }
+    const groupedData = buildGroupedFromResult(parsed || {});
+    const nextItems = [];
+    [["rush", groupedData.rush], ["safe", groupedData.safe], ["guarantee", groupedData.guarantee]].forEach(([strategy, list]) => {
+      (list || []).forEach((item) => {
+        const normalized = normalizeItem(item, strategy);
+        nextItems.push({
+          ...normalized,
+          strategy: normalized.strategy || strategy,
+          planKey: buildPlanItemKey(item, normalized.strategy || strategy)
+        });
+      });
+    });
+    currentPlanItems.value = nextItems;
+    latestSourceType.value = detail?.sourceType || latestSourceType.value;
+    latestSourceQuery.value = detail?.sourceQuery || latestSourceQuery.value;
+  } catch (ex) {
+    if (ex?.status === 404) {
+      currentPlanItems.value = [];
+      latestSourceType.value = "";
+      latestSourceQuery.value = "";
+      return;
+    }
+    console.error("[loadCurrentPlanDraft]", ex);
+  }
+}
+
+async function upsertCurrentPlanDraft() {
+  if (!auth.value?.token) {
+    return;
+  }
+  if (!currentPlanItems.value.length) {
+    await deleteCurrentPlanDraft();
+    return;
+  }
+  const payload = buildPlanPayload();
+  await apiFetch("/api/plans/current", {
+    method: "PUT",
+    headers: getAuthHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify({
+      planName: "当前方案草稿",
+      sourceType: latestSourceType.value || "score",
+      sourceQuery: latestSourceQuery.value || `手动选择 ${currentPlanItems.value.length} 条志愿结果`,
+      resultJson: JSON.stringify(payload),
+      aiSummary: payload.aiSummary || payload.summary || ""
+    })
+  });
+}
+
+async function deleteCurrentPlanDraft() {
+  if (!auth.value?.token) {
+    return;
+  }
+  try {
+    await apiFetch("/api/plans/current", { method: "DELETE", headers: getAuthHeaders() });
+  } catch (ex) {
+    if (ex?.status !== 404) {
+      throw ex;
+    }
+  }
 }
 
 function fillScoreFromUser() {
@@ -341,6 +463,7 @@ function resetHistoryDialog() {
   historyGrouped.guarantee = [];
   historySummary.value = "";
   historyAiSummary.value = "";
+  historyFinalAdvice.value = "";
   historyTips.value = [];
   historyRecommendationMode.value = "";
 }
@@ -353,6 +476,7 @@ function resetPlanDialog() {
   planGrouped.guarantee = [];
   planSummary.value = "";
   planAiSummary.value = "";
+  planFinalAdvice.value = "";
   planTips.value = [];
   planRecommendationMode.value = "";
 }
@@ -468,8 +592,47 @@ async function login() {
     saveStoredAuth(auth.value);
     activePage.value = "recommend";
     fillScoreFromUser();
+    await loadCurrentPlanDraft();
   } catch (ex) {
     applyError(ex, UI_TEXT.failure.login);
+  } finally {
+    loading.value = false;
+  }
+}
+
+async function register() {
+  error.value = "";
+  const validationMessage = validateLoginForm();
+  if (validationMessage) {
+    error.value = validationMessage;
+    ElMessage.warning(validationMessage);
+    return;
+  }
+  loading.value = true;
+  try {
+    const payload = {
+      username: loginForm.username,
+      password: loginForm.password,
+      score: Number(loginForm.score),
+      subjectType: loginForm.subjectType,
+      examProvince: loginForm.examProvince
+    };
+
+    const data = await apiFetch("/api/auth/register", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+
+    auth.value = { token: data.token, user: data };
+    saveStoredAuth(auth.value);
+    activePage.value = "recommend";
+    authMode.value = "login";
+    fillScoreFromUser();
+    await loadCurrentPlanDraft();
+    ElMessage.success(UI_TEXT.success.register);
+  } catch (ex) {
+    applyError(ex, UI_TEXT.failure.register);
   } finally {
     loading.value = false;
   }
@@ -487,6 +650,8 @@ async function logout() {
   clearStoredAuth();
   resetResults();
   currentPlanItems.value = [];
+  latestSourceType.value = "";
+  latestSourceQuery.value = "";
   historyRecords.value = [];
   planRecords.value = [];
   historyDialogVisible.value = false;
@@ -521,6 +686,7 @@ async function queryByScore() {
     grouped.guarantee = Array.isArray(data?.guarantee) ? data.guarantee : [];
     resultSummary.value = data?.summary || "";
     aiSummary.value = data?.aiSummary || "";
+    finalAdvice.value = data?.finalAdvice || "";
     resultTips.value = Array.isArray(data?.tips) ? data.tips : [];
     latestResult.value = data;
     latestSourceType.value = "score";
@@ -566,6 +732,7 @@ async function queryByText() {
     grouped.guarantee = groupedData.guarantee;
     resultSummary.value = data?.summary || "";
     aiSummary.value = data?.aiSummary || "";
+    finalAdvice.value = data?.finalAdvice || "";
     resultTips.value = Array.isArray(data?.tips) ? data.tips : [];
     latestResult.value = data;
     latestSourceType.value = "text";
@@ -624,6 +791,7 @@ async function openHistoryResult(row) {
     historyGrouped.guarantee = groupedData.guarantee;
     historySummary.value = parsed?.summary || "";
     historyAiSummary.value = parsed?.aiSummary || "";
+    historyFinalAdvice.value = parsed?.finalAdvice || "";
     historyTips.value = Array.isArray(parsed?.tips) ? parsed.tips : [];
     historyRecommendationMode.value =
       parsed?.recommendationMode
@@ -698,6 +866,7 @@ async function openPlanDetail(row) {
     planGrouped.guarantee = groupedData.guarantee;
     planSummary.value = parsed?.summary || "";
     planTips.value = Array.isArray(parsed?.tips) ? parsed.tips : [];
+    planFinalAdvice.value = parsed?.finalAdvice || "";
     if (!planAiSummary.value) {
       planAiSummary.value = parsed?.aiSummary || parsed?.summary || "";
     }
@@ -728,6 +897,9 @@ async function deletePlan(row) {
 
   try {
     await apiFetch(`/api/plans/${row.id}`, { method: "DELETE", headers: getAuthHeaders() });
+    if (row?.planName === "当前方案草稿") {
+      currentPlanItems.value = [];
+    }
     if (planDetail.value?.id === row.id) {
       planDialogVisible.value = false;
       resetPlanDialog();
@@ -772,6 +944,7 @@ async function savePlan() {
         aiSummary: payload.aiSummary || payload.summary || ""
       })
     });
+    await deleteCurrentPlanDraft();
     saveDialogVisible.value = false;
     currentPlanItems.value = [];
     ElMessage.success(UI_TEXT.success.savePlan);
@@ -795,9 +968,12 @@ async function switchPage(page) {
   }
 }
 
-onMounted(() => {
+onMounted(async () => {
   loadMetaOptions();
   fillScoreFromUser();
+  if (auth.value?.token) {
+    await loadCurrentPlanDraft();
+  }
 });
 
 watch(() => scoreForm.recommendationMode, (mode) => {
@@ -826,6 +1002,14 @@ watch(() => scoreForm.subjectType, () => {
             <p>AI 助手为你生成冲刺、稳妥、保底三档院校建议</p>
           </div>
 
+          <div class="auth-switch">
+            <el-button-group>
+              <el-button :type="authMode === 'login' ? 'primary' : 'default'" @click="authMode = 'login'">登录</el-button>
+              <el-button :type="authMode === 'register' ? 'primary' : 'default'" @click="authMode = 'register'">注册</el-button>
+            </el-button-group>
+            <span class="auth-switch-text">{{ authMode === "login" ? "已有账号可直接登录；如为首次登录，请补充分数、科类和省份" : "新用户注册后将自动登录" }}</span>
+          </div>
+
           <el-form label-position="top" :model="loginForm">
             <el-row :gutter="12">
               <el-col :span="24">
@@ -842,12 +1026,12 @@ watch(() => scoreForm.subjectType, () => {
 
             <el-row :gutter="12">
               <el-col :xs="24" :sm="12">
-                <el-form-item label="分数（可选）">
+                <el-form-item :label="authMode === 'register' ? '分数' : '分数（首次登录必填）'">
                   <el-input v-model="loginForm.score" type="number" placeholder="例如 620" />
                 </el-form-item>
               </el-col>
               <el-col :xs="24" :sm="12">
-                <el-form-item label="科类（可选）">
+                <el-form-item :label="authMode === 'register' ? '科类' : '科类（首次登录必填）'">
                   <el-select v-model="loginForm.subjectType" placeholder="请选择" style="width: 100%;">
                     <el-option v-for="opt in SUBJECT_OPTIONS" :key="opt.value" :label="opt.label" :value="opt.value" />
                   </el-select>
@@ -855,13 +1039,14 @@ watch(() => scoreForm.subjectType, () => {
               </el-col>
             </el-row>
 
-            <el-form-item label="省份（可选）">
+            <el-form-item :label="authMode === 'register' ? '省份' : '省份（首次登录必填）'">
               <el-select v-model="loginForm.examProvince" placeholder="请选择" style="width: 100%;">
                 <el-option v-for="province in provinces" :key="province" :label="province" :value="province" />
               </el-select>
             </el-form-item>
 
-            <el-button type="primary" class="auth-submit" :loading="loading" @click="login">登录</el-button>
+            <el-button v-if="authMode === 'login'" type="primary" class="auth-submit" :loading="loading" @click="login">登录</el-button>
+            <el-button v-else type="primary" class="auth-submit" :loading="loading" @click="register">注册并登录</el-button>
             <div v-if="error" class="error">{{ error }}</div>
           </el-form>
         </el-card>
@@ -879,6 +1064,7 @@ watch(() => scoreForm.subjectType, () => {
         <el-space alignment="center" :size="12" wrap>
           <el-button-group>
             <el-button :type="activePage === 'recommend' ? 'primary' : 'default'" @click="switchPage('recommend')">推荐查询</el-button>
+            <el-button :type="activePage === 'agent' ? 'primary' : 'default'" @click="switchPage('agent')">AI 对话</el-button>
             <el-button :type="activePage === 'history' ? 'primary' : 'default'" @click="switchPage('history')">历史记录</el-button>
             <el-button :type="activePage === 'plans' ? 'primary' : 'default'" @click="switchPage('plans')">志愿方案</el-button>
           </el-button-group>
@@ -968,6 +1154,7 @@ watch(() => scoreForm.subjectType, () => {
                 :grouped="grouped"
                 :summary="resultSummary"
                 :ai-summary="aiSummary"
+                :final-advice="finalAdvice"
                 :tips="resultTips"
                 :recommendation-mode="latestResult?.recommendationMode || latestResult?.parsed?.recommendationMode || scoreForm.recommendationMode"
                 :rank-meta="latestRankMeta"
@@ -979,6 +1166,14 @@ watch(() => scoreForm.subjectType, () => {
             </div>
           </el-col>
         </el-row>
+      </el-main>
+
+      <el-main v-else-if="activePage === 'agent'" class="app-main app-main--agent">
+        <AgentWorkspace
+          :token="auth?.token"
+          :user="auth?.user"
+          @jump-to-plans="switchPage('plans')"
+        />
       </el-main>
 
       <el-main v-else-if="activePage === 'history'" class="app-main">
@@ -1025,7 +1220,7 @@ watch(() => scoreForm.subjectType, () => {
               <el-descriptions-item label="查询内容">{{ historyDetail.queryContent }}</el-descriptions-item>
             </el-descriptions>
           </div>
-          <RecommendationResult v-if="historyHasResult" :loading="false" :grouped="historyGrouped" :summary="historySummary" :ai-summary="historyAiSummary" :tips="historyTips" :recommendation-mode="historyRecommendationMode" />
+          <RecommendationResult v-if="historyHasResult" :loading="false" :grouped="historyGrouped" :summary="historySummary" :ai-summary="historyAiSummary" :final-advice="historyFinalAdvice" :tips="historyTips" :recommendation-mode="historyRecommendationMode" />
           <el-card v-else shadow="never" class="history-raw-card">
             <template #header>原始结果</template>
             <pre class="history-raw">{{ historyResultJson || UI_TEXT.common.noDisplayContent }}</pre>
@@ -1050,7 +1245,7 @@ watch(() => scoreForm.subjectType, () => {
               <el-descriptions-item label="来源内容">{{ planDetail.sourceQuery }}</el-descriptions-item>
             </el-descriptions>
           </div>
-          <RecommendationResult v-if="planHasResult" :loading="false" :grouped="planGrouped" :summary="planSummary" :ai-summary="planAiSummary" :tips="planTips" :recommendation-mode="planRecommendationMode" />
+          <RecommendationResult v-if="planHasResult" :loading="false" :grouped="planGrouped" :summary="planSummary" :ai-summary="planAiSummary" :final-advice="planFinalAdvice" :tips="planTips" :recommendation-mode="planRecommendationMode" />
           <el-card v-else shadow="never" class="history-raw-card">
             <template #header>原始结果</template>
             <pre class="history-raw">{{ planResultJson || UI_TEXT.common.noDisplayContent }}</pre>

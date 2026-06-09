@@ -15,6 +15,7 @@ import com.zhiyuan.college.service.auth.AuthService;
 import com.zhiyuan.college.util.UniversityTagUtils;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
@@ -30,24 +31,43 @@ public class FreeTextRecommendationService {
     private final AiAdviceSummaryService aiAdviceSummaryService;
     private final RecommendationHintService recommendationHintService;
     private final AuthService authService;
+    private final RecommendationTrackingService recommendationTrackingService;
 
     public FreeTextRecommendationService(AiRequirementParserService parserService,
                                          RecommendationService recommendationService,
                                          AiExplanationService aiExplanationService,
                                          AiAdviceSummaryService aiAdviceSummaryService,
                                          RecommendationHintService recommendationHintService,
-                                         AuthService authService) {
+                                         AuthService authService,
+                                         RecommendationTrackingService recommendationTrackingService) {
         this.parserService = parserService;
         this.recommendationService = recommendationService;
         this.aiExplanationService = aiExplanationService;
         this.aiAdviceSummaryService = aiAdviceSummaryService;
         this.recommendationHintService = recommendationHintService;
         this.authService = authService;
+        this.recommendationTrackingService = recommendationTrackingService;
     }
 
     public FreeTextRecommendationResponse recommend(FreeTextRecommendationRequest request) {
-        ParsedRequirement parsed = parserService.parse(request.getRequirementText());
-        UserAccount currentUser = UserContext.get();
+        String requestId = UUID.randomUUID().toString();
+        ExecutionResult execution = execute(request, requestId, UserContext.get());
+        UserAccount currentUser = execution.currentUser();
+        recommendationTrackingService.saveTextTask(
+                currentUser == null ? null : currentUser.getId(),
+                requestId,
+                request,
+                execution.parsedRequirement(),
+                execution.response(),
+                execution.parseTrace());
+        return execution.response();
+    }
+
+    public ExecutionResult execute(FreeTextRecommendationRequest request,
+                                   String requestId,
+                                   UserAccount currentUser) {
+        AiRequirementParserService.ParseResult parseResult = parserService.parseWithTrace(request.getRequirementText());
+        ParsedRequirement parsed = parseResult.parsedRequirement();
         if (currentUser != null) {
             if (parsed.getScore() == null) {
                 if (currentUser.getScore() == null) {
@@ -82,10 +102,11 @@ public class FreeTextRecommendationService {
 
         String summary = buildSummary(parsed, recommendationRequest, response.getUserRank(), result);
         String finalAdvice = buildFinalAdvice(parsed, result, summary);
-        String aiSummary = aiAdviceSummaryService.summarize(summary + "\n" + finalAdvice);
+        String aiSummary = aiAdviceSummaryService.summarize(buildAiSummarySource(parsed, result, summary, finalAdvice));
         List<String> tips = recommendationHintService.buildTips(parsed, result.size());
-
-        return new FreeTextRecommendationResponse(parsed, result, summary, finalAdvice, aiSummary, tips);
+        FreeTextRecommendationResponse finalResponse =
+                new FreeTextRecommendationResponse(requestId, parsed, result, summary, finalAdvice, aiSummary, tips);
+        return new ExecutionResult(currentUser, parsed, finalResponse, parseResult.parseTrace());
     }
 
     private RecommendationRequest buildRecommendationRequest(ParsedRequirement parsed) {
@@ -281,6 +302,48 @@ public class FreeTextRecommendationService {
                 + "。请按冲稳保梯度组合志愿，并核对招生章程、科目限制和近三年位次。系统建议：" + summary;
     }
 
+    private String buildAiSummarySource(ParsedRequirement parsed,
+                                        List<RecommendationItemResponse> recommendations,
+                                        String summary,
+                                        String finalAdvice) {
+        StringBuilder builder = new StringBuilder();
+        builder.append("Summary: ").append(summary).append('\n');
+        builder.append("Rule advice: ").append(finalAdvice).append('\n');
+        if (parsed.getRiskPreference() != null && !parsed.getRiskPreference().isBlank()) {
+            builder.append("Risk preference: ").append(parsed.getRiskPreference()).append('\n');
+        }
+        if (!parsed.getNormalizedMajors().isEmpty()) {
+            builder.append("Normalized majors: ").append(String.join(", ", parsed.getNormalizedMajors())).append('\n');
+        } else if (!parsed.getMajorKeywords().isEmpty()) {
+            builder.append("Major keywords: ").append(String.join(", ", parsed.getMajorKeywords())).append('\n');
+        }
+        builder.append("Top recommendations: ").append(buildRecommendationDigest(recommendations));
+        return builder.toString();
+    }
+
+    private String buildRecommendationDigest(List<RecommendationItemResponse> recommendations) {
+        if (recommendations == null || recommendations.isEmpty()) {
+            return "none";
+        }
+        List<String> parts = new ArrayList<>();
+        for (RecommendationItemResponse item : recommendations.stream().limit(3).toList()) {
+            String target = item.getMajorName() == null || item.getMajorName().isBlank()
+                    ? item.getUniversityName()
+                    : item.getUniversityName() + "-" + item.getMajorName();
+            String strategy = item.getStrategyLabel() == null || item.getStrategyLabel().isBlank()
+                    ? item.getStrategy()
+                    : item.getStrategyLabel();
+            String probability = item.getAdmissionProbability() == null
+                    ? "probability unknown"
+                    : "probability " + item.getAdmissionProbability() + "%";
+            String reason = (item.getMatchReasons() == null || item.getMatchReasons().isEmpty())
+                    ? item.getExplanation()
+                    : item.getMatchReasons().get(0);
+            parts.add(target + " | " + strategy + " | " + probability + (reason == null || reason.isBlank() ? "" : " | " + reason));
+        }
+        return String.join("; ", parts);
+    }
+
     private boolean hasRankBasedItem(List<RecommendationItemResponse> items) {
         return items.stream().anyMatch(item -> "RANK".equals(item.getRecommendationBasis()));
     }
@@ -292,5 +355,11 @@ public class FreeTextRecommendationService {
             }
         }
         return false;
+    }
+
+    public record ExecutionResult(UserAccount currentUser,
+                                  ParsedRequirement parsedRequirement,
+                                  FreeTextRecommendationResponse response,
+                                  AiRequirementParserService.ParseTrace parseTrace) {
     }
 }

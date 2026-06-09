@@ -43,16 +43,17 @@ public class FinalAdviceService {
                 .toList();
 
         String advice = buildAdvice(request, recommendationRequest, resolved, schools, recommendationResponse.getSummary());
-        String summary = aiAdviceSummaryService.summarize(advice);
+        String summary = aiAdviceSummaryService.summarize(buildAiSummarySource(recommendationRequest, pool, advice));
         return new FinalAdviceResponse(resolved.name(), schools, advice, summary);
     }
 
     private StrategyType resolveStrategy(String rawStrategy) {
         String text = rawStrategy == null ? "" : rawStrategy;
-        if (text.contains("保守") || text.contains("保险") || text.contains("兜底")) {
+        String normalized = text.toUpperCase();
+        if (normalized.contains("GUARANTEE") || text.contains("保") || text.contains("兜底")) {
             return StrategyType.GUARANTEE;
         }
-        if (text.contains("冲") || text.contains("激进")) {
+        if (normalized.contains("RUSH") || text.contains("冲")) {
             return StrategyType.RUSH;
         }
         return StrategyType.SAFE;
@@ -65,25 +66,67 @@ public class FinalAdviceService {
                                String baseSummary) {
         String strategyCn = switch (strategy) {
             case RUSH -> "冲刺";
-            case SAFE -> "稳定";
-            case GUARANTEE -> "保守";
+            case SAFE -> "稳妥";
+            case GUARANTEE -> "保底";
         };
 
         List<String> preferred = request.getPreferredUniversities() == null
                 ? List.of() : request.getPreferredUniversities();
 
-        String schoolText = schools.isEmpty() ? "当前条件下暂无满足策略的推荐院校。"
+        String schoolText = schools.isEmpty()
+                ? "当前条件下暂无完全匹配的院校。"
                 : "优先关注：" + String.join("、", schools) + "。";
 
-        String preferredText = preferred.isEmpty() ? ""
+        String preferredText = preferred.isEmpty()
+                ? ""
                 : "你关注的院校有：" + String.join("、", new ArrayList<>(preferred)) + "。";
 
-        return "最终填报建议（" + strategyCn + "策略）：" +
-                "建议以" + request.getProvince() + resolvedRequest.getSubjectType().getDisplayName() + "类近年录取位次为依据，" +
-                "按“冲-稳-保”梯度组合志愿。" +
-                schoolText +
-                preferredText +
-                "建议在正式填报前核对招生章程、专业限选和近三年位次变化。" +
-                "系统参考：" + baseSummary;
+        return "最终填报建议（" + strategyCn + "策略）："
+                + "建议以"
+                + request.getProvince()
+                + resolvedRequest.getSubjectType().getDisplayName()
+                + "类近年录取位次为主，按冲稳保梯度组合志愿。"
+                + schoolText
+                + preferredText
+                + "正式填报前请核对招生章程、专业限制和近三年位次变化。"
+                + "系统摘要：" + baseSummary;
+    }
+
+    private String buildAiSummarySource(RecommendationRequest request,
+                                        List<RecommendationItemResponse> pool,
+                                        String advice) {
+        StringBuilder builder = new StringBuilder();
+        builder.append("Final advice: ").append(advice).append('\n');
+        builder.append("Context: ")
+                .append(request.getProvince())
+                .append(' ')
+                .append(request.getSubjectType().getDisplayName())
+                .append(" score ")
+                .append(request.getScore())
+                .append('\n');
+        builder.append("Top schools: ").append(buildPoolDigest(pool));
+        return builder.toString();
+    }
+
+    private String buildPoolDigest(List<RecommendationItemResponse> pool) {
+        if (pool == null || pool.isEmpty()) {
+            return "none";
+        }
+        List<String> parts = new ArrayList<>();
+        for (RecommendationItemResponse item : pool.stream().limit(3).toList()) {
+            String probability = item.getAdmissionProbability() == null
+                    ? "probability unknown"
+                    : "probability " + item.getAdmissionProbability() + "%";
+            String reason = (item.getMatchReasons() == null || item.getMatchReasons().isEmpty())
+                    ? item.getExplanation()
+                    : item.getMatchReasons().get(0);
+            parts.add(item.getUniversityName()
+                    + " | "
+                    + (item.getStrategyLabel() == null ? item.getStrategy() : item.getStrategyLabel())
+                    + " | "
+                    + probability
+                    + (reason == null || reason.isBlank() ? "" : " | " + reason));
+        }
+        return String.join("; ", parts);
     }
 }

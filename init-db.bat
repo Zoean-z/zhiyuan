@@ -12,7 +12,7 @@ set "MYSQL_USER=%DB_USER%"
 if "%MYSQL_USER%"=="" set "MYSQL_USER=root"
 
 set "MYSQL_PASSWORD=%DB_PASSWORD%"
-if "%MYSQL_PASSWORD%"=="" set "MYSQL_PASSWORD=123456"
+if "%MYSQL_PASSWORD%"=="" set "MYSQL_PASSWORD=1234"
 
 set "DB_NAME=%DB_NAME%"
 if "%DB_NAME%"=="" set "DB_NAME=college_recommendation"

@@ -32,12 +32,27 @@ INSERT INTO major_admission_cutoff (university_id, major_name, admission_year, p
 (4, '法学', 2025, '浙江', '历史', 592, NULL),
 (6, '护理学', 2025, '浙江', '历史', 590, NULL);
 
+INSERT INTO major (name)
+SELECT DISTINCT major_name
+FROM major_admission_cutoff;
+
+UPDATE major_admission_cutoff
+SET major_id = (
+    SELECT m.id
+    FROM major m
+    WHERE m.name = major_admission_cutoff.major_name
+);
+
 INSERT INTO score_rank_mapping (mapping_year, province, subject_type, score, rank_value) VALUES
 (2025, '浙江', '物理', 620, 26000),
 (2025, '浙江', '物理', 630, 22000),
 (2025, '浙江', '物理', 610, 31000);
 
-INSERT INTO users (id, username, password, score, subject_type, exam_province) VALUES
-(1, 'testuser', '123456', NULL, NULL, NULL);
-INSERT INTO users (id, username, password, score, subject_type, exam_province) VALUES
-(2, 'freshuser', '123456', NULL, NULL, NULL);
+INSERT INTO users (id, username, password, score, subject_type, exam_province, role) VALUES
+(1, 'testuser', '123456', NULL, NULL, NULL, 'USER');
+INSERT INTO users (id, username, password, score, subject_type, exam_province, role) VALUES
+(2, 'freshuser', '123456', NULL, NULL, NULL, 'USER');
+INSERT INTO users (id, username, password, score, subject_type, exam_province, role) VALUES
+(3, 'adminuser', '123456', 650, '物理', '浙江', 'ADMIN');
+
+UPDATE users SET role = 'ADMIN' WHERE username = 'adminuser';

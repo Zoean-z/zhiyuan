@@ -10,9 +10,9 @@
 
 ## 推荐导入流程
 
-1. 按 [score-rank-mapping-template.csv](D:\Java\IntelliJIDEA\zhiyuan\sql\score-rank-mapping-template.csv) 的表头准备真实数据。
+1. 按 `sql/score-rank-mapping-template.csv` 的表头准备真实数据。
 2. 每个 `年份 + 省份 + 科类 + 分数` 只能有一条记录。
-3. 打开 [import-score-rank-mapping.sql](D:\Java\IntelliJIDEA\zhiyuan\sql\import-score-rank-mapping.sql)，把 `LOAD DATA LOCAL INFILE` 的文件路径改成你的真实 CSV 路径。
+3. 打开 `sql/import-score-rank-mapping.sql`，把 `LOAD DATA LOCAL INFILE` 的文件路径改成你的真实 CSV 路径。
 4. 用 MySQL 客户端执行导入。
 
 ## CSV 示例

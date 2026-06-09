@@ -1,0 +1,25 @@
+spring:
+  datasource:
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:college_recommendation}?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&createDatabaseIfNotExist=true
+  sql:
+    init:
+      mode: never
+
+ai:
+  qwen:
+    enabled: ${QWEN_ENABLED:true}
+
+auth:
+  jwt-secret: ${AUTH_JWT_SECRET:emhpeXVhbi1kZXYtc2VjcmV0LXpoaXl1YW4tZGV2LXNlY3JldC0yMDI2LWtleQ==}
+
+cache:
+  redis:
+    enabled: ${CACHE_REDIS_ENABLED:false}
+
+logging:
+  level:
+    com.zhiyuan.college: INFO
+
+springdoc:
+  swagger-ui:
+    enabled: true

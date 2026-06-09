@@ -1,0 +1,362 @@
+package com.zhiyuan.college.service.agent;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.zhiyuan.college.model.entity.AgentMessage;
+import com.zhiyuan.college.model.entity.UserAccount;
+import com.zhiyuan.college.service.QwenAiClient;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Service;
+
+@Service
+public class AgentDecisionService {
+
+    private static final Logger log = LoggerFactory.getLogger(AgentDecisionService.class);
+    private static final Pattern RECOMMEND_MAJOR_AFTER_PATTERN = Pattern.compile("推荐(?:一下|几个|一些)?([\\p{IsHan}A-Za-z0-9]{2,12})(?:专业|方向)");
+    private static final Pattern RECOMMEND_MAJOR_BEFORE_PATTERN = Pattern.compile("([\\p{IsHan}A-Za-z0-9]{2,12})(?:专业|方向).{0,8}推荐");
+    private static final Pattern DIGIT_SELECTION_PATTERN = Pattern.compile("第\\s*([1-6])\\s*(?:个|所|条)");
+    private static final Pattern SAVE_NAME_PATTERN = Pattern.compile("保存(?:为|成)?[《“\"]?([^》”\"\\n]{2,30})[》”\"]?(?:方案)?");
+    private static final Pattern SCHOOL_NAME_DETAIL_PATTERN = Pattern.compile("([\\p{IsHan}A-Za-z0-9]{2,20}(?:大学|学院|学校))");
+
+    private final QwenAiClient qwenAiClient;
+    private final ObjectMapper objectMapper;
+    private final AgentToolRegistry agentToolRegistry;
+    private final boolean qwenEnabled;
+
+    public AgentDecisionService(QwenAiClient qwenAiClient,
+                                ObjectMapper objectMapper,
+                                AgentToolRegistry agentToolRegistry,
+                                @Value("${ai.qwen.enabled:true}") boolean qwenEnabled) {
+        this.qwenAiClient = qwenAiClient;
+        this.objectMapper = objectMapper;
+        this.agentToolRegistry = agentToolRegistry;
+        this.qwenEnabled = qwenEnabled;
+    }
+
+    public AgentDecision decide(String userMessage, List<AgentMessage> recentMessages, UserAccount user) {
+        AgentDecision localDecision = decideLocally(userMessage, recentMessages);
+        if (!qwenEnabled) {
+            return localDecision;
+        }
+        try {
+            String aiContent = qwenAiClient.chat(
+                    buildSystemPrompt(),
+                    buildUserPrompt(userMessage, recentMessages, user),
+                    0.1,
+                    true
+            );
+            JsonNode root = objectMapper.readTree(aiContent);
+            String action = root.path("action").asText("").trim();
+            String reply = root.path("reply").asText("").trim();
+            Map<String, Object> toolArgs = readToolArgs(root.path("toolArgs"));
+            if (AgentToolNames.REPLY.equals(action)) {
+                return new AgentDecision(AgentToolNames.REPLY, reply.isBlank() ? localDecision.getReply() : reply);
+            }
+            if (agentToolRegistry.supports(action)) {
+                return new AgentDecision(action, reply, toolArgs);
+            }
+        } catch (Exception ex) {
+            log.warn("Agent AI decision failed, fallback to local planner: {}", ex.getMessage());
+        }
+        return localDecision;
+    }
+
+    private AgentDecision decideLocally(String userMessage, List<AgentMessage> recentMessages) {
+        String normalized = userMessage == null ? "" : userMessage.trim();
+
+        if (containsAny(normalized, "确认删除", "确定删除")) {
+            int selectionIndex = extractSelectionIndex(normalized);
+            if (hasPendingDeleteConfirmation(recentMessages, selectionIndex)) {
+                return new AgentDecision(
+                        AgentToolNames.REMOVE_PLAN_ITEM,
+                        "我现在删除当前志愿单中的第 %s 个结果。".formatted(selectionIndex),
+                        Map.of("selectionIndex", selectionIndex)
+                );
+            }
+            return new AgentDecision(AgentToolNames.REPLY, "我没有检测到最近一条待确认的删除请求，请先明确告诉我要删除哪一项，再按提示确认。");
+        }
+
+        if (containsAny(normalized, "删除", "移除") && containsAny(normalized, "志愿", "方案")) {
+            int selectionIndex = extractSelectionIndex(normalized);
+            return new AgentDecision(
+                    AgentToolNames.REPLY,
+                    "删除是敏感操作。若确认删除当前志愿单中的第 %s 个结果，请回复“确认删除第%s个”。".formatted(selectionIndex, selectionIndex)
+            );
+        }
+
+        if (containsAny(normalized, "保存方案", "保存当前方案", "命名保存", "改名保存", "保存为", "另存为")) {
+            String planName = extractPlanName(normalized);
+            if (planName == null || planName.isBlank()) {
+                return new AgentDecision(AgentToolNames.REPLY, "请直接告诉我方案名，例如：保存为“冲稳保方案”。");
+            }
+            return new AgentDecision(
+                    AgentToolNames.SAVE_PLAN,
+                    "我现在把当前志愿单保存为《%s》。".formatted(planName),
+                    Map.of("planName", planName)
+            );
+        }
+
+        if (containsAny(normalized, "加入志愿单", "加入当前方案", "加入方案", "加到志愿单", "加进志愿单")) {
+            int selectionIndex = extractSelectionIndex(normalized);
+            return new AgentDecision(
+                    AgentToolNames.ADD_PLAN_ITEM,
+                    "我先把最近推荐里的第 %s 个结果加入当前志愿单。".formatted(selectionIndex),
+                    Map.of("selectionIndex", selectionIndex)
+            );
+        }
+
+        String schoolName = extractSchoolName(normalized);
+        if (!containsOrdinalReference(normalized)
+                && schoolName != null
+                && containsAny(normalized, "学校详情", "院校详情", "学校信息", "学校专业", "有哪些专业", "什么专业", "查看", "看看")) {
+            return new AgentDecision(
+                    AgentToolNames.GET_SCHOOL_DETAIL_BY_NAME,
+                    "我先按学校名帮你查询“%s”的详情和可参考专业。".formatted(schoolName),
+                    Map.of("universityName", schoolName)
+            );
+        }
+
+        if (containsAny(normalized, "学校详情", "院校详情", "学校信息", "学校专业", "有哪些专业", "什么专业")) {
+            int selectionIndex = extractSelectionIndex(normalized);
+            return new AgentDecision(
+                    AgentToolNames.GET_SCHOOL_DETAIL,
+                    "我先帮你查看第 %s 个学校的详情和可参考专业。".formatted(selectionIndex),
+                    Map.of("selectionIndex", selectionIndex)
+            );
+        }
+
+        String majorKeyword = extractMajorKeyword(normalized);
+        if (containsAny(normalized, "推荐") && majorKeyword != null) {
+            return new AgentDecision(
+                    AgentToolNames.RECOMMEND_MAJORS,
+                    "我先基于你的画像和“%s”的兴趣给你生成专业推荐。".formatted(majorKeyword),
+                    Map.of("majorKeyword", majorKeyword)
+            );
+        }
+        if (containsAny(normalized, "推荐学校", "学校推荐", "推荐院校", "院校推荐", "学校怎么报")) {
+            return new AgentDecision(AgentToolNames.RECOMMEND_SCHOOLS, "我先基于你当前画像给你生成学校推荐。");
+        }
+        if (containsAny(normalized, "分数", "画像", "我的信息", "科类", "省份")) {
+            return new AgentDecision(AgentToolNames.GET_USER_PROFILE, "我先帮你读取当前画像信息。");
+        }
+        if (containsAny(normalized, "志愿", "方案", "当前表", "当前单")) {
+            return new AgentDecision(AgentToolNames.GET_CURRENT_PLAN, "我先帮你查看当前志愿方案。");
+        }
+        return new AgentDecision(
+                AgentToolNames.REPLY,
+                "当前 agent 支持查看画像、查看当前志愿方案、生成学校/专业推荐、查看学校详情，也可以把最近推荐里的某一项加入志愿单。删除操作需要你明确确认。"
+        );
+    }
+
+    private boolean hasPendingDeleteConfirmation(List<AgentMessage> recentMessages, int selectionIndex) {
+        if (recentMessages == null || recentMessages.isEmpty()) {
+            return false;
+        }
+
+        int assistantPromptIndex = -1;
+        for (int i = recentMessages.size() - 1; i >= 0; i--) {
+            AgentMessage message = recentMessages.get(i);
+            if (!AgentRoles.ASSISTANT.equals(message.getRole())
+                    || !AgentMessageTypes.TEXT.equals(message.getMessageType())) {
+                continue;
+            }
+            String content = safeContent(message);
+            if (content.contains("确认删除第" + selectionIndex + "个")) {
+                assistantPromptIndex = i;
+                break;
+            }
+            return false;
+        }
+
+        if (assistantPromptIndex < 1) {
+            return false;
+        }
+
+        AgentMessage previousUserMessage = recentMessages.get(assistantPromptIndex - 1);
+        if (!AgentRoles.USER.equals(previousUserMessage.getRole())) {
+            return false;
+        }
+        String previousContent = safeContent(previousUserMessage);
+        return containsAny(previousContent, "删除", "移除") && containsAny(previousContent, "志愿", "方案");
+    }
+
+    private String buildSystemPrompt() {
+        return """
+                你是高考志愿助手的受控编排器。你只能做十种决策：
+                1. 调用 getUserProfile
+                2. 调用 getCurrentPlan
+                3. 调用 getSchoolDetail
+                4. 调用 getSchoolDetailByName
+                5. 调用 recommendSchools
+                6. 调用 recommendMajors
+                7. 调用 addPlanItem
+                8. 调用 removePlanItem
+                9. 调用 savePlan
+                10. 直接回复
+
+                你必须只输出 JSON：
+                {
+                  "action": "getUserProfile | getCurrentPlan | getSchoolDetail | getSchoolDetailByName | recommendSchools | recommendMajors | addPlanItem | removePlanItem | savePlan | reply",
+                  "reply": "给用户的简短说明",
+                  "toolArgs": {
+                    "selectionIndex": "getSchoolDetail/addPlanItem/removePlanItem 时可选，默认 1",
+                    "universityName": "getSchoolDetailByName 时必填",
+                    "majorKeyword": "recommendMajors 时必填",
+                    "planName": "savePlan 时必填"
+                  }
+                }
+
+                对删除类操作，如果用户没有明确确认，不要调用 removePlanItem，只返回 reply 让用户确认。
+                不要输出任何额外文本。
+                可用工具：
+                %s
+                """.formatted(agentToolRegistry.getToolDescriptions().entrySet().stream()
+                .map(entry -> "- " + entry.getKey() + ": " + entry.getValue())
+                .collect(Collectors.joining("\n")));
+    }
+
+    private String buildUserPrompt(String userMessage, List<AgentMessage> recentMessages, UserAccount user) {
+        String history = recentMessages.stream()
+                .map(message -> {
+                    String payloadText = "";
+                    if (message.getPayloadJson() != null && !message.getPayloadJson().isBlank()) {
+                        payloadText = " | payload=" + message.getPayloadJson();
+                    }
+                    return "%s[%s]: %s%s".formatted(
+                            message.getRole(),
+                            message.getMessageType(),
+                            message.getContent(),
+                            payloadText
+                    );
+                })
+                .collect(Collectors.joining("\n"));
+        Map<String, Object> profile = new LinkedHashMap<>();
+        profile.put("userId", user == null ? null : user.getId());
+        profile.put("username", user == null ? null : user.getUsername());
+        profile.put("score", user == null ? null : user.getScore());
+        profile.put("subjectType", user == null || user.getSubjectType() == null ? null : user.getSubjectType().name());
+        profile.put("examProvince", user == null ? null : user.getExamProvince());
+        return "用户画像: " + profile
+                + "\n最近消息:\n" + history
+                + "\n当前用户消息:\n" + userMessage;
+    }
+
+    private Map<String, Object> readToolArgs(JsonNode toolArgsNode) {
+        if (toolArgsNode == null || toolArgsNode.isMissingNode() || toolArgsNode.isNull() || !toolArgsNode.isObject()) {
+            return Collections.emptyMap();
+        }
+        return objectMapper.convertValue(
+                toolArgsNode,
+                objectMapper.getTypeFactory().constructMapType(LinkedHashMap.class, String.class, Object.class)
+        );
+    }
+
+    private String extractMajorKeyword(String text) {
+        if (text == null || text.isBlank()) {
+            return null;
+        }
+        Matcher afterMatcher = RECOMMEND_MAJOR_AFTER_PATTERN.matcher(text);
+        if (afterMatcher.find()) {
+            return afterMatcher.group(1);
+        }
+        Matcher beforeMatcher = RECOMMEND_MAJOR_BEFORE_PATTERN.matcher(text);
+        if (beforeMatcher.find()) {
+            return beforeMatcher.group(1);
+        }
+        for (String keyword : List.of("计算机", "软件", "网络", "信息安全", "法学", "护理", "医学")) {
+            if (text.contains(keyword)) {
+                return keyword;
+            }
+        }
+        return null;
+    }
+
+    private int extractSelectionIndex(String text) {
+        if (text == null || text.isBlank()) {
+            return 1;
+        }
+        Matcher matcher = DIGIT_SELECTION_PATTERN.matcher(text);
+        if (matcher.find()) {
+            return Integer.parseInt(matcher.group(1));
+        }
+        if (text.contains("第二")) {
+            return 2;
+        }
+        if (text.contains("第三")) {
+            return 3;
+        }
+        if (text.contains("第四")) {
+            return 4;
+        }
+        if (text.contains("第五")) {
+            return 5;
+        }
+        if (text.contains("第六")) {
+            return 6;
+        }
+        return 1;
+    }
+
+    private String extractPlanName(String text) {
+        if (text == null || text.isBlank()) {
+            return null;
+        }
+        Matcher matcher = SAVE_NAME_PATTERN.matcher(text);
+        if (matcher.find()) {
+            String name = matcher.group(1).trim();
+            if (!name.isBlank() && !name.equals("方案")) {
+                return name;
+            }
+        }
+        return null;
+    }
+
+    private String extractSchoolName(String text) {
+        if (text == null || text.isBlank()) {
+            return null;
+        }
+        Matcher matcher = SCHOOL_NAME_DETAIL_PATTERN.matcher(text);
+        if (matcher.find()) {
+            String matched = matcher.group(1).trim();
+            for (String prefix : List.of("帮我看看", "帮我查看", "帮我查查", "看看", "查看", "查查", "介绍一下")) {
+                if (matched.startsWith(prefix)) {
+                    matched = matched.substring(prefix.length()).trim();
+                }
+            }
+            return matched.isBlank() ? null : matched;
+        }
+        return null;
+    }
+
+    private boolean containsOrdinalReference(String text) {
+        return text.contains("第一个")
+                || text.contains("第二个")
+                || text.contains("第三个")
+                || text.contains("第四个")
+                || text.contains("第五个")
+                || text.contains("第六个")
+                || DIGIT_SELECTION_PATTERN.matcher(text).find();
+    }
+
+    private boolean containsAny(String text, String... keywords) {
+        for (String keyword : keywords) {
+            if (text.contains(keyword)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private String safeContent(AgentMessage message) {
+        return message.getContent() == null ? "" : message.getContent();
+    }
+}

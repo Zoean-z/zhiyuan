@@ -1,0 +1,10 @@
+.git
+.idea
+target
+frontend/node_modules
+frontend/dist
+.project-loop
+run-live.log
+run-live.err
+_verify
+*.iml

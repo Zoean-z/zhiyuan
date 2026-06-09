@@ -3,11 +3,13 @@ package com.zhiyuan.college.controller;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.zhiyuan.college.security.JwtTokenService;
 import java.nio.charset.StandardCharsets;
 import java.util.Comparator;
 import java.util.Map;
@@ -35,6 +37,9 @@ class RecommendationControllerTest {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private JwtTokenService jwtTokenService;
 
     @Test
     void recommend_shouldReturnGroupedResults() throws Exception {
@@ -86,6 +91,10 @@ class RecommendationControllerTest {
                 Assertions.assertEquals("RANK", item.get("recommendationBasis").asText());
                 Assertions.assertEquals(26000, item.get("userRank").asInt());
                 Assertions.assertEquals(2000, item.get("rankGap").asInt());
+                Assertions.assertFalse(item.get("strategyLabel").asText().isBlank());
+                Assertions.assertTrue(item.get("riskScore").asInt() >= 0);
+                Assertions.assertTrue(item.get("matchReasons").isArray());
+                Assertions.assertFalse(item.get("explanation").asText().isBlank());
                 matched = true;
                 break;
             }
@@ -166,6 +175,9 @@ class RecommendationControllerTest {
                 .andExpect(jsonPath("$.rush[0].universityName").isNotEmpty())
                 .andExpect(jsonPath("$.rush[0].majorName").isNotEmpty())
                 .andExpect(jsonPath("$.rush[0].recommendationMode").value("MAJOR_FIRST"))
+                .andExpect(jsonPath("$.rush[0].strategyLabel").isNotEmpty())
+                .andExpect(jsonPath("$.rush[0].matchReasons").isArray())
+                .andExpect(jsonPath("$.rush[0].explanation").isNotEmpty())
                 .andExpect(jsonPath("$.safe").isArray())
                 .andExpect(jsonPath("$.guarantee").isArray());
     }
@@ -372,6 +384,62 @@ class RecommendationControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.parsed.score").value(620))
                 .andExpect(jsonPath("$.recommendations").isArray());
+    }
+
+    @Test
+    void recommendByTextTask_shouldSubmitAndQueryAsyncResult() throws Exception {
+        String token = loginAndGetToken("testuser", "123456", 620, "PHYSICS", "浙江");
+        String requestJson = """
+                {
+                  "requirementText": "我想报江苏211学校，稳一点"
+                }
+                """;
+
+        MvcResult submitResult = mockMvc.perform(post("/api/recommendations/free-text/tasks")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(requestJson))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.taskId").isNumber())
+                .andExpect(jsonPath("$.requestId").isNotEmpty())
+                .andExpect(jsonPath("$.status").value("PENDING"))
+                .andReturn();
+
+        Long taskId = objectMapper.readTree(submitResult.getResponse().getContentAsString()).get("taskId").asLong();
+        JsonNode task = awaitTextTask(token, taskId);
+        Assertions.assertEquals("SUCCESS", task.get("status").asText());
+        Assertions.assertTrue(task.get("durationMs").asLong() >= 0L);
+        Assertions.assertTrue(task.get("resultCount").asInt() >= 1);
+        Assertions.assertTrue(task.get("parsedRequirement").isObject());
+        Assertions.assertTrue(task.get("result").isObject());
+        Assertions.assertTrue(task.get("result").get("recommendations").isArray());
+        Assertions.assertFalse(task.get("result").get("finalAdvice").asText().isBlank());
+        Assertions.assertFalse(task.get("result").get("aiSummary").asText().isBlank());
+    }
+
+    @Test
+    void recommendByTextTask_shouldOnlyAllowOwnerToQuery() throws Exception {
+        String token1 = loginAndGetToken("testuser", "123456", 620, "PHYSICS", "浙江");
+        String token2 = loginAndGetToken("freshuser", "123456", 610, "HISTORY", "浙江");
+        String requestJson = """
+                {
+                  "requirementText": "我想报江苏211学校，稳一点"
+                }
+                """;
+
+        MvcResult submitResult = mockMvc.perform(post("/api/recommendations/free-text/tasks")
+                        .header("Authorization", "Bearer " + token1)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(requestJson))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        Long taskId = objectMapper.readTree(submitResult.getResponse().getContentAsString()).get("taskId").asLong();
+        awaitTextTask(token1, taskId);
+
+        mockMvc.perform(get("/api/recommendations/free-text/tasks/" + taskId)
+                        .header("Authorization", "Bearer " + token2))
+                .andExpect(status().isNotFound());
     }
 
     @Test
@@ -632,6 +700,323 @@ class RecommendationControllerTest {
     }
 
     @Test
+    void register_shouldCreateUserAndReturnToken() throws Exception {
+        String username = "newuser_register";
+        mockMvc.perform(post("/api/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "username": "%s",
+                                  "password": "123456",
+                                  "score": 612,
+                                  "subjectType": "PHYSICS",
+                                  "examProvince": "浙江"
+                                }
+                                """.formatted(username)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.token").isNotEmpty())
+                .andExpect(jsonPath("$.username").value(username))
+                .andExpect(jsonPath("$.score").value(612))
+                .andExpect(jsonPath("$.subjectType").value("PHYSICS"))
+                .andExpect(jsonPath("$.examProvince").value("浙江"))
+                .andExpect(jsonPath("$.role").value("USER"));
+
+        Integer userCount = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM users WHERE username = ?", Integer.class, username);
+        Assertions.assertEquals(1, userCount);
+    }
+
+    @Test
+    void register_shouldRejectDuplicateUsername() throws Exception {
+        mockMvc.perform(post("/api/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "username": "testuser",
+                                  "password": "123456",
+                                  "score": 612,
+                                  "subjectType": "PHYSICS",
+                                  "examProvince": "浙江"
+                                }
+                                """))
+                .andExpect(status().isConflict());
+    }
+
+    @Test
+    void logout_shouldInvalidateJwtToken() throws Exception {
+        String token = loginAndGetToken("testuser", "123456", 620, "PHYSICS", "娴欐睙");
+
+        mockMvc.perform(post("/api/auth/logout")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("Logged out"));
+
+        mockMvc.perform(get("/api/history")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void adminEndpoints_shouldRequireAdminRole() throws Exception {
+        String userToken = loginAndGetToken("testuser", "123456", 620, "PHYSICS", "娴欐睙");
+
+        mockMvc.perform(get("/api/admin/universities")
+                        .header("Authorization", "Bearer " + userToken))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void adminEndpoints_shouldAllowAdminCrud() throws Exception {
+        jdbcTemplate.update("UPDATE users SET role = 'ADMIN' WHERE username = ?", "adminuser");
+        String adminToken = loginAndGetToken("adminuser", "123456", 650, "PHYSICS", "娴欐睙");
+
+        mockMvc.perform(get("/api/admin/universities")
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").isArray());
+
+        MvcResult createResult = mockMvc.perform(post("/api/admin/universities")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "name": "鏂版祴璇曞ぇ瀛﹂櫌",
+                                  "province": "娴欐睙",
+                                  "tier": "鏅€?",
+                                  "is985": false,
+                                  "is211": false,
+                                  "isDoubleFirstClass": false,
+                                  "tags": "缁煎悎绫?"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").isNumber())
+                .andExpect(jsonPath("$.name").value("鏂版祴璇曞ぇ瀛﹂櫌"))
+                .andReturn();
+
+        Long universityId = objectMapper.readTree(createResult.getResponse().getContentAsString()).get("id").asLong();
+
+        mockMvc.perform(put("/api/admin/universities/" + universityId)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "name": "鏂版祴璇曞ぇ瀛﹂櫌",
+                                  "province": "姹熻嫃",
+                                  "tier": "鍙屼竴娴?",
+                                  "is985": false,
+                                  "is211": false,
+                                  "isDoubleFirstClass": true,
+                                  "tags": "缁煎悎绫?"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.province").value("姹熻嫃"))
+                .andExpect(jsonPath("$.isDoubleFirstClass").value(true));
+    }
+
+    @org.junit.jupiter.api.Disabled
+    @Test
+    void adminMajorEndpoints_shouldAllowAdminCrud_legacyBrokenPayload() throws Exception {
+        jdbcTemplate.update("UPDATE users SET role = 'ADMIN' WHERE username = ?", "adminuser");
+        String adminToken = loginAndGetToken("adminuser", "123456", 650, "PHYSICS", "娴欐睙");
+
+        mockMvc.perform(get("/api/admin/majors")
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").isArray());
+
+        MvcResult createResult = mockMvc.perform(post("/api/admin/majors")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "name": "鏁版嵁绉戝涓庡ぇ鏁版嵁鎶€鏈?",
+                                  "category": "宸ョ",
+                                  "degreeType": "宸ュ",
+                                  "tags": "鐑棬,AI",
+                                  "subjectRequirement": "鐗╃悊蹇呴€?,
+                                  "description": "绠楁硶銆佺粺璁′笌鏁版嵁宸ョ▼鏂瑰悜"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").isNumber())
+                .andExpect(jsonPath("$.name").isNotEmpty())
+                .andExpect(jsonPath("$.degreeType").isNotEmpty())
+                .andReturn();
+
+        Long majorId = objectMapper.readTree(createResult.getResponse().getContentAsString()).get("id").asLong();
+
+        mockMvc.perform(put("/api/admin/majors/" + majorId)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "name": "鏁版嵁绉戝涓庡ぇ鏁版嵁鎶€鏈?",
+                                  "category": "宸ョ",
+                                  "degreeType": "宸ュ",
+                                  "tags": "鐑棬,AI,鏁版嵁",
+                                  "subjectRequirement": "鐗╃悊蹇呴€?,
+                                  "description": "鏇存柊鍚庣殑涓撲笟鎻忚堪"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.tags").isNotEmpty())
+                .andExpect(jsonPath("$.description").isNotEmpty());
+    }
+
+    @Test
+    void adminMajorEndpoints_shouldAllowAdminCrud() throws Exception {
+        jdbcTemplate.update("UPDATE users SET role = 'ADMIN' WHERE username = ?", "adminuser");
+        String adminToken = loginAndGetToken("adminuser", "123456", 650, "PHYSICS", "娴欐睙");
+
+        mockMvc.perform(get("/api/admin/majors")
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").isArray());
+
+        MvcResult createResult = mockMvc.perform(post("/api/admin/majors")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "name": "Data Science",
+                                  "category": "Engineering",
+                                  "degreeType": "Bachelor",
+                                  "tags": "hot,ai",
+                                  "subjectRequirement": "PHYSICS_REQUIRED",
+                                  "description": "focus on data and statistics"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").isNumber())
+                .andExpect(jsonPath("$.name").value("Data Science"))
+                .andExpect(jsonPath("$.degreeType").value("Bachelor"))
+                .andReturn();
+
+        Long majorId = objectMapper.readTree(createResult.getResponse().getContentAsString()).get("id").asLong();
+
+        mockMvc.perform(put("/api/admin/majors/" + majorId)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "name": "Data Science",
+                                  "category": "Engineering",
+                                  "degreeType": "Bachelor",
+                                  "tags": "hot,ai,data",
+                                  "subjectRequirement": "PHYSICS_REQUIRED",
+                                  "description": "updated description"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.tags").value("hot,ai,data"))
+                .andExpect(jsonPath("$.description").value("updated description"));
+    }
+
+    @Test
+    void adminAdmissionCutoffEndpoints_shouldAllowAdminCrud() throws Exception {
+        jdbcTemplate.update("UPDATE users SET role = 'ADMIN' WHERE username = ?", "adminuser");
+        String adminToken = loginAndGetToken("adminuser", "123456", 650, "PHYSICS", "娴欐睙");
+
+        mockMvc.perform(get("/api/admin/admission-cutoffs")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .param("province", "娴欐睙")
+                        .param("subjectType", "鐗╃悊"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").isArray());
+
+        MvcResult createResult = mockMvc.perform(post("/api/admin/admission-cutoffs")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "universityId": 1,
+                                  "admissionYear": 2024,
+                                  "province": "娴欐睙",
+                                  "subjectType": "PHYSICS",
+                                  "cutoffScore": 650,
+                                  "minRank": 5500
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").isNumber())
+                .andExpect(jsonPath("$.subjectType").value("物理"))
+                .andReturn();
+
+        Long cutoffId = objectMapper.readTree(createResult.getResponse().getContentAsString()).get("id").asLong();
+
+        mockMvc.perform(put("/api/admin/admission-cutoffs/" + cutoffId)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "universityId": 1,
+                                  "admissionYear": 2024,
+                                  "province": "姹熻嫃",
+                                  "subjectType": "PHYSICS",
+                                  "cutoffScore": 648,
+                                  "minRank": 5800
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.province").value("姹熻嫃"))
+                .andExpect(jsonPath("$.cutoffScore").value(648));
+    }
+
+    @Test
+    void adminMajorAdmissionCutoffEndpoints_shouldAllowAdminCrud() throws Exception {
+        jdbcTemplate.update("UPDATE users SET role = 'ADMIN' WHERE username = ?", "adminuser");
+        String adminToken = loginAndGetToken("adminuser", "123456", 650, "PHYSICS", "娴欐睙");
+
+        mockMvc.perform(get("/api/admin/major-admission-cutoffs")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .param("province", "娴欐睙")
+                        .param("subjectType", "鐗╃悊")
+                        .param("majorKeyword", "璁＄畻鏈?"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").isArray());
+
+        MvcResult createResult = mockMvc.perform(post("/api/admin/major-admission-cutoffs")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "universityId": 1,
+                                  "majorName": "鏁版嵁绉戝涓庡ぇ鏁版嵁鎶€鏈?",
+                                  "admissionYear": 2024,
+                                  "province": "娴欐睙",
+                                  "subjectType": "PHYSICS",
+                                  "cutoffScore": 646,
+                                  "minRank": 6200
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").isNumber())
+                .andExpect(jsonPath("$.majorName").value("鏁版嵁绉戝涓庡ぇ鏁版嵁鎶€鏈?"))
+                .andReturn();
+
+        Long cutoffId = objectMapper.readTree(createResult.getResponse().getContentAsString()).get("id").asLong();
+
+        mockMvc.perform(put("/api/admin/major-admission-cutoffs/" + cutoffId)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "universityId": 1,
+                                  "majorName": "鏁版嵁绉戝涓庡ぇ鏁版嵁鎶€鏈?",
+                                  "admissionYear": 2024,
+                                  "province": "姹熻嫃",
+                                  "subjectType": "PHYSICS",
+                                  "cutoffScore": 645,
+                                  "minRank": 6500
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.province").value("姹熻嫃"))
+                .andExpect(jsonPath("$.cutoffScore").value(645));
+    }
+
+    @Test
     void plans_shouldSaveListAndQueryCurrentUserOnly() throws Exception {
         jdbcTemplate.update("DELETE FROM application_plan");
 
@@ -697,6 +1082,68 @@ class RecommendationControllerTest {
                 .andExpect(status().isNotFound());
     }
 
+    @Test
+    void currentPlanDraft_shouldSupportUpsertGetAndDelete() throws Exception {
+        jdbcTemplate.update("DELETE FROM application_plan");
+        String token = loginAndGetToken("testuser", "123456", 620, "PHYSICS", "浙江");
+
+        String draftJson = """
+                {
+                  "planName": "当前方案草稿",
+                  "sourceType": "score",
+                  "sourceQuery": "手动选择 1 条志愿结果",
+                  "resultJson": "{\\"summary\\":\\"当前方案共选择 1 条志愿结果。\\",\\"safe\\":[{\\"universityName\\":\\"浙江大学\\",\\"strategy\\":\\"SAFE\\"}],\\"rush\\":[],\\"guarantee\\":[]}",
+                  "aiSummary": "当前方案共选择 1 条志愿结果。"
+                }
+                """;
+
+        mockMvc.perform(put("/api/plans/current")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(draftJson))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.planName").value("当前方案草稿"))
+                .andExpect(jsonPath("$.sourceType").value("score"));
+
+        mockMvc.perform(get("/api/plans/current")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.planName").value("当前方案草稿"))
+                .andExpect(jsonPath("$.resultJson").isNotEmpty());
+
+        mockMvc.perform(get("/api/plans")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].planName").value("当前方案草稿"));
+
+        mockMvc.perform(delete("/api/plans/current")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/api/plans/current")
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void recommendByText_shouldReturnExplanationAndAdvice() throws Exception {
+        String token = loginAndGetToken("testuser", "123456", 620, "PHYSICS", "娴欐睙");
+        String requestJson = """
+                {
+                  "requirementText": "我想报江苏211学校，稳一点"
+                }
+                """;
+
+        mockMvc.perform(post("/api/recommendations/free-text")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(requestJson))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.recommendations").isArray())
+                .andExpect(jsonPath("$.finalAdvice").isNotEmpty())
+                .andExpect(jsonPath("$.aiSummary").isNotEmpty());
+    }
+
     private JsonNode fetchMeta() throws Exception {
         MvcResult result = mockMvc.perform(get("/api/meta/options"))
                 .andExpect(status().isOk())
@@ -704,7 +1151,29 @@ class RecommendationControllerTest {
         return objectMapper.readTree(result.getResponse().getContentAsString(StandardCharsets.UTF_8));
     }
 
+    private JsonNode awaitTextTask(String token, Long taskId) throws Exception {
+        JsonNode lastResponse = null;
+        for (int i = 0; i < 20; i++) {
+            MvcResult result = mockMvc.perform(get("/api/recommendations/free-text/tasks/" + taskId)
+                            .header("Authorization", "Bearer " + token))
+                    .andExpect(status().isOk())
+                    .andReturn();
+            lastResponse = objectMapper.readTree(result.getResponse().getContentAsString(StandardCharsets.UTF_8));
+            String status = lastResponse.get("status").asText();
+            if ("SUCCESS".equals(status) || "FAILED".equals(status)) {
+                return lastResponse;
+            }
+            Thread.sleep(100);
+        }
+        Assertions.fail("Async recommendation task did not finish in time");
+        return lastResponse;
+    }
+
     private String loginAndGetToken(String username, String password, Integer score, String subjectType, String examProvince) throws Exception {
+        if ("adminuser".equals(username)) {
+            jdbcTemplate.update("UPDATE users SET role = 'ADMIN' WHERE username = ?", username);
+            return jwtTokenService.generateToken(3L, username, "ADMIN");
+        }
         String payload = score == null && subjectType == null && examProvince == null
                 ? """
                 {

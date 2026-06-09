@@ -1,9 +1,12 @@
 USE college_recommendation;
+SET NAMES utf8mb4;
 
 SET FOREIGN_KEY_CHECKS = 0;
 TRUNCATE TABLE major_admission_cutoff;
+TRUNCATE TABLE major;
 TRUNCATE TABLE admission_cutoff;
 TRUNCATE TABLE university;
+TRUNCATE TABLE score_rank_mapping;
 TRUNCATE TABLE users;
 SET FOREIGN_KEY_CHECKS = 1;
 
@@ -46,6 +49,20 @@ INSERT INTO major_admission_cutoff (university_id, major_name, admission_year, p
 (4, '法学', 2025, '浙江', '历史', 592, NULL),
 (6, '护理学', 2025, '浙江', '历史', 590, NULL);
 
-INSERT INTO users (id, username, password, score, subject_type, exam_province) VALUES
-(1, 'testuser', '123456', NULL, NULL, NULL),
-(2, 'freshuser', '123456', NULL, NULL, NULL);
+INSERT INTO major (name)
+SELECT DISTINCT major_name
+FROM major_admission_cutoff;
+
+UPDATE major_admission_cutoff mac
+JOIN major m ON m.name = mac.major_name
+SET mac.major_id = m.id;
+
+INSERT INTO score_rank_mapping (mapping_year, province, subject_type, score, rank_value) VALUES
+(2025, '浙江', '物理', 620, 26000),
+(2025, '浙江', '物理', 630, 22000),
+(2025, '浙江', '物理', 610, 31000);
+
+INSERT INTO users (id, username, password, score, subject_type, exam_province, role) VALUES
+(1, 'testuser', '123456', NULL, NULL, NULL, 'USER'),
+(2, 'freshuser', '123456', NULL, NULL, NULL, 'USER'),
+(3, 'adminuser', '123456', 650, '物理', '浙江', 'ADMIN');

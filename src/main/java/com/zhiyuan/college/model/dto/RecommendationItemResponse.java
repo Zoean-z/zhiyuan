@@ -25,7 +25,13 @@ public class RecommendationItemResponse {
     private Integer admissionProbability;
     private String recommendationBasis;
     private String strategy;
+    private String strategyLabel;
+    private Integer riskScore;
+    private List<String> matchReasons;
     private String explanation;
+
+    public RecommendationItemResponse() {
+    }
 
     public RecommendationItemResponse(String universityName,
                                       Integer cutoffScore,
@@ -56,6 +62,9 @@ public class RecommendationItemResponse {
                 admissionProbability,
                 recommendationBasis,
                 strategy,
+                null,
+                null,
+                new ArrayList<>(),
                 explanation);
     }
 
@@ -78,6 +87,9 @@ public class RecommendationItemResponse {
                                       Integer admissionProbability,
                                       String recommendationBasis,
                                       String strategy,
+                                      String strategyLabel,
+                                      Integer riskScore,
+                                      List<String> matchReasons,
                                       String explanation) {
         this.recommendationMode = recommendationMode;
         this.universityId = universityId;
@@ -98,6 +110,9 @@ public class RecommendationItemResponse {
         this.admissionProbability = admissionProbability;
         this.recommendationBasis = recommendationBasis;
         this.strategy = strategy;
+        this.strategyLabel = strategyLabel;
+        this.riskScore = riskScore;
+        this.matchReasons = matchReasons == null ? new ArrayList<>() : new ArrayList<>(matchReasons);
         this.explanation = explanation;
     }
 
@@ -177,8 +192,108 @@ public class RecommendationItemResponse {
         return strategy;
     }
 
+    public String getStrategyLabel() {
+        return strategyLabel;
+    }
+
+    public Integer getRiskScore() {
+        return riskScore;
+    }
+
+    public List<String> getMatchReasons() {
+        return matchReasons;
+    }
+
     public String getExplanation() {
         return explanation;
+    }
+
+    public void setRecommendationMode(RecommendationMode recommendationMode) {
+        this.recommendationMode = recommendationMode;
+    }
+
+    public void setUniversityId(Long universityId) {
+        this.universityId = universityId;
+    }
+
+    public void setUniversityName(String universityName) {
+        this.universityName = universityName;
+    }
+
+    public void setMajorName(String majorName) {
+        this.majorName = majorName;
+    }
+
+    public void setUniversityProvince(String universityProvince) {
+        this.universityProvince = universityProvince;
+    }
+
+    public void setUniversityTier(String universityTier) {
+        this.universityTier = universityTier;
+    }
+
+    public void setIs985(Boolean is985) {
+        this.is985 = is985;
+    }
+
+    public void setIs211(Boolean is211) {
+        this.is211 = is211;
+    }
+
+    public void setIsDoubleFirstClass(Boolean doubleFirstClass) {
+        isDoubleFirstClass = doubleFirstClass;
+    }
+
+    public void setSchoolTags(List<String> schoolTags) {
+        this.schoolTags = schoolTags == null ? new ArrayList<>() : new ArrayList<>(schoolTags);
+    }
+
+    public void setUniversityTags(String universityTags) {
+        this.universityTags = universityTags;
+    }
+
+    public void setCutoffScore(Integer cutoffScore) {
+        this.cutoffScore = cutoffScore;
+    }
+
+    public void setScoreGap(Integer scoreGap) {
+        this.scoreGap = scoreGap;
+    }
+
+    public void setUserRank(Integer userRank) {
+        this.userRank = userRank;
+    }
+
+    public void setMinRank(Integer minRank) {
+        this.minRank = minRank;
+    }
+
+    public void setRankGap(Integer rankGap) {
+        this.rankGap = rankGap;
+    }
+
+    public void setAdmissionProbability(Integer admissionProbability) {
+        this.admissionProbability = admissionProbability;
+    }
+
+    public void setRecommendationBasis(String recommendationBasis) {
+        this.recommendationBasis = recommendationBasis;
+    }
+
+    public void setStrategy(String strategy) {
+        this.strategy = strategy;
+    }
+
+    public void setStrategyLabel(String strategyLabel) {
+        this.strategyLabel = strategyLabel;
+    }
+
+    public void setRiskScore(Integer riskScore) {
+        this.riskScore = riskScore;
+    }
+
+    public void setMatchReasons(List<String> matchReasons) {
+        this.matchReasons = matchReasons == null ? new ArrayList<>() : new ArrayList<>(matchReasons);
     }
 
     public void setExplanation(String explanation) {

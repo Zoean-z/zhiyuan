@@ -14,6 +14,9 @@ export const UI_TEXT = {
     scoreRequired: "请输入分数",
     provinceRequired: "请选择省份",
     subjectTypeRequired: "请选择科类",
+    registerScoreRequired: "注册时请填写分数",
+    registerProvinceRequired: "注册时请选择省份",
+    registerSubjectTypeRequired: "注册时请选择科类",
     recommendationModeRequired: "请选择推荐模式",
     majorRequired: "请输入专业名称",
     requirementTextRequired: "请输入需求描述",
@@ -22,6 +25,7 @@ export const UI_TEXT = {
     selectMajorRequired: "请先选择专业"
   },
   success: {
+    register: "注册成功，已自动登录",
     addToPlan: "加入方案成功",
     removeFromPlan: "已从当前方案移除",
     clearCurrentPlan: "当前方案已清空",
@@ -30,6 +34,7 @@ export const UI_TEXT = {
     deletePlan: "删除方案成功"
   },
   failure: {
+    register: "注册失败，请稍后重试",
     savePlan: "保存方案失败，请稍后重试",
     deleteHistory: "删除历史记录失败，请稍后重试",
     deletePlan: "删除方案失败，请稍后重试",
@@ -69,6 +74,9 @@ const STATUS_MESSAGE_MAP = {
 const KNOWN_MESSAGE_MAPPINGS = [
   [/network error|failed to fetch|load failed/i, UI_TEXT.common.networkError],
   [/timeout|aborted|aborterror|timed out/i, UI_TEXT.common.timeout],
+  [/score is required at first login/i, "首次登录请补充分数"],
+  [/subject type is required at first login/i, "首次登录请补充科类"],
+  [/exam province is required at first login/i, "首次登录请选择省份"],
   [/majorkeyword is required/i, UI_TEXT.form.majorRequired],
   [/subjecttype is required/i, UI_TEXT.form.subjectTypeRequired],
   [/score is required/i, UI_TEXT.form.scoreRequired],
@@ -124,15 +132,15 @@ export function normalizeUserError(error, fallbackMessage = UI_TEXT.common.opera
   console.error("[ui-error]", error);
   const status = error?.status;
   const rawMessage = extractRawMessage(error);
+  const knownMessage = rawMessage ? mapKnownMessage(rawMessage) : "";
+  if (knownMessage) {
+    return knownMessage;
+  }
   if (status && STATUS_MESSAGE_MAP[status]) {
     return STATUS_MESSAGE_MAP[status];
   }
   if (!rawMessage) {
     return fallbackMessage;
-  }
-  const knownMessage = mapKnownMessage(rawMessage);
-  if (knownMessage) {
-    return knownMessage;
   }
   if (hasChinese(rawMessage) && !isTechnicalMessage(rawMessage)) {
     return rawMessage;

@@ -307,3 +307,68 @@ Expected output format:
 - Full flow is available via web UI with acceptable response time
 - Backend logs request and response trace for troubleshooting
 
+---
+
+## 15. Upgrade Roadmap (2026-06)
+
+### Phase 1 - Low-risk completion
+- Keep the project as a single Spring Boot application.
+- Do not introduce microservices, MQ, or distributed middleware.
+- Focus on making the current architecture more complete:
+  - unified response format
+  - stable exception and error-code handling
+  - request validation and parameter normalization
+  - environment-based configuration split
+- Upgrade the persistence model around the real business flow:
+  - student profile
+  - recommendation task
+  - recommendation result
+  - AI parse log
+  - richer admission statistics
+- Upgrade recommendation logic from fixed score-gap / rank-gap thresholds to a basic rule-scoring model:
+  - calculate a probability or risk score first
+  - then map results into Rush / Safe / Guarantee
+  - keep explanation fully server-side and controllable
+
+### Phase 2 - Backend depth and resume value
+- Introduce Redis for:
+  - hot university / major / rank-mapping cache
+  - popular recommendation cache
+  - token / verification / rate limit support
+  - AI duplicate-request protection
+- Upgrade authentication to:
+  - Spring Security
+  - JWT
+  - BCrypt password hashing
+  - role separation for user / admin
+- Expand user-side persistence:
+  - recommendation history
+  - saved plans
+  - explanation records
+- Add admin-side maintenance for university, major, and admission data.
+
+### Phase 3 - Engineering maturity
+- Add async task support for AI parsing and recommendation report generation.
+- Optimize SQL and indexes for province / year / subject / university / major / rank queries.
+- Add Docker Compose for local deployment.
+- Improve testing:
+  - service tests
+  - controller integration tests
+  - optional repository/data tests
+- Add observability:
+  - structured logs
+  - request trace id
+  - slow query / AI latency tracking
+
+### Strategy upgrade note
+- The current implementation mainly buckets schools by hardcoded `scoreGap` and `rankGap` ranges.
+- That is easy to implement, but weak as a long-term recommendation engine because it cannot express:
+  - year-over-year fluctuation
+  - preference match
+  - combined confidence / risk
+  - more explainable ranking
+- A better baseline is:
+  - filter candidate schools/majors by hard constraints
+  - compute a rule-based recommendation score and admission probability
+  - map probability bands into Rush / Safe / Guarantee
+  - return explanation fields for each result

@@ -62,29 +62,74 @@ public class AiRequirementParserService {
 
     private final QwenAiClient qwenAiClient;
     private final ObjectMapper objectMapper;
+    private final RecommendationCacheService recommendationCacheService;
     private final boolean enabled;
 
     public AiRequirementParserService(QwenAiClient qwenAiClient,
                                       ObjectMapper objectMapper,
+                                      RecommendationCacheService recommendationCacheService,
                                       @Value("${ai.qwen.enabled:true}") boolean enabled) {
         this.qwenAiClient = qwenAiClient;
         this.objectMapper = objectMapper;
+        this.recommendationCacheService = recommendationCacheService;
         this.enabled = enabled;
     }
 
     public ParsedRequirement parse(String text) {
+        return parseWithTrace(text).parsedRequirement();
+    }
+
+    public ParseResult parseWithTrace(String text) {
+        ParseResult cached = recommendationCacheService.getParsedRequirement(text);
+        if (cached != null) {
+            return cached;
+        }
+
+        ParseResult result;
         if (enabled) {
             try {
                 ParsedRequirement aiParsed = parseByAi(text);
                 if (aiParsed != null) {
-                    return aiParsed;
+                    result = new ParseResult(aiParsed, new ParseTrace(
+                            qwenAiClient.getProvider(),
+                            qwenAiClient.getModel(),
+                            "AI",
+                            true,
+                            lastAiResponse,
+                            null
+                    ));
+                    recommendationCacheService.cacheParsedRequirement(text, result);
+                    return result;
                 }
             } catch (Exception ex) {
                 log.warn("Qwen parse failed, fallback to local parser: {}", ex.getMessage());
+                ParsedRequirement fallback = parseByRule(text);
+                result = new ParseResult(fallback, new ParseTrace(
+                        qwenAiClient.getProvider(),
+                        qwenAiClient.getModel(),
+                        "RULE_FALLBACK",
+                        false,
+                        lastAiResponse,
+                        ex.getMessage()
+                ));
+                recommendationCacheService.cacheParsedRequirement(text, result);
+                return result;
             }
         }
-        return parseByRule(text);
+        ParsedRequirement fallback = parseByRule(text);
+        result = new ParseResult(fallback, new ParseTrace(
+                enabled ? qwenAiClient.getProvider() : "local-rule",
+                enabled ? qwenAiClient.getModel() : null,
+                enabled ? "RULE_ONLY" : "LOCAL_RULE_ONLY",
+                true,
+                null,
+                null
+        ));
+        recommendationCacheService.cacheParsedRequirement(text, result);
+        return result;
     }
+
+    private String lastAiResponse;
 
     private ParsedRequirement parseByAi(String text) throws Exception {
         String normalizedText = text == null ? "" : text.trim();
@@ -108,6 +153,7 @@ public class AiRequirementParserService {
         String userPrompt = "请解析以下文本：" + normalizedText;
 
         String aiContent = qwenAiClient.chat(systemPrompt, userPrompt, 0.1, true);
+        this.lastAiResponse = aiContent;
         JsonNode root = objectMapper.readTree(aiContent);
 
         ParsedRequirement parsed = new ParsedRequirement();
@@ -392,5 +438,16 @@ public class AiRequirementParserService {
             }
         }
         return new ArrayList<>(normalized);
+    }
+
+    public record ParseResult(ParsedRequirement parsedRequirement, ParseTrace parseTrace) {
+    }
+
+    public record ParseTrace(String provider,
+                             String modelName,
+                             String parseMode,
+                             Boolean successFlag,
+                             String rawResponse,
+                             String errorMessage) {
     }
 }

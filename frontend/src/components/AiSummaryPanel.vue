@@ -5,10 +5,12 @@ import { UI_TEXT } from "../utils/ui";
 const props = defineProps({
   aiSummary: { type: String, default: "" },
   summary: { type: String, default: "" },
+  finalAdvice: { type: String, default: "" },
   tips: { type: Array, default: () => [] }
 });
 
 const displaySummary = computed(() => props.aiSummary || props.summary || "");
+const displayFinalAdvice = computed(() => props.finalAdvice || "");
 const displayTips = computed(() => (Array.isArray(props.tips) ? props.tips.filter(Boolean) : []));
 </script>
 
@@ -26,7 +28,14 @@ const displayTips = computed(() => (Array.isArray(props.tips) ? props.tips.filte
         <li v-for="(tip, idx) in displayTips" :key="idx">{{ tip }}</li>
       </ul>
     </div>
-    <div v-if="displaySummary" class="summary-text">{{ displaySummary }}</div>
-    <el-empty v-else-if="!displayTips.length" :description="UI_TEXT.empty.aiSummary" :image-size="90" />
+    <div v-if="displayFinalAdvice" class="summary-block">
+      <div class="summary-block__title">规则建议</div>
+      <div class="summary-text">{{ displayFinalAdvice }}</div>
+    </div>
+    <div v-if="displaySummary" class="summary-block">
+      <div class="summary-block__title">AI 润色总结</div>
+      <div class="summary-text">{{ displaySummary }}</div>
+    </div>
+    <el-empty v-else-if="!displayTips.length && !displayFinalAdvice" :description="UI_TEXT.empty.aiSummary" :image-size="90" />
   </el-card>
 </template>

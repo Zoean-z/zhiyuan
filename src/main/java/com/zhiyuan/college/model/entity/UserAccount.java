@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.zhiyuan.college.model.enums.SubjectType;
+import com.zhiyuan.college.model.enums.UserRole;
 
 @TableName("users")
 public class UserAccount {
@@ -23,6 +24,8 @@ public class UserAccount {
 
     @TableField("exam_province")
     private String examProvince;
+
+    private String role;
 
     @TableField("created_at")
     private java.time.LocalDateTime createdAt;
@@ -84,6 +87,22 @@ public class UserAccount {
 
     public void setExamProvince(String examProvince) {
         this.examProvince = examProvince;
+    }
+
+    public String getRoleValue() {
+        return role;
+    }
+
+    public void setRoleValue(String role) {
+        this.role = role;
+    }
+
+    public UserRole getRole() {
+        return UserRole.fromValue(role);
+    }
+
+    public void setRole(UserRole role) {
+        this.role = role == null ? UserRole.USER.name() : role.name();
     }
 
     public java.time.LocalDateTime getCreatedAt() {

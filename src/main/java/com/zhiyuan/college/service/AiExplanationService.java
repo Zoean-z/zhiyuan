@@ -3,6 +3,7 @@ package com.zhiyuan.college.service;
 import com.zhiyuan.college.model.dto.RecommendationItemResponse;
 import com.zhiyuan.college.model.dto.RecommendationRequest;
 import com.zhiyuan.college.model.enums.RecommendationMode;
+import java.util.ArrayList;
 import java.util.List;
 import org.springframework.stereotype.Service;
 
@@ -47,41 +48,87 @@ public class AiExplanationService {
         );
     }
 
-    public String buildItemExplanation(RecommendationRequest request,
-                                       RecommendationItemResponse itemResponse) {
-        if ("RANK".equals(itemResponse.getRecommendationBasis())
-                && itemResponse.getUserRank() != null
-                && itemResponse.getMinRank() != null
-                && itemResponse.getRankGap() != null) {
-            return String.format(
-                    "该校近年最低录取位次约为%d，你当前分数%d对应位次为%d，位次差为%d，按位次判断属于%s档。",
-                    itemResponse.getMinRank(),
-                    request.getScore(),
-                    itemResponse.getUserRank(),
-                    itemResponse.getRankGap(),
-                    itemResponse.getStrategy()
-            );
+    public String buildItemExplanation(RecommendationRequest request, RecommendationItemResponse itemResponse) {
+        List<String> reasons = buildMatchReasons(request, itemResponse);
+        if (reasons.isEmpty()) {
+            return "当前推荐结果缺少完整的位次或分数信息，可作为补充参考。";
         }
-        if ("SCORE".equals(itemResponse.getRecommendationBasis())
-                && itemResponse.getCutoffScore() != null
-                && itemResponse.getScoreGap() != null) {
-            return String.format(
-                    "该%s近年最低录取分约为%d，你当前分数%d，分差为%d，按分数判断属于%s档。",
-                    itemResponse.getMajorName() == null || itemResponse.getMajorName().isBlank() ? "院校" : "专业",
-                    itemResponse.getCutoffScore(),
-                    request.getScore(),
-                    itemResponse.getScoreGap(),
-                    itemResponse.getStrategy()
-            );
-        }
-        return "当前推荐结果缺少完整位次或分数信息。";
+        return String.join("；", reasons) + "。";
     }
 
     public void enrichItems(RecommendationRequest request, List<RecommendationItemResponse> items) {
         for (int i = 0; i < items.size(); i++) {
             RecommendationItemResponse item = items.get(i);
+            item.setStrategyLabel(toStrategyLabel(item.getStrategy()));
+            item.setRiskScore(calculateRiskScore(item.getAdmissionProbability()));
+            item.setMatchReasons(buildMatchReasons(request, item));
             item.setExplanation(buildItemExplanation(request, item));
             items.set(i, item);
         }
+    }
+
+    private List<String> buildMatchReasons(RecommendationRequest request, RecommendationItemResponse item) {
+        List<String> reasons = new ArrayList<>();
+        String strategyLabel = toStrategyLabel(item.getStrategy());
+
+        if ("RANK".equals(item.getRecommendationBasis())
+                && item.getUserRank() != null
+                && item.getMinRank() != null
+                && item.getRankGap() != null) {
+            reasons.add(String.format("你的位次约为 %d，该校近年最低位次约为 %d，位次余量 %d，归为%s档",
+                    item.getUserRank(),
+                    item.getMinRank(),
+                    item.getRankGap(),
+                    strategyLabel));
+        } else if ("SCORE".equals(item.getRecommendationBasis())
+                && item.getCutoffScore() != null
+                && item.getScoreGap() != null
+                && request.getScore() != null) {
+            reasons.add(String.format("你的分数为 %d，该校近年最低分约为 %d，分差 %d，归为%s档",
+                    request.getScore(),
+                    item.getCutoffScore(),
+                    item.getScoreGap(),
+                    strategyLabel));
+        }
+
+        if (item.getAdmissionProbability() != null) {
+            reasons.add(String.format("规则测算录取概率约为 %d%%", item.getAdmissionProbability()));
+        }
+
+        if (item.getMajorName() != null
+                && !item.getMajorName().isBlank()
+                && request.getRecommendationMode() == RecommendationMode.MAJOR_FIRST) {
+            reasons.add(String.format("命中专业关键词“%s”，对应专业为 %s",
+                    request.getMajorKeyword() == null ? "-" : request.getMajorKeyword(),
+                    item.getMajorName()));
+        }
+
+        if (item.getSchoolTags() != null && !item.getSchoolTags().isEmpty()) {
+            reasons.add("院校标签匹配：" + String.join("/", item.getSchoolTags()));
+        }
+
+        if (item.getRiskScore() != null) {
+            reasons.add(String.format("风险指数 %d/100", item.getRiskScore()));
+        }
+        return reasons;
+    }
+
+    private String toStrategyLabel(String strategy) {
+        if (strategy == null) {
+            return "参考";
+        }
+        return switch (strategy) {
+            case "RUSH" -> "冲刺";
+            case "SAFE" -> "稳妥";
+            case "GUARANTEE" -> "保底";
+            default -> strategy;
+        };
+    }
+
+    private Integer calculateRiskScore(Integer admissionProbability) {
+        if (admissionProbability == null) {
+            return null;
+        }
+        return Math.max(0, Math.min(100, 100 - admissionProbability));
     }
 }

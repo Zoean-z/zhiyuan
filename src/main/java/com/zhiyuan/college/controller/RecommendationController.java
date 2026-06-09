@@ -1,26 +1,29 @@
 package com.zhiyuan.college.controller;
 
-import com.zhiyuan.college.mapper.AdmissionCutoffMapper;
-import com.zhiyuan.college.mapper.MajorAdmissionCutoffMapper;
+import com.zhiyuan.college.mapper.MajorMapper;
 import com.zhiyuan.college.mapper.UniversityMapper;
 import com.zhiyuan.college.model.dto.FinalAdviceRequest;
 import com.zhiyuan.college.model.dto.FinalAdviceResponse;
 import com.zhiyuan.college.model.dto.FreeTextRecommendationRequest;
 import com.zhiyuan.college.model.dto.FreeTextRecommendationResponse;
+import com.zhiyuan.college.model.dto.FreeTextRecommendationTaskResponse;
+import com.zhiyuan.college.model.dto.FreeTextRecommendationTaskSubmitResponse;
 import com.zhiyuan.college.model.dto.MetaOptionsResponse;
 import com.zhiyuan.college.model.dto.RecommendationRequest;
 import com.zhiyuan.college.model.dto.RecommendationResponse;
 import com.zhiyuan.college.model.dto.SchoolDetailResponse;
 import com.zhiyuan.college.model.entity.UserAccount;
 import com.zhiyuan.college.model.enums.SubjectType;
+import com.zhiyuan.college.service.AsyncRecommendationTaskService;
 import com.zhiyuan.college.service.FinalAdviceService;
 import com.zhiyuan.college.service.FreeTextRecommendationService;
 import com.zhiyuan.college.service.HistoryService;
+import com.zhiyuan.college.service.MetaOptionsService;
+import com.zhiyuan.college.service.RecommendationTrackingService;
 import com.zhiyuan.college.service.RecommendationService;
 import com.zhiyuan.college.service.SchoolDetailService;
 import com.zhiyuan.college.security.UserContext;
 import jakarta.validation.Valid;
-import java.util.Arrays;
 import java.util.List;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -39,31 +42,39 @@ public class RecommendationController {
     private final RecommendationService recommendationService;
     private final FinalAdviceService finalAdviceService;
     private final FreeTextRecommendationService freeTextRecommendationService;
-    private final AdmissionCutoffMapper admissionCutoffMapper;
-    private final MajorAdmissionCutoffMapper majorAdmissionCutoffMapper;
+    private final AsyncRecommendationTaskService asyncRecommendationTaskService;
+    private final MajorMapper majorMapper;
     private final SchoolDetailService schoolDetailService;
     private final HistoryService historyService;
+    private final RecommendationTrackingService recommendationTrackingService;
+    private final MetaOptionsService metaOptionsService;
 
     public RecommendationController(RecommendationService recommendationService,
                                     FinalAdviceService finalAdviceService,
                                     FreeTextRecommendationService freeTextRecommendationService,
-                                    AdmissionCutoffMapper admissionCutoffMapper,
-                                    MajorAdmissionCutoffMapper majorAdmissionCutoffMapper,
+                                    AsyncRecommendationTaskService asyncRecommendationTaskService,
+                                    MajorMapper majorMapper,
                                     SchoolDetailService schoolDetailService,
-                                    HistoryService historyService) {
+                                    HistoryService historyService,
+                                    RecommendationTrackingService recommendationTrackingService,
+                                    MetaOptionsService metaOptionsService) {
         this.recommendationService = recommendationService;
         this.finalAdviceService = finalAdviceService;
         this.freeTextRecommendationService = freeTextRecommendationService;
-        this.admissionCutoffMapper = admissionCutoffMapper;
-        this.majorAdmissionCutoffMapper = majorAdmissionCutoffMapper;
+        this.asyncRecommendationTaskService = asyncRecommendationTaskService;
+        this.majorMapper = majorMapper;
         this.schoolDetailService = schoolDetailService;
         this.historyService = historyService;
+        this.recommendationTrackingService = recommendationTrackingService;
+        this.metaOptionsService = metaOptionsService;
     }
 
     @PostMapping("/recommendations")
     public RecommendationResponse recommend(@Valid @RequestBody RecommendationRequest request) {
         RecommendationResponse response = recommendationService.recommend(request);
-        historyService.saveScoreHistory(currentUserId(), request, response);
+        Long userId = currentUserId();
+        historyService.saveScoreHistory(userId, request, response);
+        recommendationTrackingService.saveScoreTask(userId, response.getRequestId(), request, response);
         return response;
     }
 
@@ -74,6 +85,17 @@ public class RecommendationController {
         return response;
     }
 
+    @PostMapping("/recommendations/free-text/tasks")
+    public FreeTextRecommendationTaskSubmitResponse submitTextRecommendationTask(
+            @Valid @RequestBody FreeTextRecommendationRequest request) {
+        return asyncRecommendationTaskService.submitTextTask(currentUserId(), request);
+    }
+
+    @GetMapping("/recommendations/free-text/tasks/{taskId}")
+    public FreeTextRecommendationTaskResponse getTextRecommendationTask(@PathVariable("taskId") Long taskId) {
+        return asyncRecommendationTaskService.getTextTask(currentUserId(), taskId);
+    }
+
     @PostMapping("/recommendations/final-advice")
     public FinalAdviceResponse finalAdvice(@Valid @RequestBody FinalAdviceRequest request) {
         return finalAdviceService.generate(request);
@@ -81,11 +103,7 @@ public class RecommendationController {
 
     @GetMapping("/meta/options")
     public MetaOptionsResponse getOptions() {
-        List<String> provinces = admissionCutoffMapper.findDistinctProvinces();
-        List<String> subjectTypes = Arrays.stream(SubjectType.values())
-                .map(SubjectType::getDisplayName)
-                .toList();
-        return new MetaOptionsResponse(provinces, subjectTypes);
+        return metaOptionsService.getOptions();
     }
 
     @GetMapping("/meta/major-options")
@@ -96,7 +114,7 @@ public class RecommendationController {
         if (normalizedKeyword.isBlank()) {
             return List.of();
         }
-        return majorAdmissionCutoffMapper.findMajorSuggestions(
+        return majorMapper.findSuggestions(
                 normalizedKeyword,
                 province == null || province.isBlank() ? null : province.trim(),
                 subjectType == null ? null : subjectType.getDbValue()

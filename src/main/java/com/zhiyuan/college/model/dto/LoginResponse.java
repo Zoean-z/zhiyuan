@@ -1,6 +1,7 @@
 package com.zhiyuan.college.model.dto;
 
 import com.zhiyuan.college.model.enums.SubjectType;
+import com.zhiyuan.college.model.enums.UserRole;
 
 public class LoginResponse {
 
@@ -9,13 +10,15 @@ public class LoginResponse {
     private Integer score;
     private SubjectType subjectType;
     private String examProvince;
+    private UserRole role;
 
-    public LoginResponse(String token, String username, Integer score, SubjectType subjectType, String examProvince) {
+    public LoginResponse(String token, String username, Integer score, SubjectType subjectType, String examProvince, UserRole role) {
         this.token = token;
         this.username = username;
         this.score = score;
         this.subjectType = subjectType;
         this.examProvince = examProvince;
+        this.role = role;
     }
 
     public String getToken() {
@@ -36,5 +39,9 @@ public class LoginResponse {
 
     public String getExamProvince() {
         return examProvince;
+    }
+
+    public UserRole getRole() {
+        return role;
     }
 }

@@ -1,6 +1,7 @@
 package com.zhiyuan.college.model.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 
@@ -16,10 +17,13 @@ public class University {
 
     private String tier;
 
+    @TableField("is_985")
     private Boolean is985;
 
+    @TableField("is_211")
     private Boolean is211;
 
+    @TableField("is_double_first_class")
     private Boolean isDoubleFirstClass;
 
     private String tags;
