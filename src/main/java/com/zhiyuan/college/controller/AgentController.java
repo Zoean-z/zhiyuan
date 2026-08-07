@@ -54,7 +54,7 @@ public class AgentController {
     @PostMapping("/{id}/messages")
     public AgentChatTurnResponse sendMessage(@PathVariable("id") Long id,
                                              @Valid @RequestBody AgentMessageCreateRequest request) {
-        return agentChatService.sendMessage(currentUserId(), id, request.getContent(), currentUser());
+        return agentChatService.sendMessage(currentUserId(), id, request.getContent(), request.getPlanId(), currentUser());
     }
 
     private Long currentUserId() {

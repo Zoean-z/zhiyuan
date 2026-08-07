@@ -89,19 +89,35 @@ public class ApplicationPlanService {
     }
 
     public ApplicationPlanDetailResponse getById(Long userId, Long id) {
-        ApplicationPlan plan = applicationPlanMapper.selectById(id);
-        if (plan == null || !userId.equals(plan.getUserId())) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Plan not found");
-        }
+        ApplicationPlan plan = requireOwnedEntity(userId, id);
         return toDetailResponse(plan);
     }
 
+    public ApplicationPlanDetailResponse update(Long userId, Long id, ApplicationPlanCreateRequest request) {
+        ApplicationPlan plan = requireOwnedEntity(userId, id);
+        plan.setPlanName(trimRequired(request.getPlanName(), "planName is required"));
+        plan.setSourceType(normalizeSourceType(request.getSourceType()));
+        plan.setSourceQuery(trimRequired(request.getSourceQuery(), "sourceQuery is required"));
+        plan.setResultJson(trimRequired(request.getResultJson(), "resultJson is required"));
+        plan.setAiSummary(trimOptional(request.getAiSummary()));
+        applicationPlanMapper.updateById(plan);
+        return toDetailResponse(applicationPlanMapper.selectById(id));
+    }
+
     public void deleteById(Long userId, Long id) {
+        ApplicationPlan plan = requireOwnedEntity(userId, id);
+        applicationPlanMapper.deleteById(id);
+    }
+
+    public ApplicationPlan requireOwnedEntity(Long userId, Long id) {
+        if (id == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "planId is required");
+        }
         ApplicationPlan plan = applicationPlanMapper.selectById(id);
         if (plan == null || !userId.equals(plan.getUserId())) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Plan not found");
         }
-        applicationPlanMapper.deleteById(id);
+        return plan;
     }
 
     public ApplicationPlan findCurrentDraftEntity(Long userId) {

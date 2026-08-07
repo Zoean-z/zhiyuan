@@ -9,7 +9,7 @@ services:
       MYSQL_USER: ${DB_APP_USER:-zhiyuan}
       MYSQL_PASSWORD: ${DB_APP_PASSWORD:-zhiyuan123}
     ports:
-      - "${DB_HOST_PORT:-3307}:3306"
+      - "127.0.0.1:${DB_HOST_PORT:-3307}:3306"
     command:
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_unicode_ci
@@ -28,7 +28,7 @@ services:
     container_name: zhiyuan-redis
     restart: unless-stopped
     ports:
-      - "${REDIS_HOST_PORT:-6380}:6379"
+      - "127.0.0.1:${REDIS_HOST_PORT:-6380}:6379"
     command: ["redis-server", "--appendonly", "yes"]
     volumes:
       - redis-data:/data
@@ -37,6 +37,58 @@ services:
       interval: 10s
       timeout: 3s
       retries: 10
+
+  rocketmq-nameserver:
+    image: apache/rocketmq:5.3.2
+    container_name: zhiyuan-rocketmq-nameserver
+    restart: unless-stopped
+    environment:
+      JAVA_OPT_EXT: "-Xms256m -Xmx256m -Xmn128m"
+    command: sh mqnamesrv
+    ports:
+      - "127.0.0.1:${ROCKETMQ_NAMESERVER_HOST_PORT:-9876}:9876"
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/127.0.0.1/9876'"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+
+  rocketmq-init:
+    image: apache/rocketmq:5.3.2
+    container_name: zhiyuan-rocketmq-init
+    user: "0:0"
+    entrypoint: ["sh", "-c"]
+    command: ["chown -R 3000:3000 /home/rocketmq/store /home/rocketmq/logs"]
+    volumes:
+      - rocketmq-store:/home/rocketmq/store
+      - rocketmq-logs:/home/rocketmq/logs
+
+  rocketmq-broker:
+    image: apache/rocketmq:5.3.2
+    container_name: zhiyuan-rocketmq-broker
+    restart: unless-stopped
+    depends_on:
+      rocketmq-nameserver:
+        condition: service_healthy
+      rocketmq-init:
+        condition: service_completed_successfully
+    environment:
+      NAMESRV_ADDR: rocketmq-nameserver:9876
+      JAVA_OPT_EXT: "-Xms512m -Xmx512m -Xmn256m"
+    command: sh mqbroker -c /home/rocketmq/rocketmq-5.3.2/conf/broker.conf
+    volumes:
+      - ./docker/rocketmq/broker.conf:/home/rocketmq/rocketmq-5.3.2/conf/broker.conf:ro
+      - rocketmq-store:/home/rocketmq/store
+      - rocketmq-logs:/home/rocketmq/logs
+    ports:
+      - "127.0.0.1:${ROCKETMQ_BROKER_HOST_PORT:-10911}:10911"
+      - "127.0.0.1:${ROCKETMQ_FAST_REMOTING_HOST_PORT:-10909}:10909"
+      - "127.0.0.1:${ROCKETMQ_HA_HOST_PORT:-10912}:10912"
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/127.0.0.1/10911'"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
 
   backend:
     build:
@@ -48,6 +100,8 @@ services:
       mysql:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      rocketmq-broker:
         condition: service_healthy
     environment:
       SPRING_PROFILES_ACTIVE: prod
@@ -63,7 +117,16 @@ services:
       REDIS_DATABASE: ${REDIS_DATABASE:-0}
       REDIS_TIMEOUT: ${REDIS_TIMEOUT:-3s}
       CACHE_REDIS_ENABLED: ${CACHE_REDIS_ENABLED:-true}
-      AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:-change-this-jwt-secret}
+      ROCKETMQ_ENABLED: ${ROCKETMQ_ENABLED:-true}
+      ROCKETMQ_NAME_SERVER: ${ROCKETMQ_NAME_SERVER:-rocketmq-nameserver:9876}
+      ROCKETMQ_RECOMMENDATION_TOPIC: ${ROCKETMQ_RECOMMENDATION_TOPIC:-recommendation-task-topic}
+      ROCKETMQ_RECOMMENDATION_TAG: ${ROCKETMQ_RECOMMENDATION_TAG:-free-text}
+      ROCKETMQ_PRODUCER_GROUP: ${ROCKETMQ_PRODUCER_GROUP:-recommendation-task-producer-group}
+      ROCKETMQ_CONSUMER_GROUP: ${ROCKETMQ_CONSUMER_GROUP:-recommendation-task-consumer-group}
+      ROCKETMQ_SEND_TIMEOUT_MS: ${ROCKETMQ_SEND_TIMEOUT_MS:-3000}
+      ROCKETMQ_PRODUCER_RETRY_TIMES: ${ROCKETMQ_PRODUCER_RETRY_TIMES:-2}
+      ROCKETMQ_RUNNING_TIMEOUT: ${ROCKETMQ_RUNNING_TIMEOUT:-5m}
+      AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:-emhpeXVhbi1wcm9kLXNlY3JldC16aGl5dWFuLXByb2Qtc2VjcmV0LTIwMjYta2V5}
       AUTH_JWT_ISSUER: ${AUTH_JWT_ISSUER:-zhiyuan}
       AUTH_TOKEN_TTL_SECONDS: ${AUTH_TOKEN_TTL_SECONDS:-86400}
       QWEN_ENABLED: ${QWEN_ENABLED:-false}
@@ -74,7 +137,15 @@ services:
       SPRINGDOC_API_DOCS_PATH: ${SPRINGDOC_API_DOCS_PATH:-/v3/api-docs}
     ports:
       - "${SERVER_HOST_PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8080/v3/api-docs >/dev/null 2>&1"]
+      interval: 15s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
 
 volumes:
   mysql-data:
   redis-data:
+  rocketmq-store:
+  rocketmq-logs:

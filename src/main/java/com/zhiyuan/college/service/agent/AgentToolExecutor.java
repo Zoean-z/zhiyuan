@@ -22,13 +22,21 @@ public class AgentToolExecutor {
     }
 
     public AgentToolResult execute(Long userId, String toolName, Map<String, Object> toolArgs, List<AgentMessage> recentMessages) {
+        return execute(userId, null, toolName, toolArgs, recentMessages);
+    }
+
+    public AgentToolResult execute(Long userId,
+                                   Long targetPlanId,
+                                   String toolName,
+                                   Map<String, Object> toolArgs,
+                                   List<AgentMessage> recentMessages) {
         if (!agentToolRegistry.supports(toolName)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unsupported agent tool for execution: " + toolName);
         }
         validateToolArgs(toolName, toolArgs);
         return switch (toolName) {
             case AgentToolNames.GET_USER_PROFILE -> agentToolFacade.getUserProfile(userId);
-            case AgentToolNames.GET_CURRENT_PLAN -> agentToolFacade.getCurrentPlan(userId);
+            case AgentToolNames.GET_CURRENT_PLAN -> agentToolFacade.getCurrentPlan(userId, targetPlanId);
             case AgentToolNames.GET_SCHOOL_DETAIL -> agentToolFacade.getSchoolDetail(userId, toolArgs, recentMessages);
             case AgentToolNames.GET_SCHOOL_DETAIL_BY_NAME -> agentToolFacade.getSchoolDetailByName(userId, toolArgs);
             case AgentToolNames.RECOMMEND_SCHOOLS -> agentToolFacade.recommendSchools(userId);
@@ -36,9 +44,9 @@ public class AgentToolExecutor {
                     userId,
                     toolArgs == null ? null : toolArgs.get("majorKeyword")
             );
-            case AgentToolNames.ADD_PLAN_ITEM -> agentToolFacade.addPlanItem(userId, toolArgs, recentMessages);
-            case AgentToolNames.REMOVE_PLAN_ITEM -> agentToolFacade.removePlanItem(userId, toolArgs);
-            case AgentToolNames.SAVE_PLAN -> agentToolFacade.savePlan(userId, toolArgs);
+            case AgentToolNames.ADD_PLAN_ITEM -> agentToolFacade.addPlanItem(userId, targetPlanId, toolArgs, recentMessages);
+            case AgentToolNames.REMOVE_PLAN_ITEM -> agentToolFacade.removePlanItem(userId, targetPlanId, toolArgs);
+            case AgentToolNames.SAVE_PLAN -> agentToolFacade.savePlan(userId, targetPlanId, toolArgs);
             default -> throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unsupported agent tool for execution: " + toolName);
         };
     }

@@ -681,7 +681,7 @@ class RecommendationControllerTest {
     }
 
     @Test
-    void login_shouldRequireScoreAtFirstLogin() throws Exception {
+    void login_shouldAllowIncompleteProfileAndCompleteItAfterLogin() throws Exception {
         jdbcTemplate.update(
                 "UPDATE users SET score = NULL, subject_type = NULL, exam_province = NULL WHERE username = ?",
                 "freshuser");
@@ -693,10 +693,37 @@ class RecommendationControllerTest {
                 }
                 """;
 
-        mockMvc.perform(post("/api/auth/login")
+        MvcResult loginResult = mockMvc.perform(post("/api/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(requestJson))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isOk())
+                .andReturn();
+
+        JsonNode loginResponse = objectMapper.readTree(loginResult.getResponse().getContentAsString());
+        Assertions.assertTrue(loginResponse.get("score").isNull());
+        Assertions.assertTrue(loginResponse.get("subjectType").isNull());
+        Assertions.assertTrue(loginResponse.get("examProvince").isNull());
+
+        mockMvc.perform(post("/api/auth/profile")
+                        .header("Authorization", "Bearer " + loginResponse.get("token").asText())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "score": 618,
+                                  "subjectType": "PHYSICS",
+                                  "examProvince": "浙江"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.score").value(618))
+                .andExpect(jsonPath("$.subjectType").value("PHYSICS"))
+                .andExpect(jsonPath("$.examProvince").value("浙江"));
+
+        Integer storedScore = jdbcTemplate.queryForObject(
+                "SELECT score FROM users WHERE username = ?",
+                Integer.class,
+                "freshuser");
+        Assertions.assertEquals(618, storedScore);
     }
 
     @Test

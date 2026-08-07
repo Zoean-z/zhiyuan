@@ -47,9 +47,6 @@ recommendation:
 cache:
   redis:
     enabled: false
-async:
-  recommendation:
-    core-pool-size: 1
-    max-pool-size: 1
-    queue-capacity: 10
-    thread-name-prefix: recommendation-test-
+messaging:
+  rocketmq:
+    enabled: false

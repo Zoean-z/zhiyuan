@@ -1,34 +1,27 @@
 <script setup>
 import { ElMessage, ElMessageBox } from "element-plus";
-import { computed, onMounted, reactive, ref, watch } from "vue";
-import AgentWorkspace from "./components/AgentWorkspace.vue";
-import ApplicationPlanView from "./components/ApplicationPlanView.vue";
-import CurrentPlanPanel from "./components/CurrentPlanPanel.vue";
-import HistoryView from "./components/HistoryView.vue";
-import RecognizedConditionsPanel from "./components/RecognizedConditionsPanel.vue";
-import RecommendationResult from "./components/RecommendationResult.vue";
-import SchoolDetailDrawer from "./components/SchoolDetailDrawer.vue";
+import { ChatDotRound, Clock, Document, Reading, Search, UserFilled } from "@element-plus/icons-vue";
+import { computed, onMounted, provide, reactive, ref, watch } from "vue";
+import { useRoute, useRouter } from "vue-router";
+import admissionJourneyImage from "./assets/admission-journey.png";
 import {
-  RECOMMENDATION_MODE_OPTIONS,
-  SUBJECT_OPTIONS,
   buildPlanItemKey,
   buildGroupedFromResult,
   clearStoredAuth,
-  formatDateTime,
   groupByStrategy,
+  isUserProfileComplete,
   normalizeItem,
-  queryTypeLabel,
   readStoredAuth,
   recommendationModeLabel,
   saveStoredAuth,
-  sourceTypeLabel,
   subjectTypeLabel
 } from "./utils/recommendation";
 import { UI_TEXT, createHttpError, normalizeUserError } from "./utils/ui";
 
+const router = useRouter();
+const currentRoute = useRoute();
 const auth = ref(readStoredAuth());
 const authMode = ref("login");
-const activePage = ref("recommend");
 const activeMode = ref("text");
 const loading = ref(false);
 const error = ref("");
@@ -69,12 +62,20 @@ const planAiSummary = ref("");
 const planFinalAdvice = ref("");
 const planTips = ref([]);
 const planRecommendationMode = ref("");
+const planTargetDialogVisible = ref(false);
+const planTargetSubmitting = ref(false);
+const planTargetId = ref("");
+const planTargetNewName = ref("");
+const pendingPlanItems = ref([]);
+let historyLoadVersion = 0;
+let planLoadVersion = 0;
 
 const saveDialogVisible = ref(false);
 const saveSubmitting = ref(false);
 const saveForm = reactive({ planName: "" });
 const majorSuggestionLoading = ref(false);
 const majorSuggestions = ref([]);
+let majorSuggestionRequestVersion = 0;
 const currentPlanItems = ref([]);
 const schoolDetailVisible = ref(false);
 const schoolDetailLoading = ref(false);
@@ -82,15 +83,19 @@ const schoolDetail = ref(null);
 const schoolDetailMajors = ref([]);
 const schoolDetailSourceItem = ref(null);
 
-const loginForm = reactive({ username: "", password: "", score: "", subjectType: "", examProvince: "" });
+const loginForm = reactive({ username: "", password: "" });
+const profileForm = reactive({ score: "", subjectType: "", examProvince: "", confirmed: false });
 const scoreForm = reactive({ score: "", province: "", subjectType: "", recommendationMode: "SCHOOL_FIRST", majorKeyword: "" });
 const textForm = reactive({ requirementText: "" });
 
-const userText = computed(() => {
-  if (!auth.value) return "";
-  const user = auth.value.user || {};
-  return `用户：${user.username || "-"} | 分数：${user.score ?? "-"} | 科类：${subjectTypeLabel(user.subjectType)} | 省份：${user.examProvince || "-"}`;
+const username = computed(() => auth.value?.user?.username || "用户");
+const userMeta = computed(() => {
+  const user = auth.value?.user || {};
+  return [user.examProvince, subjectTypeLabel(user.subjectType), user.score == null ? "" : `${user.score}分`]
+    .filter(Boolean)
+    .join(" · ");
 });
+const pageTitle = computed(() => currentRoute.meta.title || "推荐查询");
 
 const historyHasResult = computed(() => historyGrouped.rush.length + historyGrouped.safe.length + historyGrouped.guarantee.length > 0);
 const planHasResult = computed(() => planGrouped.rush.length + planGrouped.safe.length + planGrouped.guarantee.length > 0);
@@ -141,15 +146,17 @@ function validateLoginForm() {
   if (!loginForm.password) {
     return UI_TEXT.form.passwordRequired;
   }
-  if (authMode.value === "register" && (loginForm.score === "" || Number.isNaN(Number(loginForm.score)))) {
-    return UI_TEXT.form.registerScoreRequired;
+  return "";
+}
+
+function validateProfileForm() {
+  const score = Number(profileForm.score);
+  if (!profileForm.examProvince) return UI_TEXT.form.provinceRequired;
+  if (!profileForm.subjectType) return UI_TEXT.form.subjectTypeRequired;
+  if (profileForm.score === "" || Number.isNaN(score) || score < 0 || score > 750) {
+    return UI_TEXT.form.scoreRequired;
   }
-  if (authMode.value === "register" && !loginForm.subjectType) {
-    return UI_TEXT.form.registerSubjectTypeRequired;
-  }
-  if (authMode.value === "register" && !loginForm.examProvince) {
-    return UI_TEXT.form.registerProvinceRequired;
-  }
+  if (!profileForm.confirmed) return "请确认报考信息填写无误";
   return "";
 }
 
@@ -212,18 +219,7 @@ function resetSchoolDetail() {
 }
 
 async function addCurrentPlanItem(item, strategy) {
-  const addedCount = appendCurrentPlanItems([{ ...item, strategy }]);
-  if (!addedCount) {
-    ElMessage.warning("该条结果已加入当前方案");
-    return;
-  }
-  try {
-    await upsertCurrentPlanDraft();
-    ElMessage.success(UI_TEXT.success.addToPlan);
-  } catch (ex) {
-    ElMessage.error(applyError(ex, UI_TEXT.failure.savePlan));
-    await loadCurrentPlanDraft();
-  }
+  await openPlanTargetDialog([{ ...item, strategy }]);
 }
 
 function appendCurrentPlanItems(items) {
@@ -288,20 +284,7 @@ async function addSelectedMajorsToPlan(majors) {
   }
 
   const items = majors.map((major) => buildSelectedMajorPlanItem(major)).filter(Boolean);
-  const addedCount = appendCurrentPlanItems(items);
-  if (!addedCount) {
-    ElMessage.warning("所选专业已在当前方案中");
-    return;
-  }
-
-  try {
-    await upsertCurrentPlanDraft();
-    ElMessage.success(`加入方案成功，共 ${addedCount} 个专业`);
-    resetSchoolDetail();
-  } catch (ex) {
-    ElMessage.error(applyError(ex, UI_TEXT.failure.savePlan));
-    await loadCurrentPlanDraft();
-  }
+  await openPlanTargetDialog(items);
 }
 
 async function removeCurrentPlanItem(item) {
@@ -350,6 +333,7 @@ function buildPlanPayload() {
       minRank: item.minRank,
       rankGap: item.rankGap,
       recommendationBasis: item.recommendationBasis,
+      admissionProbability: item.admissionProbability ?? null,
       strategy: String(item.strategy || "safe").toUpperCase(),
       strategyLabel: item.strategyLabel || null,
       riskScore: item.riskScore ?? null,
@@ -367,6 +351,114 @@ function buildPlanPayload() {
     finalAdvice: finalAdvice.value || "",
     tips: resultTips.value
   };
+}
+
+function buildPlanItemsFromResult(resultObj) {
+  const groupedData = buildGroupedFromResult(resultObj || {});
+  const items = [];
+  [["rush", groupedData.rush], ["safe", groupedData.safe], ["guarantee", groupedData.guarantee]].forEach(([strategy, list]) => {
+    (list || []).forEach((item) => {
+      const normalized = normalizeItem(item, strategy);
+      items.push({
+        ...normalized,
+        strategy: normalized.strategy || strategy,
+        planKey: buildPlanItemKey(item, normalized.strategy || strategy)
+      });
+    });
+  });
+  return items;
+}
+
+function buildPlanPayloadForItems(items, base = {}) {
+  const previousItems = currentPlanItems.value;
+  currentPlanItems.value = items;
+  const payload = buildPlanPayload();
+  currentPlanItems.value = previousItems;
+  return {
+    ...payload,
+    recommendationMode: base.recommendationMode || payload.recommendationMode,
+    summary: `当前方案共选择 ${items.length} 条志愿结果。`,
+    aiSummary: base.aiSummary || payload.aiSummary || "",
+    finalAdvice: base.finalAdvice || payload.finalAdvice || "",
+    tips: Array.isArray(base.tips) ? base.tips : payload.tips
+  };
+}
+
+async function openPlanTargetDialog(items) {
+  pendingPlanItems.value = (items || []).map((item) => normalizeItem(item, item?.strategy));
+  if (!pendingPlanItems.value.length) return;
+  await loadPlans();
+  const preferred = planRecords.value.find((record) => record.planName !== "当前方案草稿") || planRecords.value[0];
+  planTargetId.value = preferred ? String(preferred.id) : "new";
+  planTargetNewName.value = `2026${auth.value?.user?.examProvince || ""}志愿方案`;
+  planTargetDialogVisible.value = true;
+}
+
+async function confirmAddToPlan() {
+  if (!planTargetId.value) {
+    ElMessage.warning("请选择目标志愿表");
+    return;
+  }
+  if (planTargetId.value === "new" && !planTargetNewName.value.trim()) {
+    ElMessage.warning("请输入新志愿表名称");
+    return;
+  }
+
+  planTargetSubmitting.value = true;
+  try {
+    let detail = null;
+    let existingItems = [];
+    let parsed = {};
+    if (planTargetId.value !== "new") {
+      detail = await apiFetch(`/api/plans/${planTargetId.value}`, { method: "GET", headers: getAuthHeaders() });
+      try {
+        parsed = detail?.resultJson ? JSON.parse(detail.resultJson) : {};
+      } catch {
+        parsed = {};
+      }
+      existingItems = buildPlanItemsFromResult(parsed);
+    }
+
+    const merged = [...existingItems];
+    let addedCount = 0;
+    pendingPlanItems.value.forEach((item) => {
+      const normalized = normalizeItem(item, item?.strategy);
+      const planKey = buildPlanItemKey(normalized, normalized.strategy);
+      if (merged.some((entry) => buildPlanItemKey(entry, entry.strategy) === planKey)) return;
+      merged.push({ ...normalized, planKey });
+      addedCount += 1;
+    });
+    if (!addedCount) {
+      ElMessage.warning("所选结果已在该志愿表中");
+      return;
+    }
+
+    const payload = buildPlanPayloadForItems(merged, parsed);
+    const planName = detail?.planName || planTargetNewName.value.trim();
+    const requestBody = {
+      planName,
+      sourceType: detail?.sourceType || latestSourceType.value || "score",
+      sourceQuery: detail?.sourceQuery || latestSourceQuery.value || `手动加入 ${addedCount} 条志愿结果`,
+      resultJson: JSON.stringify(payload),
+      aiSummary: detail?.aiSummary || payload.aiSummary || payload.summary
+    };
+    const saved = await apiFetch(planTargetId.value === "new" ? "/api/plans" : `/api/plans/${planTargetId.value}`, {
+      method: planTargetId.value === "new" ? "POST" : "PUT",
+      headers: getAuthHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify(requestBody)
+    });
+    currentPlanItems.value = merged;
+    planTargetId.value = String(saved.id);
+    planTargetDialogVisible.value = false;
+    pendingPlanItems.value = [];
+    resetSchoolDetail();
+    await loadPlans();
+    ElMessage.success(`已加入《${saved.planName}》，共新增 ${addedCount} 条`);
+  } catch (ex) {
+    ElMessage.error(applyError(ex, "加入志愿表失败"));
+  } finally {
+    planTargetSubmitting.value = false;
+  }
 }
 
 async function loadCurrentPlanDraft() {
@@ -452,7 +544,9 @@ function fillScoreFromUser() {
 }
 
 function resetMajorSuggestions() {
+  majorSuggestionRequestVersion += 1;
   majorSuggestions.value = [];
+  majorSuggestionLoading.value = false;
 }
 
 function resetHistoryDialog() {
@@ -466,6 +560,13 @@ function resetHistoryDialog() {
   historyFinalAdvice.value = "";
   historyTips.value = [];
   historyRecommendationMode.value = "";
+}
+
+function fillProfileFromUser() {
+  const user = auth.value?.user || {};
+  profileForm.score = user.score ?? "";
+  profileForm.subjectType = user.subjectType || "";
+  profileForm.examProvince = user.examProvince || "";
 }
 
 function resetPlanDialog() {
@@ -508,9 +609,10 @@ async function loadMajorSuggestions(query) {
   const keyword = String(query || "").trim();
   if (scoreForm.recommendationMode !== "MAJOR_FIRST" || !keyword) {
     resetMajorSuggestions();
-    return;
+    return [];
   }
 
+  const requestVersion = ++majorSuggestionRequestVersion;
   majorSuggestionLoading.value = true;
   try {
     const params = new URLSearchParams({ keyword });
@@ -521,12 +623,21 @@ async function loadMajorSuggestions(query) {
       params.set("subjectType", scoreForm.subjectType);
     }
     const data = await apiFetch(`/api/meta/major-options?${params.toString()}`, { method: "GET" });
-    majorSuggestions.value = Array.isArray(data) ? data : [];
+    const suggestions = Array.isArray(data) ? data.filter(Boolean) : [];
+    if (requestVersion === majorSuggestionRequestVersion) {
+      majorSuggestions.value = suggestions;
+    }
+    return requestVersion === majorSuggestionRequestVersion ? suggestions : [];
   } catch (ex) {
     console.error("[loadMajorSuggestions]", ex);
-    majorSuggestions.value = [];
+    if (requestVersion === majorSuggestionRequestVersion) {
+      majorSuggestions.value = [];
+    }
+    return [];
   } finally {
-    majorSuggestionLoading.value = false;
+    if (requestVersion === majorSuggestionRequestVersion) {
+      majorSuggestionLoading.value = false;
+    }
   }
 }
 
@@ -577,22 +688,17 @@ async function login() {
   }
   loading.value = true;
   try {
-    const payload = { username: loginForm.username, password: loginForm.password };
-    if (loginForm.score !== "") payload.score = Number(loginForm.score);
-    if (loginForm.subjectType) payload.subjectType = loginForm.subjectType;
-    if (loginForm.examProvince) payload.examProvince = loginForm.examProvince;
-
     const data = await apiFetch("/api/auth/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
+      body: JSON.stringify({ username: loginForm.username, password: loginForm.password })
     });
 
     auth.value = { token: data.token, user: data };
     saveStoredAuth(auth.value);
-    activePage.value = "recommend";
     fillScoreFromUser();
-    await loadCurrentPlanDraft();
+    fillProfileFromUser();
+    await router.replace(resolvePostAuthTarget(data));
   } catch (ex) {
     applyError(ex, UI_TEXT.failure.login);
   } finally {
@@ -612,10 +718,7 @@ async function register() {
   try {
     const payload = {
       username: loginForm.username,
-      password: loginForm.password,
-      score: Number(loginForm.score),
-      subjectType: loginForm.subjectType,
-      examProvince: loginForm.examProvince
+      password: loginForm.password
     };
 
     const data = await apiFetch("/api/auth/register", {
@@ -626,13 +729,46 @@ async function register() {
 
     auth.value = { token: data.token, user: data };
     saveStoredAuth(auth.value);
-    activePage.value = "recommend";
     authMode.value = "login";
     fillScoreFromUser();
-    await loadCurrentPlanDraft();
+    fillProfileFromUser();
+    await router.replace(resolvePostAuthTarget(data));
     ElMessage.success(UI_TEXT.success.register);
   } catch (ex) {
     applyError(ex, UI_TEXT.failure.register);
+  } finally {
+    loading.value = false;
+  }
+}
+
+async function completeProfile() {
+  error.value = "";
+  const validationMessage = validateProfileForm();
+  if (validationMessage) {
+    error.value = validationMessage;
+    ElMessage.warning(validationMessage);
+    return;
+  }
+  loading.value = true;
+  try {
+    const data = await apiFetch("/api/auth/profile", {
+      method: "POST",
+      headers: getAuthHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({
+        score: Number(profileForm.score),
+        subjectType: profileForm.subjectType,
+        examProvince: profileForm.examProvince
+      })
+    });
+    auth.value = { token: data.token, user: data };
+    saveStoredAuth(auth.value);
+    fillScoreFromUser();
+    fillProfileFromUser();
+    profileForm.confirmed = false;
+    await router.replace(resolvePostAuthTarget(data));
+    ElMessage.success("报考信息已保存");
+  } catch (ex) {
+    applyError(ex, "报考信息保存失败");
   } finally {
     loading.value = false;
   }
@@ -657,6 +793,7 @@ async function logout() {
   historyDialogVisible.value = false;
   planDialogVisible.value = false;
   saveDialogVisible.value = false;
+  await router.replace({ name: "login" });
 }
 
 async function queryByScore() {
@@ -758,15 +895,27 @@ async function queryByText() {
 }
 
 async function loadHistory() {
+  const loadVersion = ++historyLoadVersion;
   historyLoading.value = true;
   try {
-    historyRecords.value = await apiFetch("/api/history", { method: "GET", headers: getAuthHeaders() });
+    const records = await apiFetch("/api/history", { method: "GET", headers: getAuthHeaders() });
+    if (loadVersion === historyLoadVersion) {
+      historyRecords.value = records;
+    }
   } catch (ex) {
+    if (loadVersion !== historyLoadVersion) return;
     applyError(ex, UI_TEXT.failure.loadHistory, { notify: true });
     historyRecords.value = [];
   } finally {
-    historyLoading.value = false;
+    if (loadVersion === historyLoadVersion) {
+      historyLoading.value = false;
+    }
   }
+}
+
+function invalidateHistoryLoad() {
+  historyLoadVersion += 1;
+  historyLoading.value = false;
 }
 
 async function openHistoryResult(row) {
@@ -832,15 +981,27 @@ async function deleteHistoryRecord(row) {
 }
 
 async function loadPlans() {
+  const loadVersion = ++planLoadVersion;
   planLoading.value = true;
   try {
-    planRecords.value = await apiFetch("/api/plans", { method: "GET", headers: getAuthHeaders() });
+    const records = await apiFetch("/api/plans", { method: "GET", headers: getAuthHeaders() });
+    if (loadVersion === planLoadVersion) {
+      planRecords.value = records;
+    }
   } catch (ex) {
+    if (loadVersion !== planLoadVersion) return;
     applyError(ex, UI_TEXT.failure.loadPlans, { notify: true });
     planRecords.value = [];
   } finally {
-    planLoading.value = false;
+    if (loadVersion === planLoadVersion) {
+      planLoading.value = false;
+    }
   }
+}
+
+function invalidatePlanLoad() {
+  planLoadVersion += 1;
+  planLoading.value = false;
 }
 
 async function openPlanDetail(row) {
@@ -911,6 +1072,38 @@ async function deletePlan(row) {
   }
 }
 
+async function updatePlanDetailItems(items) {
+  if (!planDetail.value?.id) return false;
+  let parsed = {};
+  try {
+    parsed = planDetail.value.resultJson ? JSON.parse(planDetail.value.resultJson) : {};
+  } catch {
+    parsed = {};
+  }
+  const normalizedItems = (items || []).map((item) => normalizeItem(item, item?.strategy));
+  const payload = buildPlanPayloadForItems(normalizedItems, parsed);
+  try {
+    const updated = await apiFetch(`/api/plans/${planDetail.value.id}`, {
+      method: "PUT",
+      headers: getAuthHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({
+        planName: planDetail.value.planName,
+        sourceType: planDetail.value.sourceType,
+        sourceQuery: planDetail.value.sourceQuery,
+        resultJson: JSON.stringify(payload),
+        aiSummary: planDetail.value.aiSummary || payload.aiSummary || payload.summary
+      })
+    });
+    await openPlanDetail(updated);
+    await loadPlans();
+    ElMessage.success(`《${updated.planName}》已更新`);
+    return true;
+  } catch (ex) {
+    ElMessage.error(applyError(ex, "更新志愿表失败"));
+    return false;
+  }
+}
+
 function openSavePlanDialog() {
   if (!currentPlanItems.value.length) {
     ElMessage.warning(UI_TEXT.form.currentPlanEmpty);
@@ -948,7 +1141,7 @@ async function savePlan() {
     saveDialogVisible.value = false;
     currentPlanItems.value = [];
     ElMessage.success(UI_TEXT.success.savePlan);
-    if (activePage.value === "plans") {
+    if (currentRoute.name === "plans") {
       await loadPlans();
     }
   } catch (ex) {
@@ -958,22 +1151,115 @@ async function savePlan() {
   }
 }
 
-async function switchPage(page) {
-  activePage.value = page;
-  if (page === "history") {
-    await loadHistory();
+function resolvePostAuthTarget(user = auth.value?.user) {
+  const redirect = currentRoute.query.redirect;
+  if (!isUserProfileComplete(user)) {
+    return {
+      name: "profile-setup",
+      query: typeof redirect === "string" && redirect.startsWith("/") ? { redirect } : {}
+    };
   }
-  if (page === "plans") {
-    await loadPlans();
+  return typeof redirect === "string" && redirect.startsWith("/")
+    ? redirect
+    : { name: "recommend" };
+}
+
+function navigateTo(name) {
+  if (currentRoute.name !== name) {
+    router.push({ name });
   }
 }
+
+provide("workspace", {
+  activeMode,
+  addCurrentPlanItem,
+  addSelectedMajorsToPlan,
+  aiSummary,
+  auth,
+  authMode,
+  canSavePlan,
+  completeProfile,
+  clearCurrentPlan,
+  currentPlanItems,
+  deleteHistoryRecord,
+  deletePlan,
+  error,
+  finalAdvice,
+  grouped,
+  historyAiSummary,
+  historyDetail,
+  historyDetailLoading,
+  historyDialogVisible,
+  historyFinalAdvice,
+  historyGrouped,
+  historyHasResult,
+  invalidateHistoryLoad,
+  invalidatePlanLoad,
+  historyLoading,
+  historyRecommendationMode,
+  historyRecords,
+  historyResultJson,
+  historySummary,
+  historyTips,
+  latestRankMeta,
+  latestResult,
+  latestSourceType,
+  loadCurrentPlanDraft,
+  loadHistory,
+  loadMajorSuggestions,
+  loadPlans,
+  loading,
+  login,
+  loginForm,
+  majorSuggestionLoading,
+  majorSuggestions,
+  navigateTo,
+  openHistoryResult,
+  openPlanDetail,
+  openSavePlanDialog,
+  openSchoolDetail,
+  planAiSummary,
+  planDetail,
+  planDetailLoading,
+  planDialogVisible,
+  planFinalAdvice,
+  planGrouped,
+  planHasResult,
+  planLoading,
+  planRecommendationMode,
+  planRecords,
+  planResultJson,
+  planSummary,
+  planTips,
+  updatePlanDetailItems,
+  profileForm,
+  provinces,
+  queryByScore,
+  queryByText,
+  register,
+  removeCurrentPlanItem,
+  resetHistoryDialog,
+  resetPlanDialog,
+  resultSummary,
+  resultTips,
+  saveDialogVisible,
+  saveForm,
+  savePlan,
+  saveSubmitting,
+  schoolDetail,
+  schoolDetailLoading,
+  schoolDetailMajors,
+  schoolDetailVisible,
+  scoreForm,
+  selectedPlanKeys,
+  textForm,
+  textParsedRequirement
+});
 
 onMounted(async () => {
   loadMetaOptions();
   fillScoreFromUser();
-  if (auth.value?.token) {
-    await loadCurrentPlanDraft();
-  }
+  fillProfileFromUser();
 });
 
 watch(() => scoreForm.recommendationMode, (mode) => {
@@ -993,265 +1279,85 @@ watch(() => scoreForm.subjectType, () => {
 </script>
 
 <template>
-  <div v-if="!auth" class="app-shell">
-    <el-container class="auth-container">
-      <el-main class="auth-main">
-        <el-card class="auth-card" shadow="never">
-          <div class="auth-head">
-            <h1>高考志愿推荐系统</h1>
-            <p>AI 助手为你生成冲刺、稳妥、保底三档院校建议</p>
-          </div>
+  <RouterView v-if="currentRoute.meta.standalone || !currentRoute.meta.requiresAuth" />
 
-          <div class="auth-switch">
-            <el-button-group>
-              <el-button :type="authMode === 'login' ? 'primary' : 'default'" @click="authMode = 'login'">登录</el-button>
-              <el-button :type="authMode === 'register' ? 'primary' : 'default'" @click="authMode = 'register'">注册</el-button>
-            </el-button-group>
-            <span class="auth-switch-text">{{ authMode === "login" ? "已有账号可直接登录；如为首次登录，请补充分数、科类和省份" : "新用户注册后将自动登录" }}</span>
-          </div>
+  <div v-else class="app-shell app-layout" :class="{ 'app-layout--agent': currentRoute.name === 'agent' }">
+    <aside class="app-sidebar">
+      <div class="app-brand">
+        <span class="app-brand__mark"><el-icon><Reading /></el-icon></span>
+        <span>智愿AI报考平台</span>
+      </div>
 
-          <el-form label-position="top" :model="loginForm">
-            <el-row :gutter="12">
-              <el-col :span="24">
-                <el-form-item label="用户名">
-                  <el-input v-model.trim="loginForm.username" placeholder="请输入用户名" />
-                </el-form-item>
-              </el-col>
-              <el-col :span="24">
-                <el-form-item label="密码">
-                  <el-input v-model="loginForm.password" type="password" show-password placeholder="请输入密码" />
-                </el-form-item>
-              </el-col>
-            </el-row>
+      <nav class="app-nav" aria-label="主导航">
+        <button class="app-nav__item" :class="{ 'is-active': currentRoute.name === 'recommend' }" @click="navigateTo('recommend')">
+          <el-icon><Search /></el-icon><span>推荐查询</span>
+        </button>
+        <button class="app-nav__item" :class="{ 'is-active': currentRoute.name === 'agent' }" @click="navigateTo('agent')">
+          <el-icon><ChatDotRound /></el-icon><span>AI 对话</span>
+        </button>
+        <button class="app-nav__item" :class="{ 'is-active': currentRoute.name === 'history' }" @click="navigateTo('history')">
+          <el-icon><Clock /></el-icon><span>历史记录</span>
+        </button>
+        <button class="app-nav__item" :class="{ 'is-active': currentRoute.name === 'plans' }" @click="navigateTo('plans')">
+          <el-icon><Document /></el-icon><span>志愿方案</span>
+        </button>
+      </nav>
 
-            <el-row :gutter="12">
-              <el-col :xs="24" :sm="12">
-                <el-form-item :label="authMode === 'register' ? '分数' : '分数（首次登录必填）'">
-                  <el-input v-model="loginForm.score" type="number" placeholder="例如 620" />
-                </el-form-item>
-              </el-col>
-              <el-col :xs="24" :sm="12">
-                <el-form-item :label="authMode === 'register' ? '科类' : '科类（首次登录必填）'">
-                  <el-select v-model="loginForm.subjectType" placeholder="请选择" style="width: 100%;">
-                    <el-option v-for="opt in SUBJECT_OPTIONS" :key="opt.value" :label="opt.label" :value="opt.value" />
-                  </el-select>
-                </el-form-item>
-              </el-col>
-            </el-row>
+      <div class="app-sidebar__art" aria-hidden="true">
+        <img :src="admissionJourneyImage" alt="" />
+      </div>
+    </aside>
 
-            <el-form-item :label="authMode === 'register' ? '省份' : '省份（首次登录必填）'">
-              <el-select v-model="loginForm.examProvince" placeholder="请选择" style="width: 100%;">
-                <el-option v-for="province in provinces" :key="province" :label="province" :value="province" />
-              </el-select>
-            </el-form-item>
-
-            <el-button v-if="authMode === 'login'" type="primary" class="auth-submit" :loading="loading" @click="login">登录</el-button>
-            <el-button v-else type="primary" class="auth-submit" :loading="loading" @click="register">注册并登录</el-button>
-            <div v-if="error" class="error">{{ error }}</div>
-          </el-form>
-        </el-card>
-      </el-main>
-    </el-container>
-  </div>
-
-  <div v-else class="app-shell">
-    <el-container class="dashboard">
-      <el-header class="app-header">
-        <div>
-          <h2>高考志愿推荐中心</h2>
-          <p>结合分数与意向文本，智能生成志愿建议</p>
+    <section class="app-content">
+      <header class="app-header">
+        <h1>{{ pageTitle }}</h1>
+        <div class="app-user">
+          <span class="app-user__meta">{{ userMeta }}</span>
+          <span class="app-user__avatar"><el-icon><UserFilled /></el-icon></span>
+          <strong>{{ username }}</strong>
+          <span class="app-user__divider" />
+          <el-button link @click="logout">退出</el-button>
         </div>
-        <el-space alignment="center" :size="12" wrap>
-          <el-button-group>
-            <el-button :type="activePage === 'recommend' ? 'primary' : 'default'" @click="switchPage('recommend')">推荐查询</el-button>
-            <el-button :type="activePage === 'agent' ? 'primary' : 'default'" @click="switchPage('agent')">AI 对话</el-button>
-            <el-button :type="activePage === 'history' ? 'primary' : 'default'" @click="switchPage('history')">历史记录</el-button>
-            <el-button :type="activePage === 'plans' ? 'primary' : 'default'" @click="switchPage('plans')">志愿方案</el-button>
-          </el-button-group>
-          <span class="user-text">{{ userText }}</span>
-          <el-button type="info" plain @click="logout">退出登录</el-button>
-        </el-space>
-      </el-header>
+      </header>
 
-      <el-main v-if="activePage === 'recommend'" class="app-main">
-        <el-row :gutter="16">
-          <el-col :xs="24" :lg="8">
-            <div class="recommend-side">
-              <el-card class="query-card" shadow="never">
-                <template #header>
-                  <div class="panel-title-row">
-                    <span>查询条件</span>
-                    <el-tag size="small" type="primary" effect="plain">分数查询 / 文本查询</el-tag>
-                  </div>
-                </template>
-
-                <el-tabs v-model="activeMode">
-                  <el-tab-pane label="文本查询" name="text">
-                    <el-form label-position="top" :model="textForm">
-                      <el-form-item label="需求描述">
-                        <el-input v-model.trim="textForm.requirementText" type="textarea" :rows="7" placeholder="例如：我是江苏考生，620分，偏好计算机，想去华东地区，请给出冲刺/稳妥/保底院校建议。" />
-                      </el-form-item>
-                      <el-button type="primary" class="query-submit" :loading="loading" @click="queryByText">开始推荐</el-button>
-                    </el-form>
-                  </el-tab-pane>
-
-                  <el-tab-pane label="分数查询" name="score">
-                    <el-form label-position="top" :model="scoreForm">
-                      <el-form-item label="推荐模式">
-                        <el-radio-group v-model="scoreForm.recommendationMode">
-                          <el-radio-button v-for="opt in RECOMMENDATION_MODE_OPTIONS" :key="opt.value" :value="opt.value">
-                            {{ opt.label }}
-                          </el-radio-button>
-                        </el-radio-group>
-                      </el-form-item>
-                      <el-form-item label="分数">
-                        <el-input v-model="scoreForm.score" type="number" placeholder="请输入高考分数" />
-                      </el-form-item>
-                      <el-form-item label="省份">
-                        <el-select v-model="scoreForm.province" placeholder="请选择" style="width: 100%;">
-                          <el-option v-for="province in provinces" :key="province" :label="province" :value="province" />
-                        </el-select>
-                      </el-form-item>
-                      <el-form-item label="科类">
-                        <el-select v-model="scoreForm.subjectType" placeholder="请选择" style="width: 100%;">
-                          <el-option v-for="opt in SUBJECT_OPTIONS" :key="opt.value" :label="opt.label" :value="opt.value" />
-                        </el-select>
-                      </el-form-item>
-                      <el-form-item v-if="scoreForm.recommendationMode === 'MAJOR_FIRST'" label="专业">
-                        <el-select
-                          v-model="scoreForm.majorKeyword"
-                          filterable
-                          remote
-                          clearable
-                          allow-create
-                          default-first-option
-                          reserve-keyword
-                          :remote-method="loadMajorSuggestions"
-                          :loading="majorSuggestionLoading"
-                          placeholder="输入专业关键词，例如：计算机、法学、软件工程"
-                          style="width: 100%;"
-                        >
-                          <el-option v-for="item in majorSuggestions" :key="item" :label="item" :value="item" />
-                        </el-select>
-                      </el-form-item>
-                      <el-button type="primary" class="query-submit" :loading="loading" @click="queryByScore">开始推荐</el-button>
-                    </el-form>
-                  </el-tab-pane>
-                </el-tabs>
-
-                <div v-if="error" class="error">{{ error }}</div>
-              </el-card>
-
-              <CurrentPlanPanel :items="currentPlanItems" :save-disabled="!canSavePlan" :clearing-disabled="!currentPlanItems.length" @remove="removeCurrentPlanItem" @clear="clearCurrentPlan" @save="openSavePlanDialog" />
-            </div>
-          </el-col>
-
-          <el-col :xs="24" :lg="16">
-            <div class="recommend-result-stack">
-              <RecognizedConditionsPanel v-if="textParsedRequirement" :parsed="textParsedRequirement" />
-              <RecommendationResult
-                :loading="loading"
-                :grouped="grouped"
-                :summary="resultSummary"
-                :ai-summary="aiSummary"
-                :final-advice="finalAdvice"
-                :tips="resultTips"
-                :recommendation-mode="latestResult?.recommendationMode || latestResult?.parsed?.recommendationMode || scoreForm.recommendationMode"
-                :rank-meta="latestRankMeta"
-                :show-add-action="true"
-                :selected-plan-keys="selectedPlanKeys"
-                @add-item="addCurrentPlanItem"
-                @view-school-detail="openSchoolDetail"
-              />
-            </div>
-          </el-col>
-        </el-row>
-      </el-main>
-
-      <el-main v-else-if="activePage === 'agent'" class="app-main app-main--agent">
-        <AgentWorkspace
-          :token="auth?.token"
-          :user="auth?.user"
-          @jump-to-plans="switchPage('plans')"
-        />
-      </el-main>
-
-      <el-main v-else-if="activePage === 'history'" class="app-main">
-        <HistoryView :records="historyRecords" :loading="historyLoading" @refresh="loadHistory" @view="openHistoryResult" @delete="deleteHistoryRecord" />
-      </el-main>
-
-      <el-main v-else class="app-main">
-        <ApplicationPlanView :records="planRecords" :loading="planLoading" @refresh="loadPlans" @view="openPlanDetail" @delete="deletePlan" />
-      </el-main>
-    </el-container>
-
-    <SchoolDetailDrawer
-      v-model="schoolDetailVisible"
-      :loading="schoolDetailLoading"
-      :school="schoolDetail"
-      :majors="schoolDetailMajors"
-      @add-selected="addSelectedMajorsToPlan"
-    />
-
-    <el-dialog v-model="saveDialogVisible" title="保存志愿方案" width="420px" destroy-on-close>
-      <el-form label-position="top" :model="saveForm">
-        <el-form-item label="方案名称" required>
-          <el-input v-model.trim="saveForm.planName" maxlength="50" placeholder="请输入方案名称" show-word-limit />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="saveDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="saveSubmitting" @click="savePlan">保存</el-button>
-      </template>
-    </el-dialog>
-
-    <el-dialog v-model="historyDialogVisible" title="历史结果" width="80%" top="4vh" destroy-on-close>
-      <el-skeleton :loading="historyDetailLoading" animated>
-        <template #template>
-          <el-skeleton-item variant="h1" style="width: 50%;" />
-          <el-skeleton-item variant="text" style="margin-top: 8px;" />
-          <el-skeleton-item variant="text" />
-        </template>
-        <template #default>
-          <div v-if="historyDetail" class="history-detail-meta">
-            <el-descriptions :column="1" border>
-              <el-descriptions-item label="查询时间">{{ formatDateTime(historyDetail.createdAt) }}</el-descriptions-item>
-              <el-descriptions-item label="查询类型">{{ queryTypeLabel(historyDetail.queryType) }}</el-descriptions-item>
-              <el-descriptions-item label="查询内容">{{ historyDetail.queryContent }}</el-descriptions-item>
-            </el-descriptions>
-          </div>
-          <RecommendationResult v-if="historyHasResult" :loading="false" :grouped="historyGrouped" :summary="historySummary" :ai-summary="historyAiSummary" :final-advice="historyFinalAdvice" :tips="historyTips" :recommendation-mode="historyRecommendationMode" />
-          <el-card v-else shadow="never" class="history-raw-card">
-            <template #header>原始结果</template>
-            <pre class="history-raw">{{ historyResultJson || UI_TEXT.common.noDisplayContent }}</pre>
-          </el-card>
-        </template>
-      </el-skeleton>
-    </el-dialog>
-
-    <el-dialog v-model="planDialogVisible" title="方案详情" width="80%" top="4vh" destroy-on-close>
-      <el-skeleton :loading="planDetailLoading" animated>
-        <template #template>
-          <el-skeleton-item variant="h1" style="width: 50%;" />
-          <el-skeleton-item variant="text" style="margin-top: 8px;" />
-          <el-skeleton-item variant="text" />
-        </template>
-        <template #default>
-          <div v-if="planDetail" class="history-detail-meta">
-            <el-descriptions :column="1" border>
-              <el-descriptions-item label="方案名称">{{ planDetail.planName }}</el-descriptions-item>
-              <el-descriptions-item label="来源类型">{{ sourceTypeLabel(planDetail.sourceType) }}</el-descriptions-item>
-              <el-descriptions-item label="创建时间">{{ formatDateTime(planDetail.createdAt) }}</el-descriptions-item>
-              <el-descriptions-item label="来源内容">{{ planDetail.sourceQuery }}</el-descriptions-item>
-            </el-descriptions>
-          </div>
-          <RecommendationResult v-if="planHasResult" :loading="false" :grouped="planGrouped" :summary="planSummary" :ai-summary="planAiSummary" :final-advice="planFinalAdvice" :tips="planTips" :recommendation-mode="planRecommendationMode" />
-          <el-card v-else shadow="never" class="history-raw-card">
-            <template #header>原始结果</template>
-            <pre class="history-raw">{{ planResultJson || UI_TEXT.common.noDisplayContent }}</pre>
-          </el-card>
-        </template>
-      </el-skeleton>
-    </el-dialog>
+      <div class="app-route-view">
+        <RouterView v-slot="{ Component, route: matchedRoute }">
+          <KeepAlive include="RecommendationView">
+            <component :is="Component" :key="matchedRoute.name" />
+          </KeepAlive>
+        </RouterView>
+      </div>
+    </section>
   </div>
+
+  <el-dialog
+    v-model="planTargetDialogVisible"
+    title="加入志愿表"
+    width="500px"
+    destroy-on-close
+    class="plan-target-dialog"
+  >
+    <div class="plan-target-dialog__body">
+      <p>请选择本次要写入的志愿表</p>
+      <el-radio-group v-model="planTargetId" class="plan-target-options">
+        <el-radio v-for="record in planRecords" :key="record.id" :value="String(record.id)" border>
+          <span>{{ record.planName }}</span>
+        </el-radio>
+        <el-radio value="new" border>新建志愿表</el-radio>
+      </el-radio-group>
+      <el-input
+        v-if="planTargetId === 'new'"
+        v-model.trim="planTargetNewName"
+        maxlength="30"
+        placeholder="输入志愿表名称"
+      />
+      <div class="plan-target-dialog__summary">
+        将加入 {{ pendingPlanItems.length }} 条结果
+      </div>
+    </div>
+    <template #footer>
+      <el-button @click="planTargetDialogVisible = false">取消</el-button>
+      <el-button type="primary" :loading="planTargetSubmitting" @click="confirmAddToPlan">确认加入</el-button>
+    </template>
+  </el-dialog>
 </template>

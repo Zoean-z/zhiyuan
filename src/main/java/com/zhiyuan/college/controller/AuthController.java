@@ -2,6 +2,7 @@ package com.zhiyuan.college.controller;
 
 import com.zhiyuan.college.model.dto.LoginRequest;
 import com.zhiyuan.college.model.dto.LoginResponse;
+import com.zhiyuan.college.model.dto.ProfileCompletionRequest;
 import com.zhiyuan.college.model.dto.RegisterRequest;
 import com.zhiyuan.college.service.auth.AuthService;
 import jakarta.validation.Valid;
@@ -35,8 +36,21 @@ public class AuthController {
         return authService.register(request);
     }
 
+    @PostMapping("/profile")
+    public LoginResponse completeProfile(
+            @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authHeader,
+            @Valid @RequestBody ProfileCompletionRequest request) {
+        return authService.completeProfile(extractBearerToken(authHeader), request);
+    }
+
     @PostMapping("/logout")
     public Map<String, String> logout(@RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authHeader) {
+        String token = extractBearerToken(authHeader);
+        authService.logout(token);
+        return Map.of("message", "Logged out");
+    }
+
+    private String extractBearerToken(String authHeader) {
         if (authHeader == null || !authHeader.startsWith("Bearer ")) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Missing bearer token");
         }
@@ -44,7 +58,6 @@ public class AuthController {
         if (token.isBlank()) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Missing bearer token");
         }
-        authService.logout(token);
-        return Map.of("message", "Logged out");
+        return token;
     }
 }

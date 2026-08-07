@@ -38,8 +38,11 @@ if not exist "%DATA_FILE%" (
   exit /b 1
 )
 
-where mysql >nul 2>nul
-if errorlevel 1 (
+set "MYSQL_CMD="
+for %%I in (mysql.exe) do if not "%%~$PATH:I"=="" set "MYSQL_CMD=%%~$PATH:I"
+if not defined MYSQL_CMD if exist "C:\Program Files\MySQL\MySQL Server 8.0\bin\mysql.exe" set "MYSQL_CMD=C:\Program Files\MySQL\MySQL Server 8.0\bin\mysql.exe"
+
+if not defined MYSQL_CMD (
   echo [ERROR] mysql command not found. Please add MySQL bin directory to PATH.
   echo [HINT] Example: C:\Program Files\MySQL\MySQL Server 8.0\bin
   exit /b 1
@@ -52,6 +55,12 @@ if /I not "%DB_NAME%"=="college_recommendation" (
 
 echo [INFO] Initializing database...
 echo [INFO] Host=%MYSQL_HOST% Port=%MYSQL_PORT% User=%MYSQL_USER% DB=%DB_NAME%
+
+call :create_database
+if errorlevel 1 (
+  call :cleanup >nul 2>nul
+  exit /b 1
+)
 
 call :run_sql "%SCHEMA_FILE%" "schema.sql"
 if errorlevel 1 (
@@ -68,6 +77,20 @@ if errorlevel 1 (
 call :cleanup >nul 2>nul
 echo [OK] Database initialization completed.
 echo [INFO] You can now run the backend application.
+exit /b 0
+
+:create_database
+if "%MYSQL_PASSWORD%"=="" (
+  "%MYSQL_CMD%" "--host=%MYSQL_HOST%" "--port=%MYSQL_PORT%" "--user=%MYSQL_USER%" --default-character-set=utf8mb4 --execute="CREATE DATABASE IF NOT EXISTS `%DB_NAME%` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;"
+) else (
+  "%MYSQL_CMD%" "--host=%MYSQL_HOST%" "--port=%MYSQL_PORT%" "--user=%MYSQL_USER%" "--password=%MYSQL_PASSWORD%" --default-character-set=utf8mb4 --execute="CREATE DATABASE IF NOT EXISTS `%DB_NAME%` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;"
+)
+
+if errorlevel 1 (
+  echo [ERROR] Failed to create or verify database %DB_NAME%.
+  exit /b 1
+)
+
 exit /b 0
 
 :prepare_sql_files
@@ -96,9 +119,9 @@ set "CURRENT_SQL_FILE=%~1"
 set "CURRENT_SQL_NAME=%~2"
 
 if "%MYSQL_PASSWORD%"=="" (
-  mysql "--host=%MYSQL_HOST%" "--port=%MYSQL_PORT%" "--user=%MYSQL_USER%" --default-character-set=utf8mb4 < "%CURRENT_SQL_FILE%"
+  "%MYSQL_CMD%" "--host=%MYSQL_HOST%" "--port=%MYSQL_PORT%" "--user=%MYSQL_USER%" "--database=%DB_NAME%" --default-character-set=utf8mb4 < "%CURRENT_SQL_FILE%"
 ) else (
-  mysql "--host=%MYSQL_HOST%" "--port=%MYSQL_PORT%" "--user=%MYSQL_USER%" "--password=%MYSQL_PASSWORD%" --default-character-set=utf8mb4 < "%CURRENT_SQL_FILE%"
+  "%MYSQL_CMD%" "--host=%MYSQL_HOST%" "--port=%MYSQL_PORT%" "--user=%MYSQL_USER%" "--password=%MYSQL_PASSWORD%" "--database=%DB_NAME%" --default-character-set=utf8mb4 < "%CURRENT_SQL_FILE%"
 )
 
 if errorlevel 1 (

@@ -372,3 +372,32 @@ Expected output format:
   - compute a rule-based recommendation score and admission probability
   - map probability bands into Rush / Safe / Guarantee
   - return explanation fields for each result
+
+# Project Plan
+
+
+## Goal
+- 修复专业优先输入的真实自动联想，并统一登录页与业务页顶部栏。
+
+## Scope
+- 修改专业候选 SQL 与认证页顶部栏样式；不改公共接口、数据库结构或推荐算法。
+
+## Current Plan
+- [x] 从 `major_admission_cutoff.major_name` 提供专业候选。
+- [x] 统一桌面与移动端顶部栏尺寸规范。
+- [x] 完成真实接口、构建与全量测试验证。
+
+## Completed
+- 当前运行库输入“计”“软件”“医”均能返回相应专业候选。
+- 登录页与业务页桌面顶部栏统一为 76px。
+
+## Blockers
+- 无。
+
+## Next Step
+- 用户刷新页面验收专业联想和顶栏一致性。
+
+## Recently Changed Files
+- `src/main/java/com/zhiyuan/college/mapper/MajorMapper.java`
+- `frontend/src/styles.css`
+- `src/main/resources/static/*`

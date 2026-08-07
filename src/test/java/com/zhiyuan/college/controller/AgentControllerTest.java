@@ -2,6 +2,7 @@ package com.zhiyuan.college.controller;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -185,6 +186,54 @@ class AgentControllerTest {
     }
 
     @Test
+    void sendMessage_shouldOperateOnlySelectedPlan() throws Exception {
+        String token = loginAndGetToken("testuser", "123456", 620, "PHYSICS", "浙江");
+        Long firstPlanId = createPlan(token, "2026浙江方案-A");
+        Long secondPlanId = createPlan(token, "2026浙江方案-B");
+        Long conversationId = createConversation(token, "Selected Plan Agent");
+
+        mockMvc.perform(post("/api/agent/conversations/" + conversationId + "/messages")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"帮我推荐学校\",\"planId\":" + firstPlanId + "}"))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(post("/api/agent/conversations/" + conversationId + "/messages")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"把第一个加入志愿单\",\"planId\":" + firstPlanId + "}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.generatedMessages[1].payload.planId").value(firstPlanId))
+                .andExpect(jsonPath("$.generatedMessages[1].payload.planName").value("2026浙江方案-A"));
+
+        MvcResult firstDetail = mockMvc.perform(get("/api/plans/" + firstPlanId)
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andReturn();
+        MvcResult secondDetail = mockMvc.perform(get("/api/plans/" + secondPlanId)
+                        .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andReturn();
+        JsonNode firstResult = objectMapper.readTree(objectMapper.readTree(firstDetail.getResponse().getContentAsString()).get("resultJson").asText());
+        JsonNode secondResult = objectMapper.readTree(objectMapper.readTree(secondDetail.getResponse().getContentAsString()).get("resultJson").asText());
+        Assertions.assertEquals(1, firstResult.path("rush").size() + firstResult.path("safe").size() + firstResult.path("guarantee").size());
+        Assertions.assertEquals(0, secondResult.path("rush").size() + secondResult.path("safe").size() + secondResult.path("guarantee").size());
+
+        mockMvc.perform(put("/api/plans/" + secondPlanId)
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "planName", "2026浙江方案-B-调整",
+                                "sourceType", "score",
+                                "sourceQuery", "测试编辑",
+                                "resultJson", secondResult.toString(),
+                                "aiSummary", ""
+                        ))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.planName").value("2026浙江方案-B-调整"));
+    }
+
+    @Test
     void sendMessage_shouldRequireConfirmBeforeRemovingAndAllowSavePlan() throws Exception {
         String token = loginAndGetToken("testuser", "123456", 620, "PHYSICS", "浙江");
         Long conversationId = createConversation(token, "Manage Plan Agent");
@@ -286,6 +335,23 @@ class AgentControllerTest {
                 .andExpect(status().isOk())
                 .andReturn();
         return objectMapper.readTree(createResult.getResponse().getContentAsString()).get("id").asLong();
+    }
+
+    private Long createPlan(String token, String name) throws Exception {
+        String emptyResult = "{\"recommendationMode\":\"SCHOOL_FIRST\",\"rush\":[],\"safe\":[],\"guarantee\":[],\"summary\":\"\",\"tips\":[]}";
+        MvcResult result = mockMvc.perform(post("/api/plans")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(Map.of(
+                                "planName", name,
+                                "sourceType", "score",
+                                "sourceQuery", "测试方案",
+                                "resultJson", emptyResult,
+                                "aiSummary", ""
+                        ))))
+                .andExpect(status().isOk())
+                .andReturn();
+        return objectMapper.readTree(result.getResponse().getContentAsString()).get("id").asLong();
     }
 
     private String loginAndGetToken(String username,

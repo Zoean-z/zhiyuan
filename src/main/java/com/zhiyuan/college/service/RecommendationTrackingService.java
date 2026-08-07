@@ -3,6 +3,7 @@ package com.zhiyuan.college.service;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.zhiyuan.college.mapper.AiParseLogMapper;
 import com.zhiyuan.college.mapper.RecommendationTaskMapper;
 import com.zhiyuan.college.model.dto.FreeTextRecommendationRequest;
@@ -13,6 +14,8 @@ import com.zhiyuan.college.model.dto.RecommendationRequest;
 import com.zhiyuan.college.model.dto.RecommendationResponse;
 import com.zhiyuan.college.model.entity.AiParseLog;
 import com.zhiyuan.college.model.entity.RecommendationTask;
+import java.time.Duration;
+import java.time.LocalDateTime;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
@@ -73,11 +76,29 @@ public class RecommendationTrackingService {
         return task;
     }
 
-    public void markTaskRunning(Long taskId) {
+    public boolean tryMarkTaskRunning(Long taskId, Duration runningTimeout) {
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime staleBefore = now.minus(runningTimeout);
+        LambdaUpdateWrapper<RecommendationTask> update = new LambdaUpdateWrapper<>();
+        update.eq(RecommendationTask::getId, taskId)
+                .and(status -> status
+                        .eq(RecommendationTask::getStatus, STATUS_PENDING)
+                        .or()
+                        .eq(RecommendationTask::getStatus, STATUS_RUNNING)
+                        .lt(RecommendationTask::getUpdatedAt, staleBefore))
+                .set(RecommendationTask::getStatus, STATUS_RUNNING)
+                .set(RecommendationTask::getErrorMessage, null)
+                .set(RecommendationTask::getUpdatedAt, now);
+        return recommendationTaskMapper.update(null, update) == 1;
+    }
+
+    public void markTaskPendingForRetry(Long taskId, String errorMessage, long durationMs) {
         RecommendationTask update = new RecommendationTask();
         update.setId(taskId);
-        update.setStatus(STATUS_RUNNING);
-        update.setErrorMessage(null);
+        update.setStatus(STATUS_PENDING);
+        update.setErrorMessage(errorMessage);
+        update.setDurationMs(durationMs);
+        update.setUpdatedAt(LocalDateTime.now());
         recommendationTaskMapper.updateById(update);
     }
 
@@ -96,6 +117,7 @@ public class RecommendationTrackingService {
         update.setResultCount(response.getRecommendations() == null ? 0 : response.getRecommendations().size());
         update.setDurationMs(durationMs);
         update.setErrorMessage(null);
+        update.setUpdatedAt(LocalDateTime.now());
         recommendationTaskMapper.updateById(update);
 
         saveAiParseLog(taskId, existing.getRequestId(), existing.getRawQuery(), parsed, parseTrace);
@@ -107,6 +129,7 @@ public class RecommendationTrackingService {
         update.setStatus(STATUS_FAILED);
         update.setErrorMessage(errorMessage);
         update.setDurationMs(durationMs);
+        update.setUpdatedAt(LocalDateTime.now());
         recommendationTaskMapper.updateById(update);
     }
 

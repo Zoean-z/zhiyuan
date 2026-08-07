@@ -1,6 +1,7 @@
 <script setup>
 import { computed } from "vue";
-import { normalizeItem, recommendationBasisLabel, strategyTagType } from "../utils/recommendation";
+import { OfficeBuilding } from "@element-plus/icons-vue";
+import { normalizeItem, recommendationBasisLabel } from "../utils/recommendation";
 
 const props = defineProps({
   item: { type: Object, required: true },
@@ -11,15 +12,13 @@ const props = defineProps({
 
 const emit = defineEmits(["add", "view-detail"]);
 const model = computed(() => normalizeItem(props.item, props.strategy));
-const resolvedStrategyLabel = computed(() => model.value.strategyLabel || "稳妥");
-const resolvedStrategyType = computed(() => strategyTagType(model.value.strategy));
 const resolvedBasisLabel = computed(() => recommendationBasisLabel(model.value.recommendationBasis));
 const isDirectAddMode = computed(() => model.value.recommendationMode === "MAJOR_FIRST" || !!model.value.majorName);
 const actionLabel = computed(() => {
   if (!isDirectAddMode.value) {
     return "查看专业";
   }
-  return props.added ? "已加入" : "加入方案";
+  return props.added ? "已加入" : "加入志愿表";
 });
 const actionDisabled = computed(() => isDirectAddMode.value && props.added);
 const showRankMetric = computed(() =>
@@ -27,7 +26,6 @@ const showRankMetric = computed(() =>
   || model.value.minRank != null
   || model.value.userRank != null
 );
-const showScoreMetric = computed(() => !showRankMetric.value && model.value.cutoffScore != null);
 const probabilityText = computed(() =>
   model.value.admissionProbability == null ? "-" : `${model.value.admissionProbability}%`
 );
@@ -35,7 +33,7 @@ const riskText = computed(() =>
   model.value.riskScore == null ? "-" : `${model.value.riskScore}/100`
 );
 const matchReasons = computed(() =>
-  Array.isArray(model.value.matchReasons) ? model.value.matchReasons.filter(Boolean).slice(0, 4) : []
+  Array.isArray(model.value.matchReasons) ? model.value.matchReasons.filter(Boolean).slice(0, 3) : []
 );
 const schoolTags = computed(() => {
   const list = [];
@@ -45,13 +43,22 @@ const schoolTags = computed(() => {
   (Array.isArray(model.value.schoolTags) ? model.value.schoolTags : []).forEach((item) => list.push(item));
   if (model.value.universityTags) {
     String(model.value.universityTags)
-      .split(/[、,\s]+/)
+      .split(/[、,，\s]+/)
       .map((item) => item.trim())
       .filter(Boolean)
       .forEach((item) => list.push(item));
   }
-  return Array.from(new Set(list.filter((item) => item !== "普通"))).slice(0, 5);
+  return Array.from(new Set(list.filter((item) => item !== "普通"))).slice(0, 4);
 });
+const primaryGapLabel = computed(() => showRankMetric.value ? "位次差" : "分差");
+const primaryGapValue = computed(() => showRankMetric.value ? model.value.rankGap : model.value.scoreGap);
+const cutoffLabel = computed(() => {
+  if (showRankMetric.value) {
+    return "最低位次";
+  }
+  return model.value.majorName ? "专业最低分" : "院校最低分";
+});
+const cutoffValue = computed(() => showRankMetric.value ? model.value.minRank : model.value.cutoffScore);
 
 function handleAction() {
   if (isDirectAddMode.value) {
@@ -63,40 +70,64 @@ function handleAction() {
 </script>
 
 <template>
-  <el-card class="university-card" shadow="hover">
-    <div class="university-card__head">
-      <div class="university-card__title">
-        <h4 class="university-card__name">{{ model.universityName }}</h4>
-        <div v-if="model.majorName" class="university-card__major">{{ model.majorName }}</div>
+  <article class="university-card">
+    <header class="university-card__head">
+      <div class="university-card__identity">
+        <span class="university-card__mark"><el-icon><OfficeBuilding /></el-icon></span>
+        <div class="university-card__title">
+          <h4 class="university-card__name">{{ model.universityName }}</h4>
+          <div v-if="model.majorName" class="university-card__major">{{ model.majorName }}</div>
+        </div>
       </div>
-      <el-tag size="small" :type="resolvedStrategyType" effect="light">{{ resolvedStrategyLabel }}</el-tag>
-    </div>
+      <el-button
+        v-if="showAddAction"
+        class="university-card__action"
+        type="primary"
+        plain
+        :disabled="actionDisabled"
+        @click="handleAction"
+      >
+        {{ actionLabel }}
+      </el-button>
+    </header>
+
     <div v-if="schoolTags.length" class="university-card__tags">
       <el-tag v-for="tag in schoolTags" :key="tag" size="small" effect="plain">{{ tag }}</el-tag>
     </div>
-    <div class="university-card__meta">
-      <div class="meta-row"><span>判断依据</span><strong>{{ resolvedBasisLabel }}</strong></div>
-      <div class="meta-row"><span>录取概率</span><strong>{{ probabilityText }}</strong></div>
-      <div class="meta-row"><span>风险指数</span><strong>{{ riskText }}</strong></div>
-      <div v-if="showRankMetric" class="meta-row"><span>最低位次</span><strong>{{ model.minRank ?? "-" }}</strong></div>
-      <div v-if="showRankMetric" class="meta-row"><span>位次差</span><strong>{{ model.rankGap ?? "-" }}</strong></div>
-      <div v-if="showScoreMetric" class="meta-row"><span>{{ model.majorName ? "专业最低分" : "院校最低分" }}</span><strong>{{ model.cutoffScore ?? "-" }}</strong></div>
-      <div v-if="showScoreMetric" class="meta-row"><span>分差</span><strong>{{ model.scoreGap ?? "-" }}</strong></div>
+
+    <div class="university-card__content">
+      <div class="university-card__metrics">
+        <div class="university-card__metric">
+          <span>录取概率</span>
+          <strong class="university-card__probability">{{ probabilityText }}</strong>
+        </div>
+        <div class="university-card__metric">
+          <span>风险指数</span>
+          <strong>{{ riskText }}</strong>
+        </div>
+        <div class="university-card__metric">
+          <span>{{ cutoffLabel }}</span>
+          <strong>{{ cutoffValue ?? "-" }}</strong>
+        </div>
+        <div class="university-card__metric">
+          <span>{{ primaryGapLabel }}</span>
+          <strong>{{ primaryGapValue ?? "-" }}</strong>
+        </div>
+      </div>
+
+      <div class="university-card__detail">
+        <div class="university-card__basis">
+          <span>判断依据</span>
+          <strong>{{ resolvedBasisLabel }}</strong>
+        </div>
+        <div v-if="matchReasons.length" class="university-card__reasons">
+          <span>匹配理由</span>
+          <ul>
+            <li v-for="(reason, index) in matchReasons" :key="`${model.universityName}-${index}`">{{ reason }}</li>
+          </ul>
+        </div>
+        <p v-if="model.explanation" class="university-card__explanation">{{ model.explanation }}</p>
+      </div>
     </div>
-    <div v-if="matchReasons.length" class="university-card__reasons">
-      <div class="university-card__section-title">匹配理由</div>
-      <ul class="university-card__reason-list">
-        <li v-for="(reason, index) in matchReasons" :key="`${model.universityName}-${index}`">{{ reason }}</li>
-      </ul>
-    </div>
-    <div v-if="model.explanation" class="university-card__explanation">
-      <div class="university-card__section-title">规则解释</div>
-      <p>{{ model.explanation }}</p>
-    </div>
-    <div v-if="showAddAction" class="university-card__footer">
-      <el-button type="primary" plain :disabled="actionDisabled" @click="handleAction">
-        {{ actionLabel }}
-      </el-button>
-    </div>
-  </el-card>
+  </article>
 </template>

@@ -70,7 +70,11 @@ public class AgentToolFacade {
     }
 
     public AgentToolResult getCurrentPlan(Long userId) {
-        ApplicationPlan plan = findCurrentDraftPlan(userId);
+        return getCurrentPlan(userId, null);
+    }
+
+    public AgentToolResult getCurrentPlan(Long userId, Long targetPlanId) {
+        ApplicationPlan plan = findTargetPlan(userId, targetPlanId);
         Map<String, Object> payload = new LinkedHashMap<>();
         if (plan == null) {
             payload.put("hasPlan", false);
@@ -202,11 +206,14 @@ public class AgentToolFacade {
         return new AgentToolResult(AgentToolNames.GET_SCHOOL_DETAIL_BY_NAME, summary, toJson(payload));
     }
 
-    public AgentToolResult addPlanItem(Long userId, Map<String, Object> toolArgs, List<AgentMessage> recentMessages) {
+    public AgentToolResult addPlanItem(Long userId,
+                                       Long targetPlanId,
+                                       Map<String, Object> toolArgs,
+                                       List<AgentMessage> recentMessages) {
         ObjectNode selectedItem = resolveSelectedRecommendationItem(toolArgs, recentMessages);
         String group = normalizeGroup(selectedItem.path("group").asText(selectedItem.path("strategy").asText("safe")));
 
-        ApplicationPlan plan = findCurrentDraftPlan(userId);
+        ApplicationPlan plan = findTargetPlan(userId, targetPlanId);
         ObjectNode root = plan == null ? createEmptyPlanRoot(selectedItem.path("recommendationMode").asText("SCHOOL_FIRST")) : parsePlanRoot(plan.getResultJson());
         if (isDuplicate(root, selectedItem)) {
             Map<String, Object> payload = new LinkedHashMap<>();
@@ -226,8 +233,9 @@ public class AgentToolFacade {
         root.put("recommendationMode", storedItem.path("recommendationMode").asText(root.path("recommendationMode").asText("SCHOOL_FIRST")));
         root.put("summary", "当前方案共选择 %d 条志愿结果。".formatted(countPlanItems(root)));
 
-        ApplicationPlan savedPlan = saveCurrentDraftPlan(
+        ApplicationPlan savedPlan = saveTargetPlan(
                 userId,
+                plan,
                 buildDraftSourceQuery(storedItem, false),
                 root
         );
@@ -246,9 +254,9 @@ public class AgentToolFacade {
         );
     }
 
-    public AgentToolResult removePlanItem(Long userId, Map<String, Object> toolArgs) {
+    public AgentToolResult removePlanItem(Long userId, Long targetPlanId, Map<String, Object> toolArgs) {
         int selectionIndex = parseSelectionIndex(toolArgs == null ? null : toolArgs.get("selectionIndex"));
-        ApplicationPlan plan = requireCurrentDraftPlan(userId);
+        ApplicationPlan plan = requireTargetPlan(userId, targetPlanId);
         ObjectNode root = parsePlanRoot(plan.getResultJson());
         List<ObjectNode> flattened = flattenPlanItemNodes(root);
         if (flattened.size() < selectionIndex) {
@@ -270,8 +278,9 @@ public class AgentToolFacade {
         }
         root.set(group, nextBucket);
         root.put("summary", "当前方案共选择 %d 条志愿结果。".formatted(countPlanItems(root)));
-        ApplicationPlan savedPlan = saveCurrentDraftPlan(
+        ApplicationPlan savedPlan = saveTargetPlan(
                 userId,
+                plan,
                 buildDraftSourceQuery(target, true),
                 root
         );
@@ -290,12 +299,12 @@ public class AgentToolFacade {
         );
     }
 
-    public AgentToolResult savePlan(Long userId, Map<String, Object> toolArgs) {
+    public AgentToolResult savePlan(Long userId, Long targetPlanId, Map<String, Object> toolArgs) {
         String planName = toolArgs == null || toolArgs.get("planName") == null ? "" : String.valueOf(toolArgs.get("planName")).trim();
         if (planName.isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "planName is required for savePlan");
         }
-        ApplicationPlan plan = requireCurrentDraftPlan(userId);
+        ApplicationPlan plan = requireTargetPlan(userId, targetPlanId);
         ObjectNode root = parsePlanRoot(plan.getResultJson());
         ApplicationPlanDetailResponse detail = applicationPlanService.save(
                 userId,
@@ -307,7 +316,9 @@ public class AgentToolFacade {
                         root.path("summary").asText("")
                 )
         );
-        applicationPlanService.deleteCurrentDraft(userId);
+        if (targetPlanId == null) {
+            applicationPlanService.deleteCurrentDraft(userId);
+        }
         ApplicationPlan savedPlan = new ApplicationPlan();
         savedPlan.setId(detail.getId());
         savedPlan.setPlanName(detail.getPlanName());
@@ -469,6 +480,20 @@ public class AgentToolFacade {
         return applicationPlanService.findCurrentDraftEntity(userId);
     }
 
+    private ApplicationPlan findTargetPlan(Long userId, Long targetPlanId) {
+        return targetPlanId == null
+                ? findCurrentDraftPlan(userId)
+                : applicationPlanService.requireOwnedEntity(userId, targetPlanId);
+    }
+
+    private ApplicationPlan requireTargetPlan(Long userId, Long targetPlanId) {
+        ApplicationPlan plan = findTargetPlan(userId, targetPlanId);
+        if (plan == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Current plan is empty");
+        }
+        return plan;
+    }
+
     private ApplicationPlan requireCurrentDraftPlan(Long userId) {
         ApplicationPlan plan = findCurrentDraftPlan(userId);
         if (plan == null) {
@@ -586,6 +611,24 @@ public class AgentToolFacade {
         );
         applicationPlanService.upsertCurrentDraft(userId, request);
         return applicationPlanService.findCurrentDraftEntity(userId);
+    }
+
+    private ApplicationPlan saveTargetPlan(Long userId,
+                                           ApplicationPlan targetPlan,
+                                           String sourceQuery,
+                                           ObjectNode root) {
+        if (targetPlan == null) {
+            return saveCurrentDraftPlan(userId, sourceQuery, root);
+        }
+        ApplicationPlanCreateRequest request = buildPlanRequest(
+                targetPlan.getPlanName(),
+                targetPlan.getSourceType(),
+                sourceQuery,
+                toJson(root),
+                root.path("summary").asText("")
+        );
+        applicationPlanService.update(userId, targetPlan.getId(), request);
+        return applicationPlanService.requireOwnedEntity(userId, targetPlan.getId());
     }
 
     private String buildDraftSourceQuery(JsonNode item, boolean remove) {

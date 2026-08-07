@@ -6,6 +6,7 @@
 - 用户登录注册、画像维护、推荐历史、志愿方案保存
 - 基于分数 / 位次 / 省份 / 科类 / 偏好的院校与专业推荐
 - `冲 / 稳 / 保` 概率评分与规则解释
+- 基于 RocketMQ 的自由文本推荐异步任务、失败重试与状态查询
 - 管理员维护院校、专业、录取数据
 - 对话式 Agent 工作台，可读取画像、生成推荐、查询学校详情、操作当前志愿单
 
@@ -26,10 +27,10 @@
 - 单轮工具调用上限显式限制，写操作带确认边界
 - 工具失败有统一错误分类和兜底提示，不会直接把接口打成 500
 
-### 4. 工程化不是停在 CRUD
-- 引入 `Spring Security + JWT + RBAC`
-- 引入 `Redis` 做基础元数据缓存、热门推荐缓存、AI 去重保护
-- 增加异步自由文本推荐任务、OpenAPI 文档、Docker Compose、本地测试分层
+### 4. 数据建模和后端边界按真实业务拆开了
+- 把 `院校 / 专业主数据`、`院校录取线 / 专业录取线事实数据`、`用户画像 / 推荐历史 / 志愿方案 / Agent 会话消息` 分开建模，而不是塞进一张大表
+- AI 解析、推荐计算、志愿方案、Agent 工具调用分别走独立 service，避免大模型直接穿透数据库和核心推荐逻辑
+- 这样既方便管理员维护基础数据，也方便后端做规则解释、历史追踪和后续索引优化
 
 ## 技术栈
 
@@ -41,6 +42,7 @@
 - MyBatis-Plus
 - MySQL 8
 - Redis
+- RocketMQ 5
 - springdoc-openapi
 
 ### 前端
@@ -58,6 +60,7 @@
 ### 用户侧
 - 分数推荐：按省份、科类、推荐模式生成院校推荐
 - 自由文本推荐：输入自然语言后由 AI 抽取条件，再走后端推荐链路
+- 异步推荐任务：通过 RocketMQ 投递自由文本推荐任务，支持任务状态查询、消费重试和失败原因记录
 - 推荐解释：返回命中偏好、冲稳保分层、风险指数、判断依据
 - AI 总结：对结果进行简洁总结和填报建议生成
 - 推荐历史：保存分数推荐与自由文本推荐记录
@@ -87,6 +90,13 @@
 4. 工具结果结构化落库，支持会话回放和追踪
 5. 写操作继续复用现有志愿方案服务，不绕过业务边界
 
+### RocketMQ 异步任务链路
+1. 接口先创建 `PENDING` 任务，再将任务 ID、用户 ID、请求 ID 和原始请求投递到 RocketMQ
+2. Producer 使用请求 ID 作为消息 Key；发送失败时将数据库任务直接标记为 `FAILED`
+3. Consumer 通过 `PENDING -> RUNNING` 条件更新抢占任务，重复消息无法重复执行已完成任务
+4. 可重试异常将任务恢复为 `PENDING` 并交给 Broker 重试；达到上限后记录 `FAILED` 和失败原因
+5. 超时停留在 `RUNNING` 的任务允许重新抢占，不额外引入分布式锁或 Outbox
+
 ## 目录结构
 
 ```text
@@ -111,6 +121,10 @@
 - 应用首页：`http://localhost:8080`
 - Swagger UI：`http://localhost:8080/swagger-ui.html`
 - OpenAPI JSON：`http://localhost:8080/v3/api-docs`
+
+本地默认关闭 RocketMQ，并通过同一任务处理器同步执行，便于开发和测试；`prod` profile 与 Docker Compose 默认开启 RocketMQ。
+
+后端每次启动都会执行打包在应用内的幂等 `sql/schema.sql`，自动补齐当前版本缺少的表和兼容字段，但不会执行 `sql/data.sql`。如运行账号明确没有 DDL 权限，可设置 `DB_SCHEMA_INIT_MODE=never`，并在发布前手动执行 schema。
 
 ### 2. 启动前端开发环境
 
@@ -151,6 +165,8 @@ Copy-Item .env.example .env
 - `QWEN_ENABLED`
 - `QWEN_API_KEY`
 
+没有配置 AI Key 时保持 `QWEN_ENABLED=false`，系统仍可使用本地规则完成登录、推荐、志愿表和 Agent 基础工具流程；填入有效 Key 后再改为 `true`。
+
 ### 2. 启动整套服务
 
 ```powershell
@@ -162,12 +178,45 @@ docker compose up -d --build
 - Swagger UI：`http://localhost:8080/swagger-ui.html`
 - MySQL：`localhost:3307`
 - Redis：`localhost:6380`
+- RocketMQ NameServer：`localhost:9876`
+- RocketMQ Broker：`localhost:10911`
 
 说明：
 - `mysql` 会自动执行 `sql/schema.sql` 和 `sql/data.sql`
+- `backend` 启动时会再次执行幂等 schema 校验，因此复用旧数据卷时也能补齐新增表和兼容字段
 - `backend` 默认使用 `prod` profile 启动
-- `backend` 会在 `mysql` 和 `redis` 健康后启动
+- `backend` 会在 `mysql`、`redis` 和 RocketMQ Broker 健康后启动
+- Compose 会先初始化 RocketMQ 持久化卷权限，再启动 NameServer 与 Broker
 - 为避免和本机已有 MySQL / Redis 冲突，Compose 使用了单独宿主机端口映射
+- MySQL、Redis 和 RocketMQ 的宿主机端口默认只绑定 `127.0.0.1`，远程服务器只需要对外开放应用端口
+- `backend` 提供容器健康检查，可用 `docker compose ps` 确认状态为 `healthy`
+
+### 3. 远程服务器部署
+
+服务器安装 Docker Engine 与 Compose 插件后执行：
+
+```bash
+git clone <仓库地址> zhiyuan
+cd zhiyuan
+cp .env.example .env
+```
+
+编辑 `.env`，至少替换 `DB_PASSWORD`、`DB_APP_PASSWORD` 和 `AUTH_JWT_SECRET`；需要真实 AI 对话时再填写 `QWEN_API_KEY` 并设置 `QWEN_ENABLED=true`。然后启动：
+
+```bash
+docker compose up -d --build
+docker compose ps
+docker compose logs --tail=200 backend
+```
+
+直接访问 `http://服务器公网IP:8080`。云服务器安全组和系统防火墙只需放行 TCP 8080；MySQL、Redis、RocketMQ 不需要开放公网端口。已有域名时，可让 Nginx/Caddy 反向代理到 `127.0.0.1:8080` 并配置 HTTPS。
+
+更新部署：
+
+```bash
+git pull
+docker compose up -d --build
+```
 
 停止服务：
 
@@ -186,9 +235,10 @@ docker compose down -v
 参考仓库根目录的 `.env.example`。
 
 主要变量：
-- 数据库：`DB_HOST` `DB_PORT` `DB_HOST_PORT` `DB_NAME` `DB_USER` `DB_PASSWORD`
+- 数据库：`DB_HOST` `DB_PORT` `DB_HOST_PORT` `DB_NAME` `DB_USER` `DB_PASSWORD` `DB_SCHEMA_INIT_MODE`
 - Docker 应用账号：`DB_APP_USER` `DB_APP_PASSWORD`
 - Redis：`REDIS_HOST` `REDIS_PORT` `REDIS_HOST_PORT` `CACHE_REDIS_ENABLED`
+- RocketMQ：`ROCKETMQ_ENABLED` `ROCKETMQ_NAME_SERVER` `ROCKETMQ_RECOMMENDATION_TOPIC` `ROCKETMQ_RECOMMENDATION_TAG` `ROCKETMQ_PRODUCER_GROUP` `ROCKETMQ_CONSUMER_GROUP`
 - 服务端口：`SERVER_PORT` `SERVER_HOST_PORT`
 - JWT：`AUTH_JWT_SECRET` `AUTH_JWT_ISSUER`
 - AI：`QWEN_ENABLED` `QWEN_BASE_URL` `QWEN_MODEL` `QWEN_API_KEY`

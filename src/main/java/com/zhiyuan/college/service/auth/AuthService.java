@@ -3,6 +3,7 @@ package com.zhiyuan.college.service.auth;
 import com.zhiyuan.college.mapper.UserAccountMapper;
 import com.zhiyuan.college.model.dto.LoginRequest;
 import com.zhiyuan.college.model.dto.LoginResponse;
+import com.zhiyuan.college.model.dto.ProfileCompletionRequest;
 import com.zhiyuan.college.model.dto.RegisterRequest;
 import com.zhiyuan.college.model.entity.UserAccount;
 import com.zhiyuan.college.model.enums.UserRole;
@@ -50,16 +51,6 @@ public class AuthService {
         }
         user.setRole(UserRole.fromValue(userAccountMapper.findRoleByUsername(request.getUsername())));
 
-        if (user.getScore() == null && request.getScore() == null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Score is required at first login");
-        }
-        if (user.getSubjectType() == null && request.getSubjectType() == null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Subject type is required at first login");
-        }
-        if (isBlank(user.getExamProvince()) && isBlank(request.getExamProvince())) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Exam province is required at first login");
-        }
-
         boolean profileChanged = false;
         if (request.getScore() != null && !request.getScore().equals(user.getScore())) {
             user.setScore(request.getScore());
@@ -86,27 +77,36 @@ public class AuthService {
         if (userAccountMapper.findByUsername(username) != null) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "用户名已存在");
         }
-        if (request.getScore() == null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "注册时必须填写分数");
-        }
-        if (request.getSubjectType() == null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "注册时必须选择科类");
-        }
-        if (isBlank(request.getExamProvince())) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "注册时必须选择省份");
-        }
-
         UserAccount user = new UserAccount();
         user.setUsername(username);
         user.setPassword(passwordEncoder.encode(request.getPassword()));
         user.setScore(request.getScore());
         user.setSubjectType(request.getSubjectType());
-        user.setExamProvince(request.getExamProvince().trim());
+        user.setExamProvince(isBlank(request.getExamProvince()) ? null : request.getExamProvince().trim());
         user.setRole(UserRole.USER);
         userAccountMapper.insert(user);
 
         String token = jwtTokenService.generateToken(user.getId(), user.getUsername(), user.getRole().name());
         return new LoginResponse(token, user.getUsername(), user.getScore(), user.getSubjectType(), user.getExamProvince(), user.getRole());
+    }
+
+    public LoginResponse completeProfile(String token, ProfileCompletionRequest request) {
+        UserAccount user = validateToken(token);
+        if (user == null) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid or expired token");
+        }
+        user.setScore(request.getScore());
+        user.setSubjectType(request.getSubjectType());
+        user.setExamProvince(request.getExamProvince().trim());
+        userAccountMapper.updateById(user);
+        return new LoginResponse(
+                token,
+                user.getUsername(),
+                user.getScore(),
+                user.getSubjectType(),
+                user.getExamProvince(),
+                user.getRole()
+        );
     }
 
     public UserAccount validateToken(String token) {

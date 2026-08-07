@@ -57,12 +57,11 @@ public interface MajorMapper extends BaseMapper<Major> {
 
     @Select("""
             <script>
-            SELECT DISTINCT m.name
-            FROM major m
-            <if test="province != null or subjectType != null">
-            JOIN major_admission_cutoff mac ON mac.major_id = m.id OR (mac.major_id IS NULL AND mac.major_name = m.name)
-            </if>
-            WHERE LOWER(m.name) LIKE CONCAT('%', LOWER(#{keyword}), '%')
+            SELECT DISTINCT mac.major_name
+            FROM major_admission_cutoff mac
+            WHERE mac.major_name IS NOT NULL
+              AND TRIM(mac.major_name) != ''
+              AND LOWER(mac.major_name) LIKE CONCAT('%', LOWER(#{keyword}), '%')
             <if test="province != null and province != ''">
               AND mac.province = #{province}
             </if>
@@ -71,12 +70,12 @@ public interface MajorMapper extends BaseMapper<Major> {
             </if>
             ORDER BY
               CASE
-                WHEN LOWER(m.name) = LOWER(#{keyword}) THEN 0
-                WHEN LOWER(m.name) LIKE CONCAT(LOWER(#{keyword}), '%') THEN 1
+                WHEN LOWER(mac.major_name) = LOWER(#{keyword}) THEN 0
+                WHEN LOWER(mac.major_name) LIKE CONCAT(LOWER(#{keyword}), '%') THEN 1
                 ELSE 2
               END,
-              LENGTH(m.name),
-              m.name
+              LENGTH(mac.major_name),
+              mac.major_name
             LIMIT 10
             </script>
             """)

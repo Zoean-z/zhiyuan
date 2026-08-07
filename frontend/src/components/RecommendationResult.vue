@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import AiSummaryPanel from "./AiSummaryPanel.vue";
 import UniversityCard from "./UniversityCard.vue";
 import { buildPlanItemKey } from "../utils/recommendation";
@@ -15,6 +15,7 @@ const props = defineProps({
   recommendationMode: { type: String, default: "" },
   rankMeta: { type: Object, default: null },
   showAddAction: { type: Boolean, default: false },
+  showAiSummary: { type: Boolean, default: false },
   selectedPlanKeys: { type: Array, default: () => [] }
 });
 
@@ -23,7 +24,6 @@ const activeTab = ref("rush");
 const rushList = computed(() => (Array.isArray(props.grouped?.rush) ? props.grouped.rush : []));
 const safeList = computed(() => (Array.isArray(props.grouped?.safe) ? props.grouped.safe : []));
 const guaranteeList = computed(() => (Array.isArray(props.grouped?.guarantee) ? props.grouped.guarantee : []));
-const hasAnyData = computed(() => rushList.value.length + safeList.value.length + guaranteeList.value.length > 0);
 const hasAnyRankFields = computed(() => {
   const firstItem = rushList.value[0] || safeList.value[0] || guaranteeList.value[0] || null;
   return !!firstItem && (
@@ -59,6 +59,16 @@ const resolvedRecommendationMode = computed(() => {
 const resultTargetText = computed(() => resolvedRecommendationMode.value === "MAJOR_FIRST" ? "学校+专业" : "院校");
 const selectedKeySet = computed(() => new Set(props.selectedPlanKeys));
 
+watch(
+  [rushList, safeList, guaranteeList],
+  ([rush, safe, guarantee]) => {
+    const lists = { rush, safe, guarantee };
+    if (lists[activeTab.value]?.length) return;
+    activeTab.value = ["rush", "safe", "guarantee"].find((key) => lists[key].length) || "rush";
+  },
+  { immediate: true }
+);
+
 function isItemAdded(item, strategy) {
   return selectedKeySet.value.has(buildPlanItemKey(item, strategy));
 }
@@ -66,60 +76,17 @@ function isItemAdded(item, strategy) {
 
 <template>
   <section class="result-page">
-    <el-card class="result-hero" shadow="never">
-      <h2>推荐结果</h2>
-      <p>按冲刺、稳妥、保底查看推荐{{ resultTargetText }}，统一对比录取分数与位次参考。</p>
-    </el-card>
-
-    <el-card v-if="showRankPanel" class="rank-panel" shadow="never">
-      <template #header>
-        <div class="panel-title-row">
-          <span>用户位次信息</span>
-        </div>
-      </template>
-
-      <div class="rank-panel__grid">
-        <div class="rank-metric">
-          <span>查询分数</span>
-          <strong>{{ resolvedRankMeta.score ?? "-" }}</strong>
-        </div>
-        <div class="rank-metric">
-          <span>考生省份</span>
-          <strong>{{ resolvedRankMeta.province || "-" }}</strong>
-        </div>
-        <div class="rank-metric">
-          <span>科类</span>
-          <strong>{{ resolvedRankMeta.subjectTypeLabel || "-" }}</strong>
-        </div>
-        <div class="rank-metric">
-          <span>用户位次</span>
-          <strong>{{ resolvedRankMeta.userRank ?? "-" }}</strong>
-        </div>
-      </div>
-    </el-card>
-
-    <el-card class="result-main" shadow="never">
-      <template #header>
-        <div class="panel-title-row result-main__header">
-          <div class="panel-title-row">
-            <span>{{ resolvedRecommendationMode === "MAJOR_FIRST" ? "学校专业推荐" : "院校推荐" }}</span>
-            <el-tag size="small" type="primary" effect="plain">冲刺 / 稳妥 / 保底</el-tag>
-          </div>
-        </div>
-      </template>
-
+    <div class="result-main">
       <el-skeleton :loading="loading" animated>
         <template #template>
           <div class="cards-grid">
-            <el-skeleton-item variant="p" style="height: 140px; border-radius: 12px;" />
-            <el-skeleton-item variant="p" style="height: 140px; border-radius: 12px;" />
-            <el-skeleton-item variant="p" style="height: 140px; border-radius: 12px;" />
+            <el-skeleton-item v-for="index in 4" :key="index" variant="p" class="recommend-card-skeleton" />
           </div>
         </template>
 
         <template #default>
           <el-tabs v-model="activeTab" class="recommend-tabs">
-            <el-tab-pane :label="'冲刺 (' + rushList.length + ')'" name="rush">
+            <el-tab-pane :label="'冲刺 ' + rushList.length" name="rush">
               <div v-if="rushList.length" class="cards-grid">
                 <UniversityCard
                   v-for="(item, idx) in rushList"
@@ -135,7 +102,7 @@ function isItemAdded(item, strategy) {
               <el-empty v-else :description="UI_TEXT.empty.noRush + resultTargetText" :image-size="90" />
             </el-tab-pane>
 
-            <el-tab-pane :label="'稳妥 (' + safeList.length + ')'" name="safe">
+            <el-tab-pane :label="'稳妥 ' + safeList.length" name="safe">
               <div v-if="safeList.length" class="cards-grid">
                 <UniversityCard
                   v-for="(item, idx) in safeList"
@@ -151,7 +118,7 @@ function isItemAdded(item, strategy) {
               <el-empty v-else :description="UI_TEXT.empty.noSafe + resultTargetText" :image-size="90" />
             </el-tab-pane>
 
-            <el-tab-pane :label="'保底 (' + guaranteeList.length + ')'" name="guarantee">
+            <el-tab-pane :label="'保底 ' + guaranteeList.length" name="guarantee">
               <div v-if="guaranteeList.length" class="cards-grid">
                 <UniversityCard
                   v-for="(item, idx) in guaranteeList"
@@ -167,16 +134,16 @@ function isItemAdded(item, strategy) {
               <el-empty v-else :description="UI_TEXT.empty.noGuarantee + resultTargetText" :image-size="90" />
             </el-tab-pane>
           </el-tabs>
-
-          <el-empty
-            v-if="!hasAnyData"
-            :description="UI_TEXT.empty.recommendation + '，请先发起' + (resolvedRecommendationMode === 'MAJOR_FIRST' ? '专业优先' : '学校优先') + '查询。'"
-            :image-size="100"
-          />
         </template>
       </el-skeleton>
-    </el-card>
+    </div>
 
-    <AiSummaryPanel :ai-summary="aiSummary" :summary="summary" :final-advice="finalAdvice" :tips="tips" />
+    <AiSummaryPanel
+      v-if="showAiSummary && (aiSummary || summary || finalAdvice || tips.length)"
+      :ai-summary="aiSummary"
+      :summary="summary"
+      :final-advice="finalAdvice"
+      :tips="tips"
+    />
   </section>
 </template>

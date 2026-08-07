@@ -1,6 +1,3 @@
-CREATE DATABASE IF NOT EXISTS college_recommendation DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
-USE college_recommendation;
-
 CREATE TABLE IF NOT EXISTS university (
   id BIGINT PRIMARY KEY AUTO_INCREMENT,
   name VARCHAR(120) NOT NULL,

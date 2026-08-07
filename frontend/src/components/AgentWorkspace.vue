@@ -1,7 +1,7 @@
 <script setup>
-import { ElMessage, ElNotification } from "element-plus";
-import { computed, onMounted, ref } from "vue";
-import CurrentPlanPanel from "./CurrentPlanPanel.vue";
+import { ElMessage } from "element-plus";
+import { Document, InfoFilled, Monitor, Promotion, School, User } from "@element-plus/icons-vue";
+import { computed, nextTick, onMounted, ref, watch } from "vue";
 import {
   buildGroupedFromResult,
   buildPlanItemKey,
@@ -16,7 +16,6 @@ const props = defineProps({
 });
 
 const emit = defineEmits(["jump-to-plans"]);
-
 const conversationsLoading = ref(false);
 const conversationLoading = ref(false);
 const sending = ref(false);
@@ -25,64 +24,36 @@ const conversations = ref([]);
 const activeConversationId = ref(null);
 const messages = ref([]);
 const draft = ref("");
-const currentPlanItems = ref([]);
-const currentPlanName = ref("");
-const currentPlanUpdatedAt = ref("");
-const planNotice = ref(null);
+const messageListRef = ref(null);
+
+const plansLoading = ref(false);
+const plans = ref([]);
+const activePlanId = ref("");
+const activePlanDetail = ref(null);
+const activePlanItems = ref([]);
+const addDialogVisible = ref(false);
+const addSubmitting = ref(false);
+const addTargetPlanId = ref("");
+const addNewPlanName = ref("");
+const pendingAddItem = ref(null);
+const createPlanDialogVisible = ref(false);
+const createPlanName = ref("");
 
 const quickPrompts = [
-  "帮我看看我的画像信息",
-  "看看我当前的志愿方案",
-  "帮我推荐学校",
-  "帮我推荐计算机专业"
+  { label: "帮我看看我的画像信息", icon: User },
+  { label: "看看我当前的志愿方案", icon: Document },
+  { label: "帮我推荐学校", icon: School },
+  { label: "帮我推荐计算机专业", icon: Monitor }
 ];
 
-const conversationTitle = computed(() => {
-  return conversations.value.find((item) => item.id === activeConversationId.value)?.title || "新的对话";
-});
-
-const planMetaText = computed(() => {
-  if (!currentPlanName.value) {
-    return "当前未加载方案快览";
-  }
-  return currentPlanUpdatedAt.value
-    ? `${currentPlanName.value} · 更新于 ${currentPlanUpdatedAt.value}`
-    : currentPlanName.value;
-});
-
-function formatStrategyLabel(value) {
-  const text = String(value || "").toUpperCase();
-  if (text.includes("RUSH") || text.includes("冲")) return "冲刺";
-  if (text.includes("GUARANTEE") || text.includes("保")) return "保底";
-  return "稳妥";
-}
-
-function recommendationCards(message) {
-  const items = message?.payload?.topItems;
-  return Array.isArray(items) ? items : [];
-}
-
-function hasRecommendationCards(message) {
-  return recommendationCards(message).length > 0;
-}
-
-function hasProfilePayload(message) {
-  return message?.toolName === "getUserProfile" && !!message?.payload;
-}
-
-function hasPlanPayload(message) {
-  return message?.toolName === "getCurrentPlan" && !!message?.payload;
-}
-
-function hasErrorPayload(message) {
-  return message?.messageType === "tool_result" && !!message?.payload?.errorCategory;
-}
+const conversationTitle = computed(() =>
+  conversations.value.find((item) => item.id === activeConversationId.value)?.title || "新的志愿对话"
+);
+const activePlan = computed(() => plans.value.find((item) => String(item.id) === String(activePlanId.value)) || null);
+const canSend = computed(() => !!draft.value.trim() && !sending.value && !!activePlanId.value);
 
 function getAuthHeaders(extraHeaders) {
-  return {
-    ...(extraHeaders || {}),
-    Authorization: `Bearer ${props.token}`
-  };
+  return { ...(extraHeaders || {}), Authorization: `Bearer ${props.token}` };
 }
 
 async function apiFetch(url, options = {}) {
@@ -93,110 +64,149 @@ async function apiFetch(url, options = {}) {
     const response = await fetch(url, { ...fetchOptions, signal: controller.signal });
     const isJson = response.headers.get("content-type")?.includes("application/json");
     const data = isJson ? await response.json() : null;
-    if (!response.ok) {
-      throw createHttpError(response, data, UI_TEXT.common.requestFailed);
-    }
+    if (!response.ok) throw createHttpError(response, data, UI_TEXT.common.requestFailed);
     return data;
   } catch (ex) {
-    if (ex?.name === "AbortError") {
-      throw new Error(UI_TEXT.common.timeout);
-    }
+    if (ex?.name === "AbortError") throw new Error(UI_TEXT.common.timeout);
     throw ex;
   } finally {
     window.clearTimeout(timeoutId);
   }
 }
 
-function resolveErrorMessage(ex, fallbackMessage = UI_TEXT.common.operationFailed) {
-  return normalizeUserError(ex, fallbackMessage);
+function resolveErrorMessage(ex, fallback) {
+  return normalizeUserError(ex, fallback || UI_TEXT.common.operationFailed);
 }
 
-function buildPlanPreviewItems(resultObj) {
+function parsePlanDetail(detail) {
+  let parsed = {};
+  try {
+    parsed = detail?.resultJson ? JSON.parse(detail.resultJson) : {};
+  } catch {
+    parsed = {};
+  }
+  return { parsed, items: flattenPlanItems(parsed) };
+}
+
+function flattenPlanItems(resultObj) {
   const grouped = buildGroupedFromResult(resultObj || {});
   const items = [];
   [["rush", grouped.rush], ["safe", grouped.safe], ["guarantee", grouped.guarantee]].forEach(([strategy, list]) => {
     (list || []).forEach((item) => {
       const normalized = normalizeItem(item, strategy);
-      items.push({
-        ...normalized,
-        strategy: normalized.strategy || strategy,
-        planKey: buildPlanItemKey(item, strategy)
-      });
+      items.push({ ...normalized, strategy: normalized.strategy || strategy, planKey: buildPlanItemKey(item, strategy) });
     });
   });
   return items;
 }
 
-function applyPlanSnapshotFromPayload(payload) {
-  if (!payload || payload.hasPlan === false) {
-    currentPlanItems.value = [];
-    currentPlanName.value = "";
-    currentPlanUpdatedAt.value = "";
-    return;
-  }
-  currentPlanName.value = payload.planName || "当前方案";
-  currentPlanUpdatedAt.value = payload.updatedAt
-    ? formatDateTime(payload.updatedAt)
-    : payload.createdAt
-      ? formatDateTime(payload.createdAt)
-      : "";
-
-  if (Array.isArray(payload.items)) {
-    currentPlanItems.value = payload.items.map((item) => {
-      const normalized = normalizeItem(item, item?.strategy);
-      return {
-        ...normalized,
-        strategy: normalized.strategy,
-        planKey: buildPlanItemKey(item, normalized.strategy)
-      };
+function buildPlanResult(items, base = {}) {
+  const groups = { rush: [], safe: [], guarantee: [] };
+  (items || []).forEach((item) => {
+    const normalized = normalizeItem(item, item?.strategy);
+    const group = ["rush", "safe", "guarantee"].includes(normalized.strategy) ? normalized.strategy : "safe";
+    groups[group].push({
+      recommendationMode: normalized.recommendationMode,
+      universityId: normalized.universityId ?? null,
+      universityName: normalized.universityName,
+      majorName: normalized.majorName || null,
+      universityProvince: normalized.universityProvince || null,
+      universityTier: normalized.universityTier || null,
+      is985: normalized.is985 === true,
+      is211: normalized.is211 === true,
+      isDoubleFirstClass: normalized.isDoubleFirstClass === true,
+      schoolTags: Array.isArray(normalized.schoolTags) ? normalized.schoolTags : [],
+      universityTags: normalized.universityTags || null,
+      cutoffScore: normalized.cutoffScore ?? null,
+      scoreGap: normalized.scoreGap ?? null,
+      userRank: normalized.userRank ?? null,
+      minRank: normalized.minRank ?? null,
+      rankGap: normalized.rankGap ?? null,
+      recommendationBasis: normalized.recommendationBasis || null,
+      admissionProbability: normalized.admissionProbability ?? null,
+      strategy: group.toUpperCase(),
+      strategyLabel: normalized.strategyLabel || null,
+      riskScore: normalized.riskScore ?? null,
+      matchReasons: Array.isArray(normalized.matchReasons) ? normalized.matchReasons : [],
+      explanation: normalized.explanation || null
     });
+  });
+  return {
+    recommendationMode: base.recommendationMode || items?.[0]?.recommendationMode || "SCHOOL_FIRST",
+    rush: groups.rush,
+    safe: groups.safe,
+    guarantee: groups.guarantee,
+    summary: `当前方案共选择 ${items.length} 条志愿结果。`,
+    aiSummary: base.aiSummary || "",
+    finalAdvice: base.finalAdvice || "",
+    tips: Array.isArray(base.tips) ? base.tips : []
+  };
+}
+
+async function loadPlans(preferredId = activePlanId.value) {
+  plansLoading.value = true;
+  try {
+    const records = await apiFetch("/api/plans", { headers: getAuthHeaders() });
+    plans.value = Array.isArray(records) ? records : [];
+    const matched = plans.value.find((item) => String(item.id) === String(preferredId));
+    const fallback = plans.value.find((item) => item.planName !== "当前方案草稿") || plans.value[0];
+    activePlanId.value = matched ? String(matched.id) : fallback ? String(fallback.id) : "";
+  } catch (ex) {
+    ElMessage.error(resolveErrorMessage(ex, "加载志愿表失败"));
+  } finally {
+    plansLoading.value = false;
   }
 }
 
-async function loadPlanPreview() {
+async function loadActivePlan() {
+  if (!activePlanId.value) {
+    activePlanDetail.value = null;
+    activePlanItems.value = [];
+    return;
+  }
   try {
-    const detail = await apiFetch("/api/plans/current", {
-      method: "GET",
-      headers: getAuthHeaders()
-    });
-    let parsed = null;
-    try {
-      parsed = detail?.resultJson ? JSON.parse(detail.resultJson) : null;
-    } catch {
-      parsed = null;
-    }
-    currentPlanItems.value = buildPlanPreviewItems(parsed || {});
-    currentPlanName.value = detail?.planName || "当前方案";
-    currentPlanUpdatedAt.value = formatDateTime(detail?.createdAt);
+    const detail = await apiFetch(`/api/plans/${activePlanId.value}`, { headers: getAuthHeaders() });
+    activePlanDetail.value = detail;
+    activePlanItems.value = parsePlanDetail(detail).items;
   } catch (ex) {
-    if (ex?.status === 404) {
-      currentPlanItems.value = [];
-      currentPlanName.value = "";
-      currentPlanUpdatedAt.value = "";
-      return;
-    }
-    console.error("[agent plan preview]", ex);
+    activePlanDetail.value = null;
+    activePlanItems.value = [];
+    ElMessage.error(resolveErrorMessage(ex, "加载当前志愿表失败"));
+  }
+}
+
+async function createEmptyPlan() {
+  const name = createPlanName.value.trim();
+  if (!name) {
+    ElMessage.warning("请输入志愿表名称");
+    return;
+  }
+  creating.value = true;
+  try {
+    const result = buildPlanResult([], {});
+    const saved = await apiFetch("/api/plans", {
+      method: "POST",
+      headers: getAuthHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ planName: name, sourceType: "score", sourceQuery: "AI 对话创建", resultJson: JSON.stringify(result), aiSummary: "" })
+    });
+    createPlanDialogVisible.value = false;
+    createPlanName.value = "";
+    await loadPlans(saved.id);
+    await loadActivePlan();
+    ElMessage.success(`已创建《${saved.planName}》`);
+  } catch (ex) {
+    ElMessage.error(resolveErrorMessage(ex, "创建志愿表失败"));
+  } finally {
+    creating.value = false;
   }
 }
 
 async function loadConversations() {
   conversationsLoading.value = true;
   try {
-    const data = await apiFetch("/api/agent/conversations", {
-      method: "GET",
-      headers: getAuthHeaders()
-    });
+    const data = await apiFetch("/api/agent/conversations", { headers: getAuthHeaders() });
     conversations.value = Array.isArray(data) ? data : [];
-    if (!activeConversationId.value && conversations.value.length) {
-      await openConversation(conversations.value[0].id);
-      return;
-    }
-    if (activeConversationId.value) {
-      const stillExists = conversations.value.some((item) => item.id === activeConversationId.value);
-      if (!stillExists) {
-        activeConversationId.value = null;
-      }
-    }
+    if (!activeConversationId.value && conversations.value.length) await openConversation(conversations.value[0].id);
   } catch (ex) {
     ElMessage.error(resolveErrorMessage(ex, "加载对话列表失败"));
   } finally {
@@ -225,12 +235,10 @@ async function createConversation(title = "新的志愿对话") {
 async function openConversation(id) {
   conversationLoading.value = true;
   try {
-    const detail = await apiFetch(`/api/agent/conversations/${id}`, {
-      method: "GET",
-      headers: getAuthHeaders()
-    });
+    const detail = await apiFetch(`/api/agent/conversations/${id}`, { headers: getAuthHeaders() });
     activeConversationId.value = detail.id;
     messages.value = Array.isArray(detail.messages) ? detail.messages : [];
+    await scrollMessagesToBottom();
   } catch (ex) {
     ElMessage.error(resolveErrorMessage(ex, "加载对话失败"));
   } finally {
@@ -238,141 +246,150 @@ async function openConversation(id) {
   }
 }
 
-function showPlanNotice(summary) {
-  planNotice.value = summary;
-  ElNotification({
-    title: "志愿表已更新",
-    message: summary,
-    type: "success",
-    duration: 3200
-  });
-}
-
-async function syncPlanStateFromTurn(generatedMessages) {
-  const toolResults = (generatedMessages || []).filter((message) => message.messageType === "tool_result");
-  const planSnapshot = toolResults.find((message) => message.toolName === "getCurrentPlan");
-  if (planSnapshot?.payload) {
-    applyPlanSnapshotFromPayload(planSnapshot.payload);
-    return;
-  }
-
-  const planMutation = toolResults.find((message) => ["addPlanItem", "removePlanItem", "savePlan"].includes(message.toolName));
-  if (!planMutation) {
-    return;
-  }
-
-  await loadPlanPreview();
-  showPlanNotice(planMutation.content || "agent 已更新当前志愿表");
+async function scrollMessagesToBottom() {
+  await nextTick();
+  if (messageListRef.value) messageListRef.value.scrollTop = messageListRef.value.scrollHeight;
 }
 
 async function sendMessage(content = draft.value) {
   const text = String(content || "").trim();
-  if (!text || sending.value) {
+  if (!text || sending.value) return;
+  if (!activePlanId.value) {
+    ElMessage.warning("请先选择或新建当前操作的志愿表");
     return;
   }
-
   if (!activeConversationId.value) {
-    await createConversation(text.slice(0, 12) || "新的志愿对话");
-    if (!activeConversationId.value) {
-      return;
-    }
+    await createConversation(text.slice(0, 12));
+    if (!activeConversationId.value) return;
   }
-
-  const optimisticUserMessage = {
-    id: `temp-${Date.now()}`,
-    role: "user",
-    messageType: "text",
-    content: text,
-    toolName: null,
-    payload: null,
-    createdAt: new Date().toISOString()
-  };
-
-  messages.value = [...messages.value, optimisticUserMessage];
+  const optimistic = { id: `temp-${Date.now()}`, role: "user", messageType: "text", content: text, createdAt: new Date().toISOString() };
+  messages.value.push(optimistic);
   draft.value = "";
   sending.value = true;
+  await scrollMessagesToBottom();
   try {
     const turn = await apiFetch(`/api/agent/conversations/${activeConversationId.value}/messages`, {
       method: "POST",
       headers: getAuthHeaders({ "Content-Type": "application/json" }),
-      body: JSON.stringify({ content: text }),
-      timeoutMs: 20000
+      body: JSON.stringify({ content: text, planId: Number(activePlanId.value) }),
+      timeoutMs: 25000
     });
-    messages.value = [...messages.value, ...(Array.isArray(turn.generatedMessages) ? turn.generatedMessages : [])];
-    await syncPlanStateFromTurn(turn.generatedMessages || []);
+    messages.value.push(...(Array.isArray(turn.generatedMessages) ? turn.generatedMessages : []));
+    if ((turn.generatedMessages || []).some((message) => ["addPlanItem", "removePlanItem", "savePlan"].includes(message.toolName))) {
+      await loadPlans(activePlanId.value);
+      await loadActivePlan();
+    }
     await loadConversations();
+    await scrollMessagesToBottom();
   } catch (ex) {
-    messages.value = messages.value.filter((message) => message.id !== optimisticUserMessage.id);
+    messages.value = messages.value.filter((item) => item.id !== optimistic.id);
     ElMessage.error(resolveErrorMessage(ex, "发送消息失败"));
   } finally {
     sending.value = false;
   }
 }
 
+function recommendationCards(message) {
+  return Array.isArray(message?.payload?.topItems) ? message.payload.topItems : [];
+}
+function hasProfilePayload(message) { return message?.toolName === "getUserProfile" && !!message?.payload; }
+function hasPlanPayload(message) { return message?.toolName === "getCurrentPlan" && !!message?.payload; }
+function hasErrorPayload(message) { return message?.messageType === "tool_result" && !!message?.payload?.errorCategory; }
 function bubbleClass(message) {
   if (message.role === "user") return "agent-bubble agent-bubble--user";
   if (message.messageType === "tool_call") return "agent-bubble agent-bubble--toolcall";
   if (message.messageType === "tool_result") return "agent-bubble agent-bubble--toolresult";
   return "agent-bubble agent-bubble--assistant";
 }
-
 function roleLabel(message) {
   if (message.role === "user") return "你";
   if (message.messageType === "tool_call") return "工具调用";
   if (message.messageType === "tool_result") return "工具结果";
-  return "Agent";
+  return "智愿 AI";
+}
+function formatStrategyLabel(value) {
+  const text = String(value || "").toUpperCase();
+  if (text.includes("RUSH") || text.includes("冲")) return "冲刺";
+  if (text.includes("GUARANTEE") || text.includes("保")) return "保底";
+  return "稳妥";
 }
 
-onMounted(async () => {
-  await loadConversations();
-  await loadPlanPreview();
-  if (!conversations.value.length) {
-    await createConversation();
+function openAddDialog(item) {
+  pendingAddItem.value = normalizeItem(item, item?.strategy || item?.group);
+  addTargetPlanId.value = activePlanId.value || (plans.value[0] ? String(plans.value[0].id) : "new");
+  addNewPlanName.value = `2026${props.user?.examProvince || ""}志愿方案`;
+  addDialogVisible.value = true;
+}
+
+async function confirmAddItem() {
+  if (!pendingAddItem.value || !addTargetPlanId.value) return;
+  if (addTargetPlanId.value === "new" && !addNewPlanName.value.trim()) {
+    ElMessage.warning("请输入志愿表名称");
+    return;
   }
+  addSubmitting.value = true;
+  try {
+    let detail = null;
+    let parsed = {};
+    let items = [];
+    if (addTargetPlanId.value !== "new") {
+      detail = await apiFetch(`/api/plans/${addTargetPlanId.value}`, { headers: getAuthHeaders() });
+      ({ parsed, items } = parsePlanDetail(detail));
+    }
+    const key = buildPlanItemKey(pendingAddItem.value, pendingAddItem.value.strategy);
+    if (items.some((item) => buildPlanItemKey(item, item.strategy) === key)) {
+      ElMessage.warning("该结果已在目标志愿表中");
+      return;
+    }
+    items.push(pendingAddItem.value);
+    const result = buildPlanResult(items, parsed);
+    const body = {
+      planName: detail?.planName || addNewPlanName.value.trim(),
+      sourceType: detail?.sourceType || "score",
+      sourceQuery: detail?.sourceQuery || "AI 推荐卡片加入",
+      resultJson: JSON.stringify(result),
+      aiSummary: detail?.aiSummary || result.aiSummary || result.summary
+    };
+    const saved = await apiFetch(addTargetPlanId.value === "new" ? "/api/plans" : `/api/plans/${addTargetPlanId.value}`, {
+      method: addTargetPlanId.value === "new" ? "POST" : "PUT",
+      headers: getAuthHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify(body)
+    });
+    addDialogVisible.value = false;
+    pendingAddItem.value = null;
+    await loadPlans(saved.id);
+    await loadActivePlan();
+    ElMessage.success(`已加入《${saved.planName}》`);
+  } catch (ex) {
+    ElMessage.error(resolveErrorMessage(ex, "加入志愿表失败"));
+  } finally {
+    addSubmitting.value = false;
+  }
+}
+
+watch(activePlanId, loadActivePlan);
+onMounted(async () => {
+  await Promise.all([loadPlans(), loadConversations()]);
+  if (!conversations.value.length) await createConversation();
+  await loadActivePlan();
 });
 </script>
 
 <template>
   <section class="agent-page">
-    <header class="agent-page__hero">
-      <div>
-        <div class="agent-page__eyebrow">受控多轮会话</div>
-        <h2>AI 志愿顾问台</h2>
-        <p>
-          Agent 只能通过受控工具访问你的画像、推荐结果和方案数据，不会自由查库。
-          现在它可以与你对话、发起推荐、修改志愿表，并把修改轨迹记录下来。
-        </p>
-      </div>
-      <div class="agent-page__hero-side">
-        <div class="agent-page__user">{{ props.user?.username || "当前用户" }}</div>
-        <div class="agent-page__profile">
-          {{ props.user?.score ?? "-" }} 分 · {{ props.user?.examProvince || "-" }} · {{ props.user?.subjectType || "-" }}
-        </div>
-      </div>
-    </header>
-
     <div class="agent-workspace">
       <aside class="agent-rail">
         <div class="agent-rail__head">
-          <div>
-            <div class="agent-rail__title">对话会话</div>
-            <div class="agent-rail__hint">切换或新建你的顾问会话</div>
-          </div>
-          <el-button type="primary" plain :loading="creating" @click="createConversation()">新建</el-button>
+          <strong>对话会话</strong>
+          <el-button type="primary" plain size="small" :loading="creating" @click="createConversation()">新建</el-button>
         </div>
-
+        <div class="agent-quick-title">快速提问</div>
         <div class="agent-quick-actions">
-          <button
-            v-for="prompt in quickPrompts"
-            :key="prompt"
-            type="button"
-            class="agent-quick-actions__item"
-            @click="sendMessage(prompt)"
-          >
-            {{ prompt }}
+          <button v-for="prompt in quickPrompts" :key="prompt.label" type="button" @click="sendMessage(prompt.label)">
+            <el-icon><component :is="prompt.icon" /></el-icon><span>{{ prompt.label }}</span>
           </button>
         </div>
-
+        <div class="agent-conversation-title">最近对话</div>
         <div class="agent-conversation-list" v-loading="conversationsLoading">
           <button
             v-for="item in conversations"
@@ -381,11 +398,8 @@ onMounted(async () => {
             :class="['agent-conversation-item', { 'is-active': item.id === activeConversationId }]"
             @click="openConversation(item.id)"
           >
-            <div class="agent-conversation-item__title">{{ item.title || "未命名会话" }}</div>
-            <div class="agent-conversation-item__meta">
-              <span>{{ item.messageCount || 0 }} 条消息</span>
-              <span>{{ formatDateTime(item.updatedAt || item.createdAt) }}</span>
-            </div>
+            <strong>{{ item.title || "未命名会话" }}</strong>
+            <span>{{ item.messageCount || 0 }} 条消息 · {{ formatDateTime(item.updatedAt || item.createdAt) }}</span>
           </button>
         </div>
       </aside>
@@ -393,139 +407,119 @@ onMounted(async () => {
       <main class="agent-chat-panel">
         <div class="agent-chat-panel__head">
           <div>
-            <div class="agent-chat-panel__title">{{ conversationTitle }}</div>
-            <div class="agent-chat-panel__hint">当前对话会记录 tool call、tool result 和志愿表变更。</div>
-          </div>
-          <el-button plain @click="emit('jump-to-plans')">查看志愿方案</el-button>
-        </div>
-
-        <transition name="agent-notice">
-          <div v-if="planNotice" class="agent-plan-notice">
-            <div class="agent-plan-notice__text">{{ planNotice }}</div>
-            <div class="agent-plan-notice__actions">
-              <el-button text @click="planNotice = null">关闭</el-button>
-              <el-button type="primary" plain size="small" @click="emit('jump-to-plans')">快捷查看志愿表</el-button>
+            <strong>{{ conversationTitle }}</strong>
+            <div class="agent-operation-plan">
+              <span>当前操作志愿表</span>
+              <el-select v-model="activePlanId" placeholder="请选择志愿表" :loading="plansLoading">
+                <el-option v-for="plan in plans" :key="plan.id" :label="plan.planName" :value="String(plan.id)" />
+              </el-select>
+              <el-tooltip content="AI 的读取、加入和移除操作均作用于这里选择的志愿表" placement="bottom">
+                <el-icon><InfoFilled /></el-icon>
+              </el-tooltip>
             </div>
           </div>
-        </transition>
+        </div>
 
-        <div class="agent-message-list" v-loading="conversationLoading">
-          <template v-if="messages.length">
-            <article
-              v-for="message in messages"
-              :key="message.id"
-              :class="['agent-message-row', `agent-message-row--${message.role}`]"
-            >
-              <div :class="bubbleClass(message)">
-                <div class="agent-bubble__meta">
-                  <span>{{ roleLabel(message) }}</span>
-                  <span>{{ formatDateTime(message.createdAt) }}</span>
-                </div>
-                <div class="agent-bubble__content">{{ message.content }}</div>
-                <div v-if="message.toolName" class="agent-bubble__tool">
-                  <el-tag size="small" effect="plain">{{ message.toolName }}</el-tag>
-                </div>
-                <div v-if="hasProfilePayload(message)" class="agent-bubble__payload agent-bubble__payload--profile">
-                  <div class="agent-payload-grid">
-                    <div class="agent-payload-item">
-                      <span>用户名</span>
-                      <strong>{{ message.payload.username || "-" }}</strong>
-                    </div>
-                    <div class="agent-payload-item">
-                      <span>分数</span>
-                      <strong>{{ message.payload.score ?? "-" }}</strong>
-                    </div>
-                    <div class="agent-payload-item">
-                      <span>科类</span>
-                      <strong>{{ message.payload.subjectType || "-" }}</strong>
-                    </div>
-                    <div class="agent-payload-item">
-                      <span>省份</span>
-                      <strong>{{ message.payload.examProvince || "-" }}</strong>
-                    </div>
-                  </div>
-                </div>
-                <div v-if="hasPlanPayload(message)" class="agent-bubble__payload">
-                  <div class="agent-inline-summary">
-                    <span>方案名称</span>
-                    <strong>{{ message.payload.planName || "当前方案" }}</strong>
-                  </div>
-                  <div class="agent-inline-summary">
-                    <span>志愿条数</span>
-                    <strong>{{ message.payload.itemCount ?? 0 }}</strong>
-                  </div>
-                </div>
-                <div v-if="hasRecommendationCards(message)" class="agent-bubble__payload agent-bubble__payload--cards">
-                  <div class="agent-recommend-card"
-                       v-for="(item, index) in recommendationCards(message)"
-                       :key="`${message.id}-${index}`">
-                    <div class="agent-recommend-card__head">
-                      <div>
-                        <div class="agent-recommend-card__title">{{ item.label || item.universityName || "推荐结果" }}</div>
-                        <div v-if="item.universityProvince || item.recommendationMode" class="agent-recommend-card__meta">
-                          {{ item.universityProvince || "-" }} · {{ item.recommendationMode === "MAJOR_FIRST" ? "专业优先" : "学校优先" }}
-                        </div>
-                      </div>
-                      <el-tag size="small" type="success" effect="light">{{ formatStrategyLabel(item.strategyLabel || item.strategy) }}</el-tag>
-                    </div>
-                    <div class="agent-recommend-card__stats">
-                      <span>概率 {{ item.admissionProbability ?? "-" }}%</span>
-                      <span>依据 {{ item.recommendationBasis || "-" }}</span>
-                      <span v-if="item.majorName">专业 {{ item.majorName }}</span>
-                    </div>
-                    <div v-if="Array.isArray(item.matchReasons) && item.matchReasons.length" class="agent-recommend-card__reasons">
-                      {{ item.matchReasons.slice(0, 2).join("；") }}
-                    </div>
-                  </div>
-                </div>
-                <div v-if="hasErrorPayload(message)" class="agent-bubble__payload agent-bubble__payload--error">
-                  <div class="agent-inline-summary">
-                    <span>错误分类</span>
-                    <strong>{{ message.payload.errorCategory }}</strong>
-                  </div>
-                  <div class="agent-inline-summary">
-                    <span>错误码</span>
-                    <strong>{{ message.payload.errorCode }}</strong>
-                  </div>
-                </div>
+        <div ref="messageListRef" class="agent-message-list" v-loading="conversationLoading">
+          <article v-for="message in messages" :key="message.id" :class="['agent-message-row', `agent-message-row--${message.role}`]">
+            <div :class="bubbleClass(message)">
+              <div class="agent-bubble__meta"><span>{{ roleLabel(message) }}</span><time>{{ formatDateTime(message.createdAt) }}</time></div>
+              <div class="agent-bubble__content">{{ message.content }}</div>
+              <el-tag v-if="message.toolName" class="agent-bubble__tool" size="small" effect="plain">{{ message.toolName }}</el-tag>
+
+              <div v-if="hasProfilePayload(message)" class="agent-payload-grid">
+                <div><span>分数</span><strong>{{ message.payload.score ?? "-" }}</strong></div>
+                <div><span>科类</span><strong>{{ message.payload.subjectType || "-" }}</strong></div>
+                <div><span>省份</span><strong>{{ message.payload.examProvince || "-" }}</strong></div>
               </div>
-            </article>
-          </template>
-
-          <div v-else class="agent-empty-state">
-            <h3>开始第一轮对话</h3>
-            <p>你可以直接让它推荐学校、推荐专业，或者查看当前志愿表。</p>
-          </div>
+              <div v-if="hasPlanPayload(message)" class="agent-inline-plan">
+                <strong>{{ message.payload.planName || "当前志愿表" }}</strong>
+                <span>{{ message.payload.itemCount ?? 0 }} 条志愿</span>
+              </div>
+              <div v-if="recommendationCards(message).length" class="agent-recommend-list">
+                <article v-for="(item, index) in recommendationCards(message)" :key="`${message.id}-${index}`" class="agent-recommend-card">
+                  <div class="agent-recommend-card__head">
+                    <div><strong>{{ item.label || item.universityName }}</strong><span>{{ item.universityProvince || "-" }} · {{ item.majorName || "院校志愿" }}</span></div>
+                    <el-tag size="small" type="success" effect="light">{{ formatStrategyLabel(item.strategyLabel || item.strategy) }}</el-tag>
+                  </div>
+                  <div class="agent-recommend-card__stats">
+                    <span>录取概率 <strong>{{ item.admissionProbability ?? "-" }}%</strong></span>
+                    <span>最低位次 <strong>{{ item.minRank ?? "-" }}</strong></span>
+                    <span>位次差 <strong>{{ item.rankGap ?? "-" }}</strong></span>
+                  </div>
+                  <div class="agent-recommend-card__foot">
+                    <span>{{ Array.isArray(item.matchReasons) ? item.matchReasons.slice(0, 2).join("；") : "" }}</span>
+                    <el-button type="primary" plain size="small" @click="openAddDialog(item)">加入志愿表</el-button>
+                  </div>
+                </article>
+              </div>
+              <div v-if="hasErrorPayload(message)" class="agent-error-inline">{{ message.payload.errorMessage || message.payload.errorCode }}</div>
+            </div>
+          </article>
+          <div v-if="!messages.length" class="agent-empty-state"><strong>开始第一轮对话</strong><span>选择右侧志愿表后，可以让 AI 推荐并协助调整方案。</span></div>
         </div>
 
         <div class="agent-input-panel">
           <el-input
             v-model="draft"
             type="textarea"
-            :rows="4"
+            :rows="2"
             resize="none"
-            placeholder="例如：帮我推荐浙江省内稳一点的学校，或者把第一个加入志愿单"
+            maxlength="1000"
+            show-word-limit
+            :disabled="!activePlanId"
+            placeholder="输入你的问题，AI 将结合当前志愿表回答"
             @keydown.enter.exact.prevent="sendMessage()"
           />
-          <div class="agent-input-panel__footer">
-            <div class="agent-input-panel__tip">当前为受控 agent：只会调用我们开放的工具，不会自由执行查询。</div>
-            <el-button type="primary" :loading="sending" @click="sendMessage()">发送消息</el-button>
-          </div>
+          <el-button class="agent-send-button" type="primary" circle :disabled="!canSend" :loading="sending" @click="sendMessage()">
+            <el-icon><Promotion /></el-icon>
+          </el-button>
         </div>
       </main>
 
       <aside class="agent-plan-panel">
-        <CurrentPlanPanel
-          :items="currentPlanItems"
-          :save-disabled="true"
-          :clearing-disabled="true"
-          :read-only="true"
-          :show-jump-action="true"
-          jump-label="查看志愿表"
-          :meta-text="planMetaText"
-          @jump="emit('jump-to-plans')"
-        />
+        <div class="agent-plan-panel__head">
+          <strong>当前志愿表</strong>
+          <p>AI 推荐、加入和修改操作将写入当前选择的志愿表。</p>
+        </div>
+        <label class="agent-plan-selector">
+          <span>当前操作志愿表</span>
+          <el-select v-model="activePlanId" placeholder="请选择" :loading="plansLoading">
+            <el-option v-for="plan in plans" :key="plan.id" :label="plan.planName" :value="String(plan.id)" />
+          </el-select>
+        </label>
+        <div class="agent-plan-panel__actions">
+          <el-button type="primary" plain size="small" @click="createPlanDialogVisible = true">新建志愿表</el-button>
+        </div>
+        <div class="agent-plan-preview-title">志愿表预览 <span>{{ activePlanItems.length }} 条</span></div>
+        <div class="agent-plan-preview-list">
+          <article v-for="item in activePlanItems.slice(0, 4)" :key="item.planKey" class="agent-plan-preview-card">
+            <div><strong>{{ item.universityName }}</strong><el-tag size="small" effect="light">{{ formatStrategyLabel(item.strategy) }}</el-tag></div>
+            <span>{{ item.majorName || "院校志愿" }}</span>
+            <small>{{ item.universityProvince || "-" }} · 概率 {{ item.admissionProbability ?? "-" }}%</small>
+          </article>
+          <el-empty v-if="!activePlanItems.length" description="暂无志愿" :image-size="70" />
+        </div>
+        <el-button class="agent-plan-panel__jump" plain @click="emit('jump-to-plans')">查看完整志愿表</el-button>
       </aside>
     </div>
+
+    <el-dialog v-model="addDialogVisible" title="加入志愿表" width="460px" destroy-on-close>
+      <p class="agent-dialog-tip">请选择目标志愿表，再确认写入。</p>
+      <el-select v-model="addTargetPlanId" class="agent-dialog-select" placeholder="请选择志愿表">
+        <el-option v-for="plan in plans" :key="plan.id" :label="plan.planName" :value="String(plan.id)" />
+        <el-option label="新建志愿表" value="new" />
+      </el-select>
+      <el-input v-if="addTargetPlanId === 'new'" v-model.trim="addNewPlanName" maxlength="30" placeholder="输入志愿表名称" />
+      <div v-if="pendingAddItem" class="agent-dialog-target">
+        <strong>{{ pendingAddItem.universityName }}</strong><span>{{ pendingAddItem.majorName || "院校志愿" }}</span>
+      </div>
+      <template #footer><el-button @click="addDialogVisible = false">取消</el-button><el-button type="primary" :loading="addSubmitting" @click="confirmAddItem">确认加入</el-button></template>
+    </el-dialog>
+
+    <el-dialog v-model="createPlanDialogVisible" title="新建志愿表" width="420px" destroy-on-close>
+      <el-input v-model.trim="createPlanName" maxlength="30" placeholder="例如：2026浙江志愿方案-A" />
+      <template #footer><el-button @click="createPlanDialogVisible = false">取消</el-button><el-button type="primary" :loading="creating" @click="createEmptyPlan">创建</el-button></template>
+    </el-dialog>
   </section>
 </template>

@@ -1,6 +1,6 @@
 <script setup>
 import { computed } from "vue";
-import { UI_TEXT } from "../utils/ui";
+import { ChatDotRound } from "@element-plus/icons-vue";
 
 const props = defineProps({
   aiSummary: { type: String, default: "" },
@@ -15,27 +15,26 @@ const displayTips = computed(() => (Array.isArray(props.tips) ? props.tips.filte
 </script>
 
 <template>
-  <el-card class="summary-panel" shadow="never">
-    <template #header>
-      <div class="panel-title-row">
-        <span>AI 总结</span>
-        <el-tag size="small" type="info" effect="plain">报考建议</el-tag>
+  <section class="summary-panel">
+    <header class="summary-panel__header">
+      <span class="summary-panel__icon"><el-icon><ChatDotRound /></el-icon></span>
+      <h3>AI 报考建议</h3>
+    </header>
+    <div class="summary-panel__content">
+      <div v-if="displayTips.length" class="summary-block">
+        <h4>推荐提示</h4>
+        <ul class="summary-tips">
+          <li v-for="(tip, idx) in displayTips" :key="idx">{{ tip }}</li>
+        </ul>
       </div>
-    </template>
-    <div v-if="displayTips.length" class="summary-tips">
-      <div class="summary-tips__title">推荐提示</div>
-      <ul class="summary-tips__list">
-        <li v-for="(tip, idx) in displayTips" :key="idx">{{ tip }}</li>
-      </ul>
+      <div v-if="displayFinalAdvice" class="summary-block">
+        <h4>规则建议</h4>
+        <p>{{ displayFinalAdvice }}</p>
+      </div>
+      <div v-if="displaySummary" class="summary-block summary-block--wide">
+        <h4>AI 总结</h4>
+        <p>{{ displaySummary }}</p>
+      </div>
     </div>
-    <div v-if="displayFinalAdvice" class="summary-block">
-      <div class="summary-block__title">规则建议</div>
-      <div class="summary-text">{{ displayFinalAdvice }}</div>
-    </div>
-    <div v-if="displaySummary" class="summary-block">
-      <div class="summary-block__title">AI 润色总结</div>
-      <div class="summary-text">{{ displaySummary }}</div>
-    </div>
-    <el-empty v-else-if="!displayTips.length && !displayFinalAdvice" :description="UI_TEXT.empty.aiSummary" :image-size="90" />
-  </el-card>
+  </section>
 </template>

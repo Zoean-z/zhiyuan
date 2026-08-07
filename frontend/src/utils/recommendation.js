@@ -24,6 +24,17 @@ export function clearStoredAuth() {
   localStorage.removeItem("zhiyuan_auth");
 }
 
+export function isUserProfileComplete(user) {
+  return Boolean(
+    user
+    && user.score !== null
+    && user.score !== undefined
+    && user.score !== ""
+    && user.subjectType
+    && user.examProvince
+  );
+}
+
 export function pickValue(obj, keys) {
   for (const key of keys) {
     if (obj && obj[key] !== undefined && obj[key] !== null && obj[key] !== "") {
@@ -99,6 +110,11 @@ export function normalizeItem(item, fallbackStrategy) {
   const userRank = pickValue(item, ["userRank"]);
   const minRank = pickValue(item, ["minRank", "minimumRank"]);
   const rankGap = pickValue(item, ["rankGap"]);
+  const riskScore = pickValue(item, ["riskScore"]);
+  const storedProbability = pickValue(item, ["admissionProbability", "probability", "chance"]);
+  const admissionProbability = storedProbability == null && riskScore != null
+    ? Math.max(0, Math.min(100, 100 - Number(riskScore)))
+    : storedProbability;
   const schoolTagModel = normalizeSchoolTags(item);
   return {
     recommendationMode,
@@ -118,10 +134,10 @@ export function normalizeItem(item, fallbackStrategy) {
     minRank,
     rankGap,
     recommendationBasis,
-    admissionProbability: pickValue(item, ["admissionProbability", "probability", "chance"]),
+    admissionProbability,
     strategy,
     strategyLabel: pickValue(item, ["strategyLabel"]) || strategyLabel(strategy),
-    riskScore: pickValue(item, ["riskScore"]),
+    riskScore,
     matchReasons: Array.isArray(pickValue(item, ["matchReasons"])) ? pickValue(item, ["matchReasons"]) : [],
     explanation: pickValue(item, ["explanation"])
   };

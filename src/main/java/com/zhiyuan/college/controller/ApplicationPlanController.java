@@ -54,6 +54,12 @@ public class ApplicationPlanController {
         return applicationPlanService.getById(currentUserId(), id);
     }
 
+    @PutMapping("/{id}")
+    public ApplicationPlanDetailResponse update(@PathVariable("id") Long id,
+                                                @Valid @RequestBody ApplicationPlanCreateRequest request) {
+        return applicationPlanService.update(currentUserId(), id, request);
+    }
+
     @DeleteMapping("/current")
     public void deleteCurrent() {
         applicationPlanService.deleteCurrentDraft(currentUserId());

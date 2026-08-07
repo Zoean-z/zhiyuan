@@ -34,7 +34,11 @@ public class AgentChatService {
         this.objectMapper = objectMapper;
     }
 
-    public AgentChatTurnResponse sendMessage(Long userId, Long conversationId, String content, UserAccount currentUser) {
+    public AgentChatTurnResponse sendMessage(Long userId,
+                                             Long conversationId,
+                                             String content,
+                                             Long targetPlanId,
+                                             UserAccount currentUser) {
         List<AgentMessageResponse> generated = new ArrayList<>();
         int toolCalls = 0;
         agentConversationService.appendMessage(
@@ -79,7 +83,7 @@ public class AgentChatService {
 
             AgentToolResult toolResult;
             try {
-                toolResult = agentToolExecutor.execute(userId, decision.getAction(), decision.getToolArgs(), recentMessages);
+                toolResult = agentToolExecutor.execute(userId, targetPlanId, decision.getAction(), decision.getToolArgs(), recentMessages);
             } catch (Exception ex) {
                 toolResult = buildFailureResult(decision.getAction(), ex);
             }

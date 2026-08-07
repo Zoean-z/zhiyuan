@@ -64,7 +64,7 @@ public class JwtTokenService {
         byte[] bytes;
         try {
             bytes = Decoders.BASE64.decode(jwtSecret);
-        } catch (IllegalArgumentException ex) {
+        } catch (RuntimeException ex) {
             bytes = jwtSecret.getBytes(StandardCharsets.UTF_8);
         }
         if (bytes.length < 32) {
