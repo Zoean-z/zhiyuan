@@ -1,6 +1,6 @@
 <script setup>
 import { inject } from "vue";
-import { Lock, QuestionFilled, Reading, User } from "@element-plus/icons-vue";
+import { Lock, Reading, User } from "@element-plus/icons-vue";
 import journeyImage from "../assets/admission-journey.png";
 
 const { authMode, error, loading, login, loginForm, register } = inject("workspace");
@@ -13,13 +13,15 @@ function submit() {
 <template>
   <div class="auth-page">
     <header class="auth-topbar">
-      <div class="auth-topbar__brand">
-        <span class="auth-logo"><el-icon><Reading /></el-icon></span>
-        <strong>智愿AI报考平台</strong>
-        <span class="auth-topbar__divider" />
-        <span>让每一次选择，更有方向</span>
+      <div class="auth-topbar__sidebar">
+        <div class="auth-topbar__brand">
+          <span class="auth-logo"><el-icon><Reading /></el-icon></span>
+          <span>智愿AI报考平台</span>
+        </div>
       </div>
-      <span class="auth-help"><el-icon><QuestionFilled /></el-icon>帮助中心</span>
+      <div class="auth-topbar__content">
+        <h1>登录</h1>
+      </div>
     </header>
 
     <main class="auth-stage">

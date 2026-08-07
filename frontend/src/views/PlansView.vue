@@ -117,3 +117,83 @@ onUnmounted(() => {
     </el-dialog>
   </el-main>
 </template>
+
+<style scoped>
+.plan-detail-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 16px 0;
+  padding: 12px 16px;
+  border: 1px solid var(--border, #e6ebf2);
+  border-radius: 10px;
+  background: #f8fbff;
+}
+
+.plan-detail-toolbar strong {
+  margin-right: 12px;
+  font-size: 16px;
+}
+
+.plan-detail-toolbar span {
+  color: #64748b;
+  font-size: 13px;
+}
+
+.plan-editor-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.plan-editor-item {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 16px;
+  border: 1px solid var(--border, #e6ebf2);
+  border-radius: 12px;
+  background: linear-gradient(180deg, #fbfdff 0%, #ffffff 100%);
+}
+
+.plan-editor-item__identity {
+  flex: 1;
+  min-width: 0;
+}
+
+.plan-editor-item__identity strong {
+  display: block;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.plan-editor-item__identity span {
+  display: block;
+  margin-top: 2px;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.plan-editor-item__metrics {
+  display: flex;
+  gap: 16px;
+  color: #64748b;
+  font-size: 13px;
+  flex-shrink: 0;
+}
+
+.plan-editor-item__strategy {
+  width: 120px;
+  flex-shrink: 0;
+}
+
+.history-raw {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-all;
+  font-size: 12px;
+  color: #334155;
+  line-height: 1.6;
+}
+</style>

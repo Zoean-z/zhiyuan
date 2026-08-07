@@ -160,6 +160,7 @@ public class ApplicationPlanService {
                 plan.getPlanName(),
                 plan.getSourceType(),
                 plan.getSourceQuery(),
+                plan.getResultJson(),
                 plan.getCreatedAt());
     }
 
