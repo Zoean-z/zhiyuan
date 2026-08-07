@@ -9,7 +9,7 @@ const props = defineProps({
   loading: { type: Boolean, default: false }
 });
 
-const emit = defineEmits(["refresh", "view", "delete", "reQuery"]);
+const emit = defineEmits(["refresh", "view", "delete"]);
 
 const searchQuery = ref("");
 const typeFilter = ref("all");
@@ -240,9 +240,6 @@ function handleSizeChange(size) {
           <span class="history-table__cell history-table__cell--actions">
             <button class="history-action-btn history-action-btn--view" @click="emit('view', record)">
               查看结果
-            </button>
-            <button class="history-action-btn history-action-btn--query" @click="emit('reQuery', record)">
-              再次查询
             </button>
             <button class="history-action-btn history-action-btn--delete" @click="emit('delete', record)">
               删除
@@ -573,17 +570,6 @@ function handleSizeChange(size) {
 .history-action-btn--view:hover {
   background: #e0f0ff;
   border-color: #b0d0ff;
-}
-
-.history-action-btn--query {
-  background: #f0fdf4;
-  border-color: #d0f5d8;
-  color: #16a34a;
-}
-
-.history-action-btn--query:hover {
-  background: #e0f9e8;
-  border-color: #b0e8c0;
 }
 
 .history-action-btn--delete {

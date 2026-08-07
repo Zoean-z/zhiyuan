@@ -1,6 +1,5 @@
 <script setup>
 import { inject, onMounted, onUnmounted } from "vue";
-import { ElMessage } from "element-plus";
 import HistoryView from "../components/HistoryView.vue";
 import RecommendationResult from "../components/RecommendationResult.vue";
 import { formatDateTime, queryTypeLabel } from "../utils/recommendation";
@@ -13,10 +12,6 @@ const {
   historySummary, historyTips, invalidateHistoryLoad, loadHistory, openHistoryResult, resetHistoryDialog
 } = inject("workspace");
 
-function handleReQuery(record) {
-  ElMessage.info("再次查询功能需要后端支持");
-}
-
 onMounted(loadHistory);
 onUnmounted(() => {
   invalidateHistoryLoad();
@@ -27,7 +22,7 @@ onUnmounted(() => {
 
 <template>
   <el-main class="app-main">
-    <HistoryView :records="historyRecords" :loading="historyLoading" @refresh="loadHistory" @view="openHistoryResult" @delete="deleteHistoryRecord" @re-query="handleReQuery" />
+    <HistoryView :records="historyRecords" :loading="historyLoading" @refresh="loadHistory" @view="openHistoryResult" @delete="deleteHistoryRecord" />
 
     <el-dialog v-model="historyDialogVisible" title="历史结果" width="80%" top="4vh" destroy-on-close>
       <el-skeleton :loading="historyDetailLoading" animated>
