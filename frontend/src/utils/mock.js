@@ -142,20 +142,58 @@ const MOCK_HISTORY = [
   {
     id: 1,
     queryType: "score",
-    queryContent: "分数：630，省份：浙江，科类：物理",
-    createdAt: "2026-08-07T09:30:00"
+    queryContent: "模式:专业优先，分数:650，省份:浙江，科类:PHYSICS，专业:计算机科学与技术",
+    createdAt: "2026-08-07T09:00:33",
+    summary: "返回 3 个稳妥院校"
   },
   {
     id: 2,
-    queryType: "text",
-    queryContent: "我想学计算机专业，分数630，浙江考生",
-    createdAt: "2026-08-06T14:20:00"
+    queryType: "score",
+    queryContent: "模式:专业优先，分数:630，省份:浙江，科类:PHYSICS，专业:计算机科学与技术",
+    createdAt: "2026-08-07T08:57:07",
+    summary: "返回 5 个推荐院校"
   },
   {
     id: 3,
     queryType: "score",
-    queryContent: "分数：600，省份：浙江，科类：物理",
-    createdAt: "2026-03-20T10:15:00"
+    queryContent: "模式:专业优先，分数:630，省份:浙江，科类:PHYSICS，专业:计算机科学与技术",
+    createdAt: "2026-08-07T08:53:22",
+    summary: "返回 5 个推荐院校"
+  },
+  {
+    id: 4,
+    queryType: "score",
+    queryContent: "模式:学校优先，分数:630，省份:浙江，科类:PHYSICS",
+    createdAt: "2026-08-07T08:53:04",
+    summary: "返回 8 个推荐院校"
+  },
+  {
+    id: 5,
+    queryType: "text",
+    queryContent: "推荐几个华东地区的学校",
+    createdAt: "2026-03-21T11:28:03",
+    summary: "生成 8 条推荐"
+  },
+  {
+    id: 6,
+    queryType: "text",
+    queryContent: "推荐几个华东地区的学校",
+    createdAt: "2026-03-21T11:22:54",
+    summary: "生成 8 条推荐"
+  },
+  {
+    id: 7,
+    queryType: "score",
+    queryContent: "模式:学校优先，分数:630，省份:浙江，科类:PHYSICS",
+    createdAt: "2026-03-21T11:21:53",
+    summary: "返回 8 个推荐院校"
+  },
+  {
+    id: 8,
+    queryType: "agent",
+    queryContent: "帮我推荐计算机专业",
+    createdAt: "2026-03-21T10:59:16",
+    summary: "进入 AI 顾问对话"
   }
 ];
 
