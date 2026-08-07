@@ -1,6 +1,6 @@
 # 高考志愿智能推荐与对话式填报助手
 
-一个面向高考志愿填报场景的 AI 应用项目，核心目标不是“把推荐全交给大模型”，而是让 AI 负责自然语言理解与对话编排，后端保留可控、可解释、可审计的推荐逻辑。
+一个面向高考志愿填报场景的 AI 应用项目，核心目标不是"把推荐全交给大模型"，而是让 AI 负责自然语言理解与对话编排，后端保留可控、可解释、可审计的推荐逻辑。
 
 项目当前已经具备完整单体工程闭环：
 - 用户登录注册、画像维护、推荐历史、志愿方案保存
@@ -17,7 +17,7 @@
 - 推荐核心仍由后端规则、概率评分和排序逻辑完成
 - 每条结果都会返回推荐理由、风险等级、规则解释，便于展示和追踪
 
-### 2. 从固定阈值升级到基础版“冲稳保概率评分”
+### 2. 从固定阈值升级到基础版"冲稳保概率评分"
 - 不再只按固定 `scoreGap / rankGap` 生硬分档
 - 结合位次差、分数差、年份波动、偏好命中等因素计算基础概率分
 - 再按概率区间映射到 `冲 / 稳 / 保`，结果更接近真实推荐场景
@@ -41,8 +41,8 @@
 - JWT
 - MyBatis-Plus
 - MySQL 8
-- Redis
-- RocketMQ 5
+- Redis（可选）
+- RocketMQ 5（可选）
 - springdoc-openapi
 
 ### 前端
@@ -111,10 +111,33 @@
 
 ## 本地启动
 
-### 1. 启动后端
+### 前置条件
+
+- **Java 17+**
+- **Node.js 18+** 和 npm
+- **MySQL 8**（或使用 Docker）
+- **Maven**（项目自带 Maven Wrapper `mvnw`/`mvnw.cmd`）
+
+### 1. 启动数据库
+
+如果本地没有 MySQL，可以用 Docker 启动：
 
 ```powershell
+docker run -d --name zhiyuan-mysql `
+  -e MYSQL_ROOT_PASSWORD=123456 `
+  -e MYSQL_DATABASE=college_recommendation `
+  -p 3306:3306 `
+  mysql:8.4
+```
+
+### 2. 启动后端
+
+```powershell
+# Windows
 .\mvnw.cmd spring-boot:run
+
+# macOS / Linux
+./mvnw spring-boot:run
 ```
 
 默认访问：
@@ -126,7 +149,7 @@
 
 后端每次启动都会执行打包在应用内的幂等 `sql/schema.sql`，自动补齐当前版本缺少的表和兼容字段，但不会执行 `sql/data.sql`。如运行账号明确没有 DDL 权限，可设置 `DB_SCHEMA_INIT_MODE=never`，并在发布前手动执行 schema。
 
-### 2. 启动前端开发环境
+### 3. 启动前端开发环境
 
 ```powershell
 cd frontend
@@ -140,14 +163,31 @@ npm run dev
 说明：
 - Vite 会把 `/api` 代理到 `http://localhost:8080`
 
-### 3. 构建前端并交给后端托管
+### 4. 构建前端并交给后端托管
+
+**重要：前端构建后需要将产物复制到 Spring Boot 的静态资源目录才能被正确加载。**
 
 ```powershell
 cd frontend
 npm run build
+
+# 将构建产物复制到 Spring Boot 静态资源目录
+Copy-Item -Path ..\src\main\resources\static\index.html -Destination ..\target\classes\static\index.html -Force
+Copy-Item -Path ..\src\main\resources\static\assets\*.js -Destination ..\target\classes\static\assets\ -Force
+Copy-Item -Path ..\src\main\resources\static\assets\*.css -Destination ..\target\classes\static\assets\ -Force
 ```
 
-构建产物输出到 `src/main/resources/static`，随后重新启动后端即可通过 `http://localhost:8080` 访问完整页面。
+然后重新启动后端即可通过 `http://localhost:8080` 访问完整页面。
+
+**或者使用 Maven 编译（会自动复制静态资源）：**
+
+```powershell
+# Windows
+.\mvnw.cmd compile
+
+# macOS / Linux
+./mvnw compile
+```
 
 ## Docker Compose 启动
 
@@ -312,9 +352,73 @@ npm run build
 - 分数位次批量导入说明：`sql/score-rank-mapping-guide.md`
 - 位次导入 SQL 模板：`sql/import-score-rank-mapping.sql`
 
+## 常见问题
+
+### 1. 前端页面显示空白或旧版本
+
+**原因**：Spring Boot 从 `target/classes/static/` 加载静态资源，而不是 `src/main/resources/static/`。
+
+**解决**：
+```powershell
+# 方法1：重新编译
+.\mvnw.cmd compile
+
+# 方法2：手动复制
+Copy-Item -Path src\main\resources\static\* -Destination target\classes\static\ -Recurse -Force
+```
+
+### 2. Maven Wrapper 报错 "command not found"
+
+**原因**：Linux/macOS 下 `mvnw` 没有执行权限。
+
+**解决**：
+```bash
+chmod +x mvnw
+./mvnw spring-boot:run
+```
+
+### 3. 数据库连接失败
+
+**原因**：MySQL 未启动或配置错误。
+
+**解决**：
+1. 检查 MySQL 是否运行：`docker ps | grep mysql`
+2. 检查 `.env` 中的 `DB_HOST`、`DB_PORT`、`DB_PASSWORD` 是否正确
+3. 手动测试连接：`mysql -h localhost -P 3306 -u root -p`
+
+### 4. Redis 连接失败
+
+**原因**：Redis 未启动（但可以禁用）。
+
+**解决**：
+设置 `CACHE_REDIS_ENABLED=false` 即可禁用 Redis 缓存。
+
+### 5. RocketMQ 连接失败
+
+**原因**：RocketMQ 未启动（本地开发可禁用）。
+
+**解决**：
+设置 `ROCKETMQ_ENABLED=false` 即可禁用 RocketMQ，系统会使用同步任务处理。
+
+### 6. AI 功能不可用
+
+**原因**：未配置 API Key（但可以降级使用）。
+
+**解决**：
+AI 功能有本地降级机制，即使不配置 API Key，基础的意图识别和工具调用仍然可用。如需完整 AI 功能：
+1. 设置 `QWEN_ENABLED=true`
+2. 填写 `QWEN_API_KEY`
+
+### 7. 端口被占用
+
+**原因**：8080 端口已被其他程序占用。
+
+**解决**：
+修改 `.env` 中的 `SERVER_PORT` 和 `SERVER_HOST_PORT`，或停止占用端口的程序。
+
 ## 当前状态
 
-当前版本已经完成从“普通 CRUD + 简单 AI 调用”向“可展示工程能力的单体 AI 应用项目”的升级，重点体现在：
+当前版本已经完成从"普通 CRUD + 简单 AI 调用"向"可展示工程能力的单体 AI 应用项目"的升级，重点体现在：
 - 可控推荐逻辑，而不是把结果直接交给大模型
 - 受控对话式 Agent，而不是纯聊天外壳
 - 完整鉴权、缓存、异步任务、管理端、Docker、测试与文档能力
