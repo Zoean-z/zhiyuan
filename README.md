@@ -163,6 +163,25 @@ npm run dev
 说明：
 - Vite 会把 `/api` 代理到 `http://localhost:8080`
 
+### 4. 演示模式（无需后端）
+
+如果只需要展示前端效果，可以使用演示模式，无需启动后端服务：
+
+```powershell
+cd frontend
+npm install
+npm run dev:mock
+```
+
+默认地址：
+- 前端开发环境：`http://localhost:5173`
+
+演示模式特点：
+- 使用模拟数据，无需数据库和后端服务
+- 支持所有页面的基本功能展示
+- 默认账号：用户名 `testuser`，密码任意
+- 管理员账号：用户名 `admin`，密码 `admin123`
+
 ### 4. 构建前端并交给后端托管
 
 **重要：前端构建后需要将产物复制到 Spring Boot 的静态资源目录才能被正确加载。**
