@@ -1889,6 +1889,15 @@ body {
   gap: 16px;
 }
 
+.admin-overview__icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  color: #1f6feb;
+  background: #edf4ff;
+  font-size: 22px;
+}
+
 .admin-overview > div:not(:last-child)::after {
   position: absolute;
   top: 28px;
@@ -1900,6 +1909,9 @@ body {
 }
 
 .admin-overview span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   color: #667085;
   font-size: 14px;
 }
@@ -1928,11 +1940,19 @@ body {
 }
 
 .admin-filter-bar--records {
-  grid-template-columns: repeat(4, minmax(130px, 1fr)) auto;
+  grid-template-columns: repeat(4, minmax(130px, 1fr)) auto 140px;
 }
 
-.admin-filter-bar--records:has(label:nth-of-type(5)) {
-  grid-template-columns: repeat(5, minmax(110px, 1fr)) auto;
+.admin-filter-bar--entity {
+  grid-template-columns: minmax(260px, 1.7fr) minmax(180px, 1fr) auto 140px;
+}
+
+.admin-filter-bar--major {
+  grid-template-columns: minmax(240px, 1.5fr) repeat(2, minmax(160px, 1fr)) auto 140px;
+}
+
+.admin-filter-bar--major-cutoff {
+  grid-template-columns: repeat(5, minmax(110px, 1fr)) auto 180px;
 }
 
 .admin-filter-bar label,
@@ -1961,8 +1981,13 @@ body {
 }
 
 .admin-filter-actions .el-button--primary,
-.admin-section-toolbar .el-button--primary {
+.admin-section-toolbar .el-button--primary,
+.admin-create-button {
   min-width: 116px;
+}
+
+.admin-create-button {
+  align-self: end;
 }
 
 .admin-section-toolbar {
@@ -2070,14 +2095,19 @@ body {
 
   .admin-filter-bar,
   .admin-filter-bar--records,
-  .admin-filter-bar--records:has(label:nth-of-type(5)) {
+  .admin-filter-bar--entity,
+  .admin-filter-bar--major,
+  .admin-filter-bar--major-cutoff {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 16px;
   }
 
   .admin-filter-actions {
     justify-content: flex-end;
-    grid-column: 1 / -1;
+  }
+
+  .admin-create-button {
+    width: 100%;
   }
 }
 
@@ -2104,7 +2134,9 @@ body {
 
   .admin-filter-bar,
   .admin-filter-bar--records,
-  .admin-filter-bar--records:has(label:nth-of-type(5)),
+  .admin-filter-bar--entity,
+  .admin-filter-bar--major,
+  .admin-filter-bar--major-cutoff,
   .admin-record-form {
     grid-template-columns: 1fr;
   }

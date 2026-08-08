@@ -100,7 +100,7 @@ public class UserAccount {
     }
 
     public UserRole getRole() {
-        return UserRole.fromValue(role);
+        return role == null || role.isBlank() ? null : UserRole.fromValue(role);
     }
 
     public void setRole(UserRole role) {

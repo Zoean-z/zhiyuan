@@ -10,12 +10,12 @@ public class AiAdviceSummaryService {
 
     private static final Logger log = LoggerFactory.getLogger(AiAdviceSummaryService.class);
 
-    private final QwenAiClient qwenAiClient;
+    private final AiChatClient aiChatClient;
     private final boolean enabled;
 
-    public AiAdviceSummaryService(QwenAiClient qwenAiClient,
+    public AiAdviceSummaryService(AiChatClient aiChatClient,
                                   @Value("${ai.qwen.enabled:true}") boolean enabled) {
-        this.qwenAiClient = qwenAiClient;
+        this.aiChatClient = aiChatClient;
         this.enabled = enabled;
     }
 
@@ -27,7 +27,7 @@ public class AiAdviceSummaryService {
                         只输出总结内容，不要加标题。
                         """;
                 String userPrompt = "原始建议：\n" + (adviceText == null ? "" : adviceText);
-                String result = qwenAiClient.chat(systemPrompt, userPrompt, 0.3, false);
+                String result = aiChatClient.chat(systemPrompt, userPrompt, 0.3, false);
                 if (result != null && !result.isBlank()) {
                     return result.trim();
                 }

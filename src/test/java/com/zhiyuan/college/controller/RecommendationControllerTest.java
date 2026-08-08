@@ -792,6 +792,94 @@ class RecommendationControllerTest {
     }
 
     @Test
+    void adminUserEndpoints_shouldUseRealUserDataAndEnforceAccountSettings() throws Exception {
+        jdbcTemplate.update("UPDATE users SET role = 'ADMIN', enabled = TRUE WHERE id = 3");
+        jdbcTemplate.update("UPDATE users SET role = 'USER', enabled = TRUE WHERE id = 1");
+
+        try {
+            MvcResult adminLogin = mockMvc.perform(post("/api/auth/login")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {
+                                      "username": "adminuser",
+                                      "password": "123456"
+                                    }
+                                    """))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.role").value("ADMIN"))
+                    .andReturn();
+            String adminToken = objectMapper.readTree(adminLogin.getResponse().getContentAsString()).get("token").asText();
+            String userToken = loginAndGetToken("testuser", "123456", 620, "PHYSICS", "浙江");
+
+            mockMvc.perform(get("/api/admin/users")
+                            .header("Authorization", "Bearer " + userToken))
+                    .andExpect(status().isForbidden());
+
+            mockMvc.perform(get("/api/admin/users")
+                            .header("Authorization", "Bearer " + adminToken)
+                            .param("keyword", "testuser")
+                            .param("role", "USER")
+                            .param("enabled", "true"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$[0].username").value("testuser"))
+                    .andExpect(jsonPath("$[0].score").value(620))
+                    .andExpect(jsonPath("$[0].examProvince").value("浙江"))
+                    .andExpect(jsonPath("$[0].recommendationCount").isNumber())
+                    .andExpect(jsonPath("$[0].planCount").isNumber())
+                    .andExpect(jsonPath("$[0].conversationCount").isNumber())
+                    .andExpect(jsonPath("$[0].password").doesNotExist());
+
+            mockMvc.perform(get("/api/admin/users/overview")
+                            .header("Authorization", "Bearer " + adminToken))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.totalCount").isNumber())
+                    .andExpect(jsonPath("$.userCount").isNumber())
+                    .andExpect(jsonPath("$.adminCount").isNumber())
+                    .andExpect(jsonPath("$.disabledCount").isNumber());
+
+            mockMvc.perform(put("/api/admin/users/1/settings")
+                            .header("Authorization", "Bearer " + adminToken)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {
+                                      "role": "USER",
+                                      "enabled": false
+                                    }
+                                    """))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.enabled").value(false));
+
+            mockMvc.perform(get("/api/history")
+                            .header("Authorization", "Bearer " + userToken))
+                    .andExpect(status().isUnauthorized());
+
+            mockMvc.perform(post("/api/auth/login")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {
+                                      "username": "testuser",
+                                      "password": "123456"
+                                    }
+                                    """))
+                    .andExpect(status().isUnauthorized());
+
+            mockMvc.perform(put("/api/admin/users/3/settings")
+                            .header("Authorization", "Bearer " + adminToken)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {
+                                      "role": "USER",
+                                      "enabled": true
+                                    }
+                                    """))
+                    .andExpect(status().isBadRequest());
+        } finally {
+            jdbcTemplate.update("UPDATE users SET role = 'USER', enabled = TRUE WHERE id = 1");
+            jdbcTemplate.update("UPDATE users SET role = 'ADMIN', enabled = TRUE WHERE id = 3");
+        }
+    }
+
+    @Test
     void adminEndpoints_shouldAllowAdminCrud() throws Exception {
         jdbcTemplate.update("UPDATE users SET role = 'ADMIN' WHERE username = ?", "adminuser");
         String adminToken = loginAndGetToken("adminuser", "123456", 650, "PHYSICS", "娴欐睙");

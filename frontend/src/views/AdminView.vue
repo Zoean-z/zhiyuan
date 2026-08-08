@@ -1,5 +1,6 @@
 <script setup>
 import { ElMessage } from "element-plus";
+import { CircleCloseFilled, Lock, User, UserFilled } from "@element-plus/icons-vue";
 import { computed, inject, onMounted, reactive, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 
@@ -21,22 +22,44 @@ const pagedUsers = computed(() => users.value.slice((userPage.value - 1) * pageS
 
 const universities = ref([]);
 const universityKeyword = ref("");
+const universityTier = ref("");
+const universityPage = ref(1);
+const universityTiers = computed(() => [...new Set(universities.value.map((item) => item.tier).filter(Boolean))]);
 const filteredUniversities = computed(() => {
   const keyword = universityKeyword.value.trim().toLowerCase();
-  return keyword ? universities.value.filter((item) => `${item.name}${item.province}${item.tier || ""}`.toLowerCase().includes(keyword)) : universities.value;
+  return universities.value.filter((item) => {
+    const matchesKeyword = !keyword || `${item.name}${item.province}${item.tier || ""}`.toLowerCase().includes(keyword);
+    return matchesKeyword && (!universityTier.value || item.tier === universityTier.value);
+  });
 });
+const pagedUniversities = computed(() => filteredUniversities.value.slice((universityPage.value - 1) * pageSize, universityPage.value * pageSize));
 
 const majors = ref([]);
 const majorKeyword = ref("");
+const majorCategory = ref("");
+const majorDegreeType = ref("");
+const majorPage = ref(1);
+const majorCategories = computed(() => [...new Set(majors.value.map((item) => item.category).filter(Boolean))]);
+const majorDegreeTypes = computed(() => [...new Set(majors.value.map((item) => item.degreeType).filter(Boolean))]);
 const filteredMajors = computed(() => {
   const keyword = majorKeyword.value.trim().toLowerCase();
-  return keyword ? majors.value.filter((item) => `${item.name}${item.category || ""}`.toLowerCase().includes(keyword)) : majors.value;
+  return majors.value.filter((item) => {
+    const matchesKeyword = !keyword || `${item.name}${item.category || ""}`.toLowerCase().includes(keyword);
+    return matchesKeyword
+      && (!majorCategory.value || item.category === majorCategory.value)
+      && (!majorDegreeType.value || item.degreeType === majorDegreeType.value);
+  });
 });
+const pagedMajors = computed(() => filteredMajors.value.slice((majorPage.value - 1) * pageSize, majorPage.value * pageSize));
 
 const cutoffs = ref([]);
 const cutoffFilters = reactive({ universityId: "", admissionYear: "", province: "", subjectType: "" });
+const cutoffPage = ref(1);
+const pagedCutoffs = computed(() => cutoffs.value.slice((cutoffPage.value - 1) * pageSize, cutoffPage.value * pageSize));
 const majorCutoffs = ref([]);
 const majorCutoffFilters = reactive({ universityId: "", admissionYear: "", province: "", subjectType: "", majorKeyword: "" });
+const majorCutoffPage = ref(1);
+const pagedMajorCutoffs = computed(() => majorCutoffs.value.slice((majorCutoffPage.value - 1) * pageSize, majorCutoffPage.value * pageSize));
 
 const settingsVisible = ref(false);
 const settingsSubmitting = ref(false);
@@ -144,10 +167,25 @@ async function saveUserSettings() {
 
 async function loadUniversities() {
   universities.value = await api("/api/admin/universities");
+  universityPage.value = 1;
 }
 
 async function loadMajors() {
   majors.value = await api("/api/admin/majors");
+  majorPage.value = 1;
+}
+
+function resetUniversityFilters() {
+  universityKeyword.value = "";
+  universityTier.value = "";
+  universityPage.value = 1;
+}
+
+function resetMajorFilters() {
+  majorKeyword.value = "";
+  majorCategory.value = "";
+  majorDegreeType.value = "";
+  majorPage.value = 1;
 }
 
 function appendQuery(params, key, value) {
@@ -161,6 +199,7 @@ async function loadCutoffs() {
     const params = new URLSearchParams();
     Object.entries(cutoffFilters).forEach(([key, value]) => appendQuery(params, key, value));
     cutoffs.value = await api(`/api/admin/admission-cutoffs${params.size ? `?${params}` : ""}`);
+    cutoffPage.value = 1;
   } catch (error) {
     ElMessage.error(error.message);
   } finally {
@@ -175,11 +214,22 @@ async function loadMajorCutoffs() {
     const params = new URLSearchParams();
     Object.entries(majorCutoffFilters).forEach(([key, value]) => appendQuery(params, key, value));
     majorCutoffs.value = await api(`/api/admin/major-admission-cutoffs${params.size ? `?${params}` : ""}`);
+    majorCutoffPage.value = 1;
   } catch (error) {
     ElMessage.error(error.message);
   } finally {
     loading.value = false;
   }
+}
+
+function resetCutoffFilters() {
+  Object.assign(cutoffFilters, { universityId: "", admissionYear: "", province: "", subjectType: "" });
+  loadCutoffs();
+}
+
+function resetMajorCutoffFilters() {
+  Object.assign(majorCutoffFilters, { universityId: "", admissionYear: "", province: "", subjectType: "", majorKeyword: "" });
+  loadMajorCutoffs();
 }
 
 function resetRecordForm() {
@@ -272,10 +322,10 @@ onMounted(loadSection);
   <main class="admin-view">
     <template v-if="section === 'users'">
       <section class="admin-overview" aria-label="用户概览">
-        <div><span>用户总数</span><strong>{{ overview.totalCount || 0 }}</strong></div>
-        <div><span>普通用户</span><strong>{{ overview.userCount || 0 }}</strong></div>
-        <div><span>管理员</span><strong>{{ overview.adminCount || 0 }}</strong></div>
-        <div><span>已停用</span><strong>{{ overview.disabledCount || 0 }}</strong></div>
+        <div><el-icon class="admin-overview__icon"><User /></el-icon><span>用户总数<strong>{{ overview.totalCount || 0 }}</strong></span></div>
+        <div><el-icon class="admin-overview__icon"><UserFilled /></el-icon><span>普通用户<strong>{{ overview.userCount || 0 }}</strong></span></div>
+        <div><el-icon class="admin-overview__icon"><Lock /></el-icon><span>管理员<strong>{{ overview.adminCount || 0 }}</strong></span></div>
+        <div><el-icon class="admin-overview__icon"><CircleCloseFilled /></el-icon><span>已停用<strong>{{ overview.disabledCount || 0 }}</strong></span></div>
       </section>
 
       <section class="admin-filter-bar">
@@ -297,28 +347,62 @@ onMounted(loadSection);
           <el-table-column label="状态" width="95"><template #default="{ row }"><el-tag :type="row.enabled === false ? 'warning' : 'success'" effect="light">{{ row.enabled === false ? '已停用' : '正常' }}</el-tag></template></el-table-column>
           <el-table-column label="操作" width="90"><template #default="{ row }"><el-button link type="primary" @click="openUserSettings(row)">管理</el-button></template></el-table-column>
         </el-table>
-        <el-pagination v-if="users.length > pageSize" v-model:current-page="userPage" :page-size="pageSize" :total="users.length" layout="total, prev, pager, next" />
+        <el-pagination v-model:current-page="userPage" :page-size="pageSize" :total="users.length" layout="total, prev, pager, next" />
       </section>
     </template>
 
     <template v-else-if="section === 'universities'">
-      <section class="admin-section-toolbar"><el-input v-model.trim="universityKeyword" clearable placeholder="搜索院校名称、省份或层次" /><el-button type="primary" @click="openRecordDialog()">新增院校</el-button></section>
-      <section class="admin-table-panel"><el-table v-loading="loading" :data="filteredUniversities" height="100%"><el-table-column prop="name" label="院校名称" min-width="220" /><el-table-column prop="province" label="省份" width="120" /><el-table-column prop="tier" label="层次" width="130" /><el-table-column label="院校标签" min-width="250"><template #default="{ row }"><span>{{ [row.is985 && '985', row.is211 && '211', row.isDoubleFirstClass && '双一流', row.tags].filter(Boolean).join(' · ') || '—' }}</span></template></el-table-column><el-table-column label="操作" width="90"><template #default="{ row }"><el-button link type="primary" @click="openRecordDialog(row)">编辑</el-button></template></el-table-column></el-table></section>
+      <section class="admin-filter-bar admin-filter-bar--entity">
+        <label><span>院校名称/省份</span><el-input v-model.trim="universityKeyword" clearable placeholder="请输入院校名称或省份" @keyup.enter="universityPage = 1" /></label>
+        <label><span>院校层次</span><el-select v-model="universityTier" clearable placeholder="全部"><el-option v-for="tier in universityTiers" :key="tier" :label="tier" :value="tier" /></el-select></label>
+        <div class="admin-filter-actions"><el-button type="primary" @click="universityPage = 1">查询</el-button><el-button @click="resetUniversityFilters">重置</el-button></div>
+        <el-button class="admin-create-button" type="primary" @click="openRecordDialog()">新增院校</el-button>
+      </section>
+      <section class="admin-table-panel">
+        <el-table v-loading="loading" :data="pagedUniversities" height="100%">
+          <el-table-column prop="name" label="院校名称" min-width="200" />
+          <el-table-column prop="province" label="省份" width="110" />
+          <el-table-column prop="tier" label="院校层次" width="120" />
+          <el-table-column label="985" width="80" align="center"><template #default="{ row }"><el-tag :type="row.is985 ? 'success' : 'info'" effect="light">{{ row.is985 ? '是' : '否' }}</el-tag></template></el-table-column>
+          <el-table-column label="211" width="80" align="center"><template #default="{ row }"><el-tag :type="row.is211 ? 'success' : 'info'" effect="light">{{ row.is211 ? '是' : '否' }}</el-tag></template></el-table-column>
+          <el-table-column label="双一流" width="90" align="center"><template #default="{ row }"><el-tag :type="row.isDoubleFirstClass ? 'success' : 'info'" effect="light">{{ row.isDoubleFirstClass ? '是' : '否' }}</el-tag></template></el-table-column>
+          <el-table-column prop="tags" label="标签" min-width="220" show-overflow-tooltip />
+          <el-table-column label="操作" width="90"><template #default="{ row }"><el-button link type="primary" @click="openRecordDialog(row)">编辑</el-button></template></el-table-column>
+        </el-table>
+        <el-pagination v-model:current-page="universityPage" :page-size="pageSize" :total="filteredUniversities.length" layout="total, prev, pager, next" />
+      </section>
     </template>
 
     <template v-else-if="section === 'majors'">
-      <section class="admin-section-toolbar"><el-input v-model.trim="majorKeyword" clearable placeholder="搜索专业名称或类别" /><el-button type="primary" @click="openRecordDialog()">新增专业</el-button></section>
-      <section class="admin-table-panel"><el-table v-loading="loading" :data="filteredMajors" height="100%"><el-table-column prop="name" label="专业名称" min-width="220" /><el-table-column prop="category" label="专业类别" width="170" /><el-table-column prop="degreeType" label="学位类型" width="150" /><el-table-column prop="subjectRequirement" label="选科要求" min-width="180" /><el-table-column prop="tags" label="标签" min-width="180" /><el-table-column label="操作" width="90"><template #default="{ row }"><el-button link type="primary" @click="openRecordDialog(row)">编辑</el-button></template></el-table-column></el-table></section>
+      <section class="admin-filter-bar admin-filter-bar--entity admin-filter-bar--major">
+        <label><span>专业名称/类别</span><el-input v-model.trim="majorKeyword" clearable placeholder="请输入专业名称或类别" @keyup.enter="majorPage = 1" /></label>
+        <label><span>专业类别</span><el-select v-model="majorCategory" clearable placeholder="全部"><el-option v-for="category in majorCategories" :key="category" :label="category" :value="category" /></el-select></label>
+        <label><span>学位类型</span><el-select v-model="majorDegreeType" clearable placeholder="全部"><el-option v-for="degree in majorDegreeTypes" :key="degree" :label="degree" :value="degree" /></el-select></label>
+        <div class="admin-filter-actions"><el-button type="primary" @click="majorPage = 1">查询</el-button><el-button @click="resetMajorFilters">重置</el-button></div>
+        <el-button class="admin-create-button" type="primary" @click="openRecordDialog()">新增专业</el-button>
+      </section>
+      <section class="admin-table-panel">
+        <el-table v-loading="loading" :data="pagedMajors" height="100%">
+          <el-table-column prop="name" label="专业名称" min-width="190" />
+          <el-table-column prop="category" label="专业类别" width="130" />
+          <el-table-column prop="degreeType" label="学位类型" width="130" />
+          <el-table-column prop="subjectRequirement" label="选科要求" min-width="160" show-overflow-tooltip />
+          <el-table-column prop="tags" label="标签" min-width="150" show-overflow-tooltip />
+          <el-table-column prop="description" label="专业说明" min-width="240" show-overflow-tooltip />
+          <el-table-column label="操作" width="90"><template #default="{ row }"><el-button link type="primary" @click="openRecordDialog(row)">编辑</el-button></template></el-table-column>
+        </el-table>
+        <el-pagination v-model:current-page="majorPage" :page-size="pageSize" :total="filteredMajors.length" layout="total, prev, pager, next" />
+      </section>
     </template>
 
     <template v-else-if="section === 'cutoffs'">
-      <section class="admin-filter-bar admin-filter-bar--records"><label><span>院校</span><el-select v-model="cutoffFilters.universityId" filterable clearable><el-option v-for="item in universities" :key="item.id" :label="item.name" :value="item.id" /></el-select></label><label><span>年份</span><el-input v-model="cutoffFilters.admissionYear" clearable /></label><label><span>省份</span><el-input v-model.trim="cutoffFilters.province" clearable /></label><label><span>科类</span><el-select v-model="cutoffFilters.subjectType" clearable><el-option label="物理类" value="PHYSICS" /><el-option label="历史类" value="HISTORY" /></el-select></label><div class="admin-filter-actions"><el-button type="primary" @click="loadCutoffs">查询</el-button><el-button @click="openRecordDialog()">新增</el-button></div></section>
-      <section class="admin-table-panel"><el-table v-loading="loading" :data="cutoffs" height="100%"><el-table-column label="院校" min-width="220"><template #default="{ row }">{{ universityName(row.universityId) }}</template></el-table-column><el-table-column prop="admissionYear" label="年份" width="100" /><el-table-column prop="province" label="省份" width="120" /><el-table-column label="科类" width="120"><template #default="{ row }">{{ subjectLabel(row.subjectType) }}</template></el-table-column><el-table-column prop="cutoffScore" label="最低分" width="110" /><el-table-column prop="minRank" label="最低位次" width="130" /><el-table-column label="操作" width="90"><template #default="{ row }"><el-button link type="primary" @click="openRecordDialog(row)">编辑</el-button></template></el-table-column></el-table></section>
+      <section class="admin-filter-bar admin-filter-bar--records"><label><span>院校</span><el-select v-model="cutoffFilters.universityId" filterable clearable placeholder="请选择院校"><el-option v-for="item in universities" :key="item.id" :label="item.name" :value="item.id" /></el-select></label><label><span>年份</span><el-input v-model="cutoffFilters.admissionYear" clearable placeholder="请输入年份" /></label><label><span>省份</span><el-input v-model.trim="cutoffFilters.province" clearable placeholder="请输入省份" /></label><label><span>科类</span><el-select v-model="cutoffFilters.subjectType" clearable placeholder="全部"><el-option label="物理类" value="PHYSICS" /><el-option label="历史类" value="HISTORY" /></el-select></label><div class="admin-filter-actions"><el-button type="primary" @click="loadCutoffs">查询</el-button><el-button @click="resetCutoffFilters">重置</el-button></div><el-button class="admin-create-button" type="primary" @click="openRecordDialog()">新增录取线</el-button></section>
+      <section class="admin-table-panel"><el-table v-loading="loading" :data="pagedCutoffs" height="100%"><el-table-column label="院校" min-width="220"><template #default="{ row }">{{ universityName(row.universityId) }}</template></el-table-column><el-table-column prop="admissionYear" label="年份" width="100" /><el-table-column prop="province" label="招生省份" width="130" /><el-table-column label="科类" width="120"><template #default="{ row }">{{ subjectLabel(row.subjectType) }}</template></el-table-column><el-table-column prop="cutoffScore" label="最低分" width="110" /><el-table-column prop="minRank" label="最低位次" width="130" /><el-table-column label="操作" width="90"><template #default="{ row }"><el-button link type="primary" @click="openRecordDialog(row)">编辑</el-button></template></el-table-column></el-table><el-pagination v-model:current-page="cutoffPage" :page-size="pageSize" :total="cutoffs.length" layout="total, prev, pager, next" /></section>
     </template>
 
     <template v-else>
-      <section class="admin-filter-bar admin-filter-bar--records"><label><span>院校</span><el-select v-model="majorCutoffFilters.universityId" filterable clearable><el-option v-for="item in universities" :key="item.id" :label="item.name" :value="item.id" /></el-select></label><label><span>专业</span><el-input v-model.trim="majorCutoffFilters.majorKeyword" clearable /></label><label><span>年份</span><el-input v-model="majorCutoffFilters.admissionYear" clearable /></label><label><span>省份</span><el-input v-model.trim="majorCutoffFilters.province" clearable /></label><label><span>科类</span><el-select v-model="majorCutoffFilters.subjectType" clearable><el-option label="物理类" value="PHYSICS" /><el-option label="历史类" value="HISTORY" /></el-select></label><div class="admin-filter-actions"><el-button type="primary" @click="loadMajorCutoffs">查询</el-button><el-button @click="openRecordDialog()">新增</el-button></div></section>
-      <section class="admin-table-panel"><el-table v-loading="loading" :data="majorCutoffs" height="100%"><el-table-column label="院校" min-width="190"><template #default="{ row }">{{ universityName(row.universityId) }}</template></el-table-column><el-table-column prop="majorName" label="专业" min-width="190" /><el-table-column prop="admissionYear" label="年份" width="90" /><el-table-column prop="province" label="省份" width="100" /><el-table-column label="科类" width="110"><template #default="{ row }">{{ subjectLabel(row.subjectType) }}</template></el-table-column><el-table-column prop="cutoffScore" label="最低分" width="100" /><el-table-column prop="minRank" label="最低位次" width="120" /><el-table-column label="操作" width="90"><template #default="{ row }"><el-button link type="primary" @click="openRecordDialog(row)">编辑</el-button></template></el-table-column></el-table></section>
+      <section class="admin-filter-bar admin-filter-bar--records admin-filter-bar--major-cutoff"><label><span>院校</span><el-select v-model="majorCutoffFilters.universityId" filterable clearable placeholder="请选择院校"><el-option v-for="item in universities" :key="item.id" :label="item.name" :value="item.id" /></el-select></label><label><span>专业关键词</span><el-input v-model.trim="majorCutoffFilters.majorKeyword" clearable placeholder="请输入专业关键词" /></label><label><span>年份</span><el-input v-model="majorCutoffFilters.admissionYear" clearable placeholder="请输入年份" /></label><label><span>省份</span><el-input v-model.trim="majorCutoffFilters.province" clearable placeholder="请输入省份" /></label><label><span>科类</span><el-select v-model="majorCutoffFilters.subjectType" clearable placeholder="全部"><el-option label="物理类" value="PHYSICS" /><el-option label="历史类" value="HISTORY" /></el-select></label><div class="admin-filter-actions"><el-button type="primary" @click="loadMajorCutoffs">查询</el-button><el-button @click="resetMajorCutoffFilters">重置</el-button></div><el-button class="admin-create-button" type="primary" @click="openRecordDialog()">新增专业录取线</el-button></section>
+      <section class="admin-table-panel"><el-table v-loading="loading" :data="pagedMajorCutoffs" height="100%"><el-table-column label="院校" min-width="190"><template #default="{ row }">{{ universityName(row.universityId) }}</template></el-table-column><el-table-column prop="majorName" label="专业名称" min-width="190" /><el-table-column prop="admissionYear" label="年份" width="90" /><el-table-column prop="province" label="招生省份" width="110" /><el-table-column label="科类" width="110"><template #default="{ row }">{{ subjectLabel(row.subjectType) }}</template></el-table-column><el-table-column prop="cutoffScore" label="最低分" width="100" /><el-table-column prop="minRank" label="最低位次" width="120" /><el-table-column label="操作" width="90"><template #default="{ row }"><el-button link type="primary" @click="openRecordDialog(row)">编辑</el-button></template></el-table-column></el-table><el-pagination v-model:current-page="majorCutoffPage" :page-size="pageSize" :total="majorCutoffs.length" layout="total, prev, pager, next" /></section>
     </template>
   </main>
 

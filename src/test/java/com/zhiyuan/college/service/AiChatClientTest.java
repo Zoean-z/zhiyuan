@@ -26,7 +26,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.server.ResponseStatusException;
 
-class QwenAiClientTest {
+class AiChatClientTest {
 
     private HttpServer server;
 
@@ -61,7 +61,7 @@ class QwenAiClientTest {
         });
         server.start();
 
-        QwenAiClient client = new QwenAiClient(
+        AiChatClient client = new AiChatClient(
                 RestClient.builder(),
                 "http://localhost:" + server.getAddress().getPort(),
                 "test-key",
@@ -86,7 +86,7 @@ class QwenAiClientTest {
         });
         server.start();
 
-        QwenAiClient client = new QwenAiClient(
+        AiChatClient client = new AiChatClient(
                 RestClient.builder(),
                 "http://localhost:" + server.getAddress().getPort(),
                 "test-key",

@@ -69,7 +69,7 @@ public class AiRequirementParserService {
                                       ObjectMapper objectMapper,
                                       RecommendationCacheService recommendationCacheService,
                                       @Value("${ai.qwen.enabled:true}") boolean enabled) {
-        this.qwenAiClient = qwenAiClient;
+        this.aiChatClient = aiChatClient;
         this.objectMapper = objectMapper;
         this.recommendationCacheService = recommendationCacheService;
         this.enabled = enabled;
@@ -91,8 +91,8 @@ public class AiRequirementParserService {
                 ParsedRequirement aiParsed = parseByAi(text);
                 if (aiParsed != null) {
                     result = new ParseResult(aiParsed, new ParseTrace(
-                            qwenAiClient.getProvider(),
-                            qwenAiClient.getModel(),
+                            aiChatClient.getProvider(),
+                            aiChatClient.getModel(),
                             "AI",
                             true,
                             lastAiResponse,
@@ -105,8 +105,8 @@ public class AiRequirementParserService {
                 log.warn("Qwen parse failed, fallback to local parser: {}", ex.getMessage());
                 ParsedRequirement fallback = parseByRule(text);
                 result = new ParseResult(fallback, new ParseTrace(
-                        qwenAiClient.getProvider(),
-                        qwenAiClient.getModel(),
+                        aiChatClient.getProvider(),
+                        aiChatClient.getModel(),
                         "RULE_FALLBACK",
                         false,
                         lastAiResponse,
@@ -118,8 +118,8 @@ public class AiRequirementParserService {
         }
         ParsedRequirement fallback = parseByRule(text);
         result = new ParseResult(fallback, new ParseTrace(
-                enabled ? qwenAiClient.getProvider() : "local-rule",
-                enabled ? qwenAiClient.getModel() : null,
+                enabled ? aiChatClient.getProvider() : "local-rule",
+                enabled ? aiChatClient.getModel() : null,
                 enabled ? "RULE_ONLY" : "LOCAL_RULE_ONLY",
                 true,
                 null,
@@ -152,7 +152,7 @@ public class AiRequirementParserService {
                 """;
         String userPrompt = "请解析以下文本：" + normalizedText;
 
-        String aiContent = qwenAiClient.chat(systemPrompt, userPrompt, 0.1, true);
+        String aiContent = aiChatClient.chat(systemPrompt, userPrompt, 0.1, true);
         this.lastAiResponse = aiContent;
         JsonNode root = objectMapper.readTree(aiContent);
 

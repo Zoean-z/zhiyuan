@@ -1,4 +1,4 @@
-# 高考志愿智能推荐与对话式填报助手
+# 智愿AI报考平台
 
 一个面向高考志愿填报场景的 AI 应用项目，核心目标不是"把推荐全交给大模型"，而是让 AI 负责自然语言理解与对话编排，后端保留可控、可解释、可审计的推荐逻辑。
 
@@ -8,6 +8,7 @@
 - `冲 / 稳 / 保` 概率评分与规则解释
 - 基于 RocketMQ 的自由文本推荐异步任务、失败重试与状态查询
 - 管理员维护院校、专业、录取数据
+- 管理员查看用户报考资料与业务计数，并维护账号角色和启停状态
 - 对话式 Agent 工作台，可读取画像、生成推荐、查询学校详情、操作当前志愿单
 
 ## 项目亮点
@@ -181,6 +182,12 @@ npm run dev:mock
 - 支持所有页面的基本功能展示
 - 默认账号：用户名 `testuser`，密码任意
 - 管理员账号：用户名 `admin`，密码 `admin123`
+
+正式后端使用 `sql/data.sql` 初始化时，测试账号为：
+- 普通用户：`testuser / 123456`
+- 管理员：`adminuser / 123456`
+
+生产环境不要保留示例密码。若不导入示例数据，可先注册普通账号，再由数据库管理员执行受控 SQL 将指定账号的 `role` 更新为 `ADMIN`。
 
 ### 4. 构建前端并交给后端托管
 
@@ -361,9 +368,23 @@ npm run build
 
 ### 管理接口
 - `GET /api/admin/universities`
+- `POST /api/admin/universities`
+- `PUT /api/admin/universities/{id}`
 - `GET /api/admin/majors`
+- `POST /api/admin/majors`
+- `PUT /api/admin/majors/{id}`
 - `GET /api/admin/admission-cutoffs`
+- `POST /api/admin/admission-cutoffs`
+- `PUT /api/admin/admission-cutoffs/{id}`
 - `GET /api/admin/major-admission-cutoffs`
+- `POST /api/admin/major-admission-cutoffs`
+- `PUT /api/admin/major-admission-cutoffs/{id}`
+- `GET /api/admin/users`
+- `GET /api/admin/users/overview`
+- `GET /api/admin/users/{id}`
+- `PUT /api/admin/users/{id}/settings`
+
+所有管理接口都要求 `ADMIN` 角色。用户接口不会返回密码，只允许维护 `role` 和 `enabled`；当前管理员不能停用或降级自己。
 
 ## 数据准备说明
 
