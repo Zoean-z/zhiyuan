@@ -6,13 +6,13 @@ set "MYSQL_HOST=%DB_HOST%"
 if "%MYSQL_HOST%"=="" set "MYSQL_HOST=localhost"
 
 set "MYSQL_PORT=%DB_PORT%"
-if "%MYSQL_PORT%"=="" set "MYSQL_PORT=3306"
+if "%MYSQL_PORT%"=="" set "MYSQL_PORT=3307"
 
 set "MYSQL_USER=%DB_USER%"
-if "%MYSQL_USER%"=="" set "MYSQL_USER=root"
+if "%MYSQL_USER%"=="" set "MYSQL_USER=zhiyuan"
 
 set "MYSQL_PASSWORD=%DB_PASSWORD%"
-if "%MYSQL_PASSWORD%"=="" set "MYSQL_PASSWORD=1234"
+if "%MYSQL_PASSWORD%"=="" set "MYSQL_PASSWORD=zhiyuan123"
 
 set "DB_NAME=%DB_NAME%"
 if "%DB_NAME%"=="" set "DB_NAME=college_recommendation"

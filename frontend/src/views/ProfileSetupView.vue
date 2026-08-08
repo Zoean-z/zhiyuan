@@ -1,7 +1,8 @@
 <script setup>
 import { inject } from "vue";
-import { DataLine, Location, Notebook, Reading, SetUp } from "@element-plus/icons-vue";
+import { DataLine, Location, Notebook, SetUp } from "@element-plus/icons-vue";
 import journeyImage from "../assets/admission-journey.png";
+import AppHeader from "../components/AppHeader.vue";
 import { SUBJECT_OPTIONS } from "../utils/recommendation";
 
 const { completeProfile, error, loading, logout, profileForm, provinces } = inject("workspace");
@@ -9,17 +10,7 @@ const { completeProfile, error, loading, logout, profileForm, provinces } = inje
 
 <template>
   <div class="auth-page">
-    <header class="auth-topbar">
-      <div class="auth-topbar__sidebar">
-        <div class="auth-topbar__brand">
-          <span class="auth-logo"><el-icon><Reading /></el-icon></span>
-          <span>智愿AI报考平台</span>
-        </div>
-      </div>
-      <div class="auth-topbar__content">
-        <h1>完善信息</h1>
-      </div>
-    </header>
+    <AppHeader title="完善信息" standalone />
 
     <main class="auth-stage auth-stage--profile">
       <section class="auth-scene auth-scene--profile">

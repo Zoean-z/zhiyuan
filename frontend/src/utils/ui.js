@@ -25,6 +25,7 @@ export const UI_TEXT = {
     selectMajorRequired: "请先选择专业"
   },
   success: {
+    login: "登录成功",
     register: "注册成功，已自动登录",
     addToPlan: "加入方案成功",
     removeFromPlan: "已从当前方案移除",

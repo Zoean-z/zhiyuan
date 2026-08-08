@@ -2,6 +2,7 @@
 import { inject } from "vue";
 import { Lock, Reading, User } from "@element-plus/icons-vue";
 import journeyImage from "../assets/admission-journey.png";
+import AppHeader from "../components/AppHeader.vue";
 
 const { authMode, error, loading, login, loginForm, register } = inject("workspace");
 
@@ -12,17 +13,7 @@ function submit() {
 
 <template>
   <div class="auth-page">
-    <header class="auth-topbar">
-      <div class="auth-topbar__sidebar">
-        <div class="auth-topbar__brand">
-          <span class="auth-logo"><el-icon><Reading /></el-icon></span>
-          <span>智愿AI报考平台</span>
-        </div>
-      </div>
-      <div class="auth-topbar__content">
-        <h1>登录</h1>
-      </div>
-    </header>
+    <AppHeader title="登录" standalone />
 
     <main class="auth-stage">
       <section class="auth-scene">

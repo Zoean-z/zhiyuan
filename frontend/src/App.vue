@@ -1,9 +1,11 @@
 <script setup>
 import { ElMessage, ElMessageBox } from "element-plus";
-import { ChatDotRound, Clock, Collection, DataAnalysis, Document, OfficeBuilding, Reading, Search, UserFilled } from "@element-plus/icons-vue";
+import { ChatDotRound, Clock, Collection, DataAnalysis, Document, OfficeBuilding, Search, UserFilled } from "@element-plus/icons-vue";
 import { computed, onMounted, provide, reactive, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import admissionJourneyImage from "./assets/admission-journey.png";
+import AppHeader from "./components/AppHeader.vue";
+import BrandLockup from "./components/BrandLockup.vue";
 import {
   buildPlanItemKey,
   buildGroupedFromResult,
@@ -711,6 +713,7 @@ async function login() {
     fillScoreFromUser();
     fillProfileFromUser();
     await router.replace(resolvePostAuthTarget(data));
+    ElMessage.success(UI_TEXT.success.login);
   } catch (ex) {
     applyError(ex, UI_TEXT.failure.login);
   } finally {
@@ -1232,6 +1235,7 @@ provide("workspace", {
   loading,
   login,
   loginForm,
+  logout,
   majorSuggestionLoading,
   majorSuggestions,
   navigateTo,
@@ -1305,8 +1309,7 @@ watch(() => scoreForm.subjectType, () => {
   <div v-else class="app-shell app-layout" :class="{ 'app-layout--agent': currentRoute.name === 'agent' }">
     <aside class="app-sidebar">
       <div class="app-brand">
-        <span class="app-brand__mark"><el-icon><Reading /></el-icon></span>
-        <span>智愿AI报考平台</span>
+        <BrandLockup :admin="isAdmin" />
       </div>
 
       <nav v-if="!isAdmin" class="app-nav" aria-label="主导航">
@@ -1348,8 +1351,7 @@ watch(() => scoreForm.subjectType, () => {
     </aside>
 
     <section class="app-content">
-      <header class="app-header">
-        <h1>{{ pageTitle }}</h1>
+      <AppHeader :title="pageTitle">
         <div class="app-user">
           <span class="app-user__meta">{{ userMeta }}</span>
           <span class="app-user__avatar"><el-icon><UserFilled /></el-icon></span>
@@ -1357,7 +1359,7 @@ watch(() => scoreForm.subjectType, () => {
           <span class="app-user__divider" />
           <el-button link @click="logout">退出</el-button>
         </div>
-      </header>
+      </AppHeader>
 
       <div class="app-route-view">
         <RouterView v-slot="{ Component, route: matchedRoute }">

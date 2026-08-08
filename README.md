@@ -125,11 +125,15 @@
 
 ```powershell
 docker run -d --name zhiyuan-mysql `
-  -e MYSQL_ROOT_PASSWORD=123456 `
+  -e MYSQL_ROOT_PASSWORD=zhiyuan_root_2026 `
   -e MYSQL_DATABASE=college_recommendation `
-  -p 3306:3306 `
+  -e MYSQL_USER=zhiyuan `
+  -e MYSQL_PASSWORD=zhiyuan123 `
+  -p 127.0.0.1:3307:3306 `
   mysql:8.4
 ```
+
+应用默认连接 `localhost:3307`，使用专用账号 `zhiyuan`，不再依赖本机 MySQL 的 `root` 密码。若使用自定义账号，只需通过 `DB_HOST`、`DB_PORT`、`DB_USER`、`DB_PASSWORD` 覆盖。
 
 ### 2. 启动后端
 
@@ -224,9 +228,9 @@ Copy-Item .env.example .env
 ```
 
 至少需要检查这些字段：
+- `MYSQL_ROOT_PASSWORD`
+- `DB_USER`
 - `DB_PASSWORD`
-- `DB_APP_USER`
-- `DB_APP_PASSWORD`
 - `AUTH_JWT_SECRET`
 - `QWEN_ENABLED`
 - `QWEN_API_KEY`
@@ -267,7 +271,7 @@ cd zhiyuan
 cp .env.example .env
 ```
 
-编辑 `.env`，至少替换 `DB_PASSWORD`、`DB_APP_PASSWORD` 和 `AUTH_JWT_SECRET`；需要真实 AI 对话时再填写 `QWEN_API_KEY` 并设置 `QWEN_ENABLED=true`。然后启动：
+编辑 `.env`，至少替换 `MYSQL_ROOT_PASSWORD`、`DB_PASSWORD` 和 `AUTH_JWT_SECRET`；需要真实 AI 对话时再填写 `QWEN_API_KEY` 并设置 `QWEN_ENABLED=true`。然后启动：
 
 ```bash
 docker compose up -d --build
@@ -301,8 +305,8 @@ docker compose down -v
 参考仓库根目录的 `.env.example`。
 
 主要变量：
-- 数据库：`DB_HOST` `DB_PORT` `DB_HOST_PORT` `DB_NAME` `DB_USER` `DB_PASSWORD` `DB_SCHEMA_INIT_MODE`
-- Docker 应用账号：`DB_APP_USER` `DB_APP_PASSWORD`
+- 数据库应用账号：`DB_HOST` `DB_PORT` `DB_HOST_PORT` `DB_NAME` `DB_USER` `DB_PASSWORD` `DB_SCHEMA_INIT_MODE`
+- Docker 初始化账号：`MYSQL_ROOT_PASSWORD`（只供 MySQL 容器初始化和健康检查，后端不使用）
 - Redis：`REDIS_HOST` `REDIS_PORT` `REDIS_HOST_PORT` `CACHE_REDIS_ENABLED`
 - RocketMQ：`ROCKETMQ_ENABLED` `ROCKETMQ_NAME_SERVER` `ROCKETMQ_RECOMMENDATION_TOPIC` `ROCKETMQ_RECOMMENDATION_TAG` `ROCKETMQ_PRODUCER_GROUP` `ROCKETMQ_CONSUMER_GROUP`
 - 服务端口：`SERVER_PORT` `SERVER_HOST_PORT`
@@ -422,9 +426,10 @@ chmod +x mvnw
 **原因**：MySQL 未启动或配置错误。
 
 **解决**：
-1. 检查 MySQL 是否运行：`docker ps | grep mysql`
-2. 检查 `.env` 中的 `DB_HOST`、`DB_PORT`、`DB_PASSWORD` 是否正确
-3. 手动测试连接：`mysql -h localhost -P 3306 -u root -p`
+1. 推荐执行 `docker compose up -d mysql`，避免连接到本机密码不确定的 MySQL 服务
+2. 检查 `.env` 中的 `DB_HOST=localhost`、`DB_PORT=3307`、`DB_USER=zhiyuan` 和 `DB_PASSWORD`
+3. 执行 `check-db.bat`，或手动测试：`mysql -h localhost -P 3307 -u zhiyuan -p`
+4. 已有 Docker 数据卷不会因修改 `.env` 自动更换账号密码；不要直接删除数据卷，先备份后再决定迁移或重建
 
 ### 4. Redis 连接失败
 
