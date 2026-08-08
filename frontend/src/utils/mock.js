@@ -6,7 +6,18 @@ const MOCK_USER = {
   score: 630,
   subjectType: "PHYSICS",
   examProvince: "浙江",
+  role: "USER",
   token: "mock-token-12345"
+};
+
+const MOCK_ADMIN_USER = {
+  id: 100,
+  username: "admin",
+  score: null,
+  subjectType: null,
+  examProvince: null,
+  role: "ADMIN",
+  token: "mock-admin-token-12345"
 };
 
 const MOCK_PROVINCES = [
@@ -210,6 +221,103 @@ const MOCK_CONVERSATIONS = [
   }
 ];
 
+const MOCK_ADMIN_USERS = [
+  {
+    id: 100, username: "admin", score: null, subjectType: null, examProvince: null,
+    role: "ADMIN", enabled: true, createdAt: "2026-03-01T09:10:00", updatedAt: "2026-08-08T08:30:00",
+    recommendationCount: 0, planCount: 0, conversationCount: 0
+  },
+  {
+    id: 1, username: "testuser", score: 630, subjectType: "PHYSICS", examProvince: "浙江",
+    role: "USER", enabled: true, createdAt: "2026-03-21T10:18:00", updatedAt: "2026-08-07T09:00:33",
+    recommendationCount: 8, planCount: 3, conversationCount: 2
+  },
+  {
+    id: 2, username: "linxi", score: 598, subjectType: "HISTORY", examProvince: "江苏",
+    role: "USER", enabled: true, createdAt: "2026-05-12T14:26:00", updatedAt: "2026-08-06T16:42:00",
+    recommendationCount: 5, planCount: 2, conversationCount: 4
+  },
+  {
+    id: 3, username: "chenyu", score: 655, subjectType: "PHYSICS", examProvince: "山东",
+    role: "USER", enabled: true, createdAt: "2026-06-19T11:05:00", updatedAt: "2026-08-05T19:20:00",
+    recommendationCount: 12, planCount: 4, conversationCount: 6
+  },
+  {
+    id: 4, username: "pending_user", score: null, subjectType: null, examProvince: null,
+    role: "USER", enabled: false, createdAt: "2026-07-28T17:40:00", updatedAt: "2026-08-02T10:12:00",
+    recommendationCount: 0, planCount: 0, conversationCount: 1
+  }
+];
+
+const MOCK_ADMIN_UNIVERSITIES = MOCK_SCHOOLS.map((school) => ({
+  ...school,
+  tags: [school.is985 ? "985" : null, school.is211 ? "211" : null, school.isDoubleFirstClass ? "双一流" : null]
+    .filter(Boolean)
+    .join(",")
+}));
+
+const MOCK_ADMIN_MAJORS = [
+  { id: 1, name: "计算机科学与技术", category: "计算机类", degreeType: "工学", tags: "热门,信息技术", subjectRequirement: "物理", description: "研究计算机系统、算法与软件设计。" },
+  { id: 2, name: "软件工程", category: "计算机类", degreeType: "工学", tags: "热门,工程实践", subjectRequirement: "物理", description: "面向软件系统分析、设计、开发与维护。" },
+  { id: 3, name: "人工智能", category: "电子信息类", degreeType: "工学", tags: "新兴,交叉学科", subjectRequirement: "物理", description: "涵盖机器学习、智能系统与数据处理。" },
+  { id: 4, name: "电子信息工程", category: "电子信息类", degreeType: "工学", tags: "信息技术", subjectRequirement: "物理", description: "学习电子技术、信息获取与处理。" },
+  { id: 5, name: "临床医学", category: "临床医学类", degreeType: "医学", tags: "医学", subjectRequirement: "物理,化学", description: "培养临床诊疗与医学研究能力。" },
+  { id: 6, name: "法学", category: "法学类", degreeType: "法学", tags: "人文社科", subjectRequirement: "不限", description: "学习法律规范、法学理论与实务。" },
+  { id: 7, name: "金融学", category: "金融学类", degreeType: "经济学", tags: "财经", subjectRequirement: "不限", description: "研究金融市场、机构与风险管理。" },
+  { id: 8, name: "建筑学", category: "建筑类", degreeType: "工学", tags: "设计,工程", subjectRequirement: "物理", description: "学习建筑设计、技术与城市空间。" }
+];
+
+const MOCK_ADMIN_CUTOFFS = [
+  { id: 1, universityId: 3, admissionYear: 2025, province: "浙江", subjectType: "PHYSICS", cutoffScore: 664, minRank: 6790 },
+  { id: 2, universityId: 4, admissionYear: 2025, province: "浙江", subjectType: "PHYSICS", cutoffScore: 697, minRank: 1980 },
+  { id: 3, universityId: 6, admissionYear: 2025, province: "江苏", subjectType: "HISTORY", cutoffScore: 635, minRank: 620 },
+  { id: 4, universityId: 8, admissionYear: 2025, province: "湖北", subjectType: "PHYSICS", cutoffScore: 648, minRank: 4200 },
+  { id: 5, universityId: 10, admissionYear: 2024, province: "广东", subjectType: "PHYSICS", cutoffScore: 624, minRank: 9630 }
+];
+
+const MOCK_ADMIN_MAJOR_CUTOFFS = [
+  { id: 1, universityId: 3, majorId: 1, majorName: "计算机科学与技术", admissionYear: 2025, province: "浙江", subjectType: "PHYSICS", cutoffScore: 685, minRank: 3520 },
+  { id: 2, universityId: 4, majorId: 2, majorName: "软件工程", admissionYear: 2025, province: "浙江", subjectType: "PHYSICS", cutoffScore: 699, minRank: 1760 },
+  { id: 3, universityId: 6, majorId: 6, majorName: "法学", admissionYear: 2025, province: "江苏", subjectType: "HISTORY", cutoffScore: 642, minRank: 430 },
+  { id: 4, universityId: 8, majorId: 3, majorName: "人工智能", admissionYear: 2025, province: "湖北", subjectType: "PHYSICS", cutoffScore: 655, minRank: 3380 },
+  { id: 5, universityId: 10, majorId: 5, majorName: "临床医学", admissionYear: 2024, province: "广东", subjectType: "PHYSICS", cutoffScore: 640, minRank: 6800 }
+];
+
+function nextId(items) {
+  return Math.max(0, ...items.map((item) => Number(item.id) || 0)) + 1;
+}
+
+function readJsonBody(options) {
+  return options.body ? JSON.parse(options.body) : {};
+}
+
+function filterAdmissionRows(items, searchParams, includeMajor = false) {
+  const universityId = searchParams.get("universityId");
+  const admissionYear = searchParams.get("admissionYear");
+  const province = searchParams.get("province")?.trim().toLowerCase();
+  const subjectType = searchParams.get("subjectType");
+  const majorKeyword = searchParams.get("majorKeyword")?.trim().toLowerCase();
+  return items.filter((item) => {
+    if (universityId && Number(item.universityId) !== Number(universityId)) return false;
+    if (admissionYear && Number(item.admissionYear) !== Number(admissionYear)) return false;
+    if (province && !item.province.toLowerCase().includes(province)) return false;
+    if (subjectType && item.subjectType !== subjectType) return false;
+    return !includeMajor || !majorKeyword || item.majorName.toLowerCase().includes(majorKeyword);
+  });
+}
+
+function saveAdminRecord(items, body, id = null) {
+  if (id == null) {
+    const created = { id: nextId(items), ...body };
+    items.unshift(created);
+    return created;
+  }
+  const index = items.findIndex((item) => Number(item.id) === Number(id));
+  if (index < 0) return null;
+  items[index] = { ...items[index], ...body, id: Number(id) };
+  return items[index];
+}
+
 // Mock API 拦截器
 export function setupMockInterceptor() {
   const originalFetch = window.fetch;
@@ -222,14 +330,16 @@ export function setupMockInterceptor() {
     // 模拟网络延迟
     await new Promise(resolve => setTimeout(resolve, 300 + Math.random() * 200));
 
-    const method = options.method || "GET";
-    const path = url.toString().replace("http://localhost:8080", "");
+    const method = (options.method || "GET").toUpperCase();
+    const requestUrl = new URL(url.toString(), window.location.origin);
+    const path = requestUrl.pathname;
+    const searchParams = requestUrl.searchParams;
 
     // 登录
     if (path === "/api/auth/login" && method === "POST") {
       const body = JSON.parse(options.body);
       if (body.username === "admin" && body.password === "admin123") {
-        return mockResponse({ ...MOCK_USER, role: "ADMIN" });
+        return mockResponse(MOCK_ADMIN_USER);
       }
       return mockResponse(MOCK_USER);
     }
@@ -326,6 +436,96 @@ export function setupMockInterceptor() {
           { role: "assistant", content: "这是AI的回复。由于是演示模式，这里显示的是模拟数据。", type: "text" }
         ]
       });
+    }
+
+    // 管理员用户概览与账号管理
+    if (path === "/api/admin/users/overview" && method === "GET") {
+      return mockResponse({
+        totalCount: MOCK_ADMIN_USERS.length,
+        userCount: MOCK_ADMIN_USERS.filter((item) => item.role === "USER").length,
+        adminCount: MOCK_ADMIN_USERS.filter((item) => item.role === "ADMIN").length,
+        disabledCount: MOCK_ADMIN_USERS.filter((item) => item.enabled === false).length
+      });
+    }
+
+    if (path === "/api/admin/users" && method === "GET") {
+      const keyword = searchParams.get("keyword")?.trim().toLowerCase();
+      const role = searchParams.get("role");
+      const enabled = searchParams.get("enabled");
+      const users = MOCK_ADMIN_USERS.filter((item) => {
+        if (keyword && !item.username.toLowerCase().includes(keyword)) return false;
+        if (role && item.role !== role) return false;
+        if (enabled != null && String(item.enabled) !== enabled) return false;
+        return true;
+      });
+      return mockResponse(users);
+    }
+
+    const adminUserDetailMatch = path.match(/^\/api\/admin\/users\/(\d+)$/);
+    if (adminUserDetailMatch && method === "GET") {
+      const user = MOCK_ADMIN_USERS.find((item) => Number(item.id) === Number(adminUserDetailMatch[1]));
+      return user ? mockResponse(user) : mockResponse({ message: "User not found" }, 404);
+    }
+
+    const adminUserSettingsMatch = path.match(/^\/api\/admin\/users\/(\d+)\/settings$/);
+    if (adminUserSettingsMatch && method === "PUT") {
+      const user = MOCK_ADMIN_USERS.find((item) => Number(item.id) === Number(adminUserSettingsMatch[1]));
+      if (!user) return mockResponse({ message: "User not found" }, 404);
+      const body = readJsonBody(options);
+      if (user.username === MOCK_ADMIN_USER.username && (body.role !== "ADMIN" || body.enabled !== true)) {
+        return mockResponse({ message: "当前管理员不能停用或降级自己的账号" }, 400);
+      }
+      Object.assign(user, { role: body.role, enabled: body.enabled, updatedAt: new Date().toISOString() });
+      return mockResponse(user);
+    }
+
+    // 管理员基础数据：查询、新增和编辑均只修改当前页面会话内存
+    if (path === "/api/admin/universities" && method === "GET") {
+      return mockResponse(MOCK_ADMIN_UNIVERSITIES);
+    }
+    if (path === "/api/admin/universities" && method === "POST") {
+      return mockResponse(saveAdminRecord(MOCK_ADMIN_UNIVERSITIES, readJsonBody(options)));
+    }
+    const adminUniversityMatch = path.match(/^\/api\/admin\/universities\/(\d+)$/);
+    if (adminUniversityMatch && method === "PUT") {
+      const saved = saveAdminRecord(MOCK_ADMIN_UNIVERSITIES, readJsonBody(options), adminUniversityMatch[1]);
+      return saved ? mockResponse(saved) : mockResponse({ message: "University not found" }, 404);
+    }
+
+    if (path === "/api/admin/majors" && method === "GET") {
+      return mockResponse(MOCK_ADMIN_MAJORS);
+    }
+    if (path === "/api/admin/majors" && method === "POST") {
+      return mockResponse(saveAdminRecord(MOCK_ADMIN_MAJORS, readJsonBody(options)));
+    }
+    const adminMajorMatch = path.match(/^\/api\/admin\/majors\/(\d+)$/);
+    if (adminMajorMatch && method === "PUT") {
+      const saved = saveAdminRecord(MOCK_ADMIN_MAJORS, readJsonBody(options), adminMajorMatch[1]);
+      return saved ? mockResponse(saved) : mockResponse({ message: "Major not found" }, 404);
+    }
+
+    if (path === "/api/admin/admission-cutoffs" && method === "GET") {
+      return mockResponse(filterAdmissionRows(MOCK_ADMIN_CUTOFFS, searchParams));
+    }
+    if (path === "/api/admin/admission-cutoffs" && method === "POST") {
+      return mockResponse(saveAdminRecord(MOCK_ADMIN_CUTOFFS, readJsonBody(options)));
+    }
+    const adminCutoffMatch = path.match(/^\/api\/admin\/admission-cutoffs\/(\d+)$/);
+    if (adminCutoffMatch && method === "PUT") {
+      const saved = saveAdminRecord(MOCK_ADMIN_CUTOFFS, readJsonBody(options), adminCutoffMatch[1]);
+      return saved ? mockResponse(saved) : mockResponse({ message: "Admission cutoff not found" }, 404);
+    }
+
+    if (path === "/api/admin/major-admission-cutoffs" && method === "GET") {
+      return mockResponse(filterAdmissionRows(MOCK_ADMIN_MAJOR_CUTOFFS, searchParams, true));
+    }
+    if (path === "/api/admin/major-admission-cutoffs" && method === "POST") {
+      return mockResponse(saveAdminRecord(MOCK_ADMIN_MAJOR_CUTOFFS, readJsonBody(options)));
+    }
+    const adminMajorCutoffMatch = path.match(/^\/api\/admin\/major-admission-cutoffs\/(\d+)$/);
+    if (adminMajorCutoffMatch && method === "PUT") {
+      const saved = saveAdminRecord(MOCK_ADMIN_MAJOR_CUTOFFS, readJsonBody(options), adminMajorCutoffMatch[1]);
+      return saved ? mockResponse(saved) : mockResponse({ message: "Major admission cutoff not found" }, 404);
     }
 
     // 默认返回404

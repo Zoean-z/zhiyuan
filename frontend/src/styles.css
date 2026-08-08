@@ -2082,7 +2082,8 @@ body {
   padding-top: 4px;
 }
 
-@media (max-width: 1180px) {
+/* Account for the persistent 272px sidebar on common 1280/1366px desktops. */
+@media (max-width: 1400px) {
   .admin-view {
     padding: 20px;
   }
