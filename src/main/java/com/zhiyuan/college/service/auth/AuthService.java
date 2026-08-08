@@ -46,7 +46,7 @@ public class AuthService {
 
     public LoginResponse login(LoginRequest request) {
         UserAccount user = userAccountMapper.findByUsername(request.getUsername());
-        if (user == null || !passwordMatches(request.getPassword(), user)) {
+        if (user == null || !Boolean.TRUE.equals(user.getEnabled()) || !passwordMatches(request.getPassword(), user)) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid username or password");
         }
         user.setRole(UserRole.fromValue(userAccountMapper.findRoleByUsername(request.getUsername())));
@@ -84,6 +84,7 @@ public class AuthService {
         user.setSubjectType(request.getSubjectType());
         user.setExamProvince(isBlank(request.getExamProvince()) ? null : request.getExamProvince().trim());
         user.setRole(UserRole.USER);
+        user.setEnabled(true);
         userAccountMapper.insert(user);
 
         String token = jwtTokenService.generateToken(user.getId(), user.getUsername(), user.getRole().name());
@@ -117,11 +118,8 @@ public class AuthService {
             Claims claims = jwtTokenService.parseClaims(token);
             Long userId = Long.valueOf(claims.getSubject());
             UserAccount user = userAccountMapper.findByIdCompat(userId);
-            if (user != null) {
-                Object roleClaim = claims.get("role");
-                if (roleClaim instanceof String roleValue && !roleValue.isBlank()) {
-                    user.setRole(UserRole.fromValue(roleValue));
-                }
+            if (user != null && !Boolean.TRUE.equals(user.getEnabled())) {
+                return null;
             }
             return user;
         } catch (JwtException | IllegalArgumentException ex) {

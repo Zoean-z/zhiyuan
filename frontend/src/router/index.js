@@ -19,6 +19,7 @@ const routes = [
   { path: "/agent", name: "agent", component: () => import("../views/AgentView.vue"), meta: { requiresAuth: true, title: "AI 对话" } },
   { path: "/history", name: "history", component: () => import("../views/HistoryRecordsView.vue"), meta: { requiresAuth: true, title: "历史记录" } },
   { path: "/plans", name: "plans", component: () => import("../views/PlansView.vue"), meta: { requiresAuth: true, title: "志愿方案" } },
+  { path: "/admin", name: "admin", component: () => import("../views/AdminView.vue"), meta: { requiresAuth: true, requiresAdmin: true, title: "用户管理" } },
   { path: "/:pathMatch(.*)*", redirect: "/recommend" }
 ];
 
@@ -30,20 +31,27 @@ const router = createRouter({
 router.beforeEach((to) => {
   const storedAuth = readStoredAuth();
   const hasAuth = Boolean(storedAuth?.token);
+  const isAdmin = storedAuth?.user?.role === "ADMIN";
   const profileComplete = isUserProfileComplete(storedAuth?.user);
 
   if (to.meta.requiresAuth && !hasAuth) {
     return { name: "login", query: { redirect: to.fullPath } };
   }
-  if (hasAuth && !profileComplete && !to.meta.profileSetup) {
+  if (to.meta.requiresAdmin && !isAdmin) {
+    return { name: "recommend" };
+  }
+  if (hasAuth && isAdmin && to.name !== "admin" && !to.meta.guestOnly) {
+    return { name: "admin" };
+  }
+  if (hasAuth && !isAdmin && !profileComplete && !to.meta.profileSetup) {
     const redirect = to.meta.guestOnly ? undefined : to.fullPath;
     return { name: "profile-setup", query: redirect ? { redirect } : {} };
   }
-  if (to.meta.profileSetup && profileComplete) {
-    return { name: "recommend" };
+  if (to.meta.profileSetup && (profileComplete || isAdmin)) {
+    return { name: isAdmin ? "admin" : "recommend" };
   }
   if (to.meta.guestOnly && hasAuth) {
-    return { name: "recommend" };
+    return { name: isAdmin ? "admin" : "recommend" };
   }
   return true;
 });

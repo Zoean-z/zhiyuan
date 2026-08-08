@@ -4,7 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.zhiyuan.college.model.entity.AgentMessage;
 import com.zhiyuan.college.model.entity.UserAccount;
-import com.zhiyuan.college.service.QwenAiClient;
+import com.zhiyuan.college.service.AiChatClient;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -27,16 +27,16 @@ public class AgentDecisionService {
     private static final Pattern SAVE_NAME_PATTERN = Pattern.compile("保存(?:为|成)?[《“\"]?([^》”\"\\n]{2,30})[》”\"]?(?:方案)?");
     private static final Pattern SCHOOL_NAME_DETAIL_PATTERN = Pattern.compile("([\\p{IsHan}A-Za-z0-9]{2,20}(?:大学|学院|学校))");
 
-    private final QwenAiClient qwenAiClient;
+    private final AiChatClient aiChatClient;
     private final ObjectMapper objectMapper;
     private final AgentToolRegistry agentToolRegistry;
     private final boolean qwenEnabled;
 
-    public AgentDecisionService(QwenAiClient qwenAiClient,
+    public AgentDecisionService(AiChatClient aiChatClient,
                                 ObjectMapper objectMapper,
                                 AgentToolRegistry agentToolRegistry,
                                 @Value("${ai.qwen.enabled:true}") boolean qwenEnabled) {
-        this.qwenAiClient = qwenAiClient;
+        this.aiChatClient = aiChatClient;
         this.objectMapper = objectMapper;
         this.agentToolRegistry = agentToolRegistry;
         this.qwenEnabled = qwenEnabled;
@@ -48,7 +48,7 @@ public class AgentDecisionService {
             return localDecision;
         }
         try {
-            String aiContent = qwenAiClient.chat(
+            String aiContent = aiChatClient.chat(
                     buildSystemPrompt(),
                     buildUserPrompt(userMessage, recentMessages, user),
                     0.1,

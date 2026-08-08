@@ -15,7 +15,7 @@ import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.server.ResponseStatusException;
 
 @Component
-public class QwenAiClient {
+public class AiChatClient {
 
     private final RestClient restClient;
     private final String model;
@@ -23,7 +23,7 @@ public class QwenAiClient {
     private final int retryMaxAttempts;
     private final long retryBackoffMillis;
 
-    public QwenAiClient(RestClient.Builder builder,
+    public AiChatClient(RestClient.Builder builder,
                         @Value("${ai.qwen.base-url}") String baseUrl,
                         @Value("${ai.qwen.api-key}") String apiKey,
                         @Value("${ai.qwen.model}") String model,

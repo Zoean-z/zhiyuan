@@ -27,6 +27,8 @@ public class UserAccount {
 
     private String role;
 
+    private Boolean enabled;
+
     @TableField("created_at")
     private java.time.LocalDateTime createdAt;
 
@@ -103,6 +105,14 @@ public class UserAccount {
 
     public void setRole(UserRole role) {
         this.role = role == null ? UserRole.USER.name() : role.name();
+    }
+
+    public Boolean getEnabled() {
+        return enabled;
+    }
+
+    public void setEnabled(Boolean enabled) {
+        this.enabled = enabled;
     }
 
     public java.time.LocalDateTime getCreatedAt() {

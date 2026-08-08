@@ -60,12 +60,12 @@ public class AiRequirementParserService {
             "不要太偏", "名气好一点", "名气好", "就业好", "性价比高", "环境好", "发达地区"
     );
 
-    private final QwenAiClient qwenAiClient;
+    private final AiChatClient aiChatClient;
     private final ObjectMapper objectMapper;
     private final RecommendationCacheService recommendationCacheService;
     private final boolean enabled;
 
-    public AiRequirementParserService(QwenAiClient qwenAiClient,
+    public AiRequirementParserService(AiChatClient aiChatClient,
                                       ObjectMapper objectMapper,
                                       RecommendationCacheService recommendationCacheService,
                                       @Value("${ai.qwen.enabled:true}") boolean enabled) {
