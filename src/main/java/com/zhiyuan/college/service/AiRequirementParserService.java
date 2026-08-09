@@ -87,15 +87,17 @@ public class AiRequirementParserService {
 
         ParseResult result;
         if (enabled) {
+            String aiResponse = null;
             try {
-                ParsedRequirement aiParsed = parseByAi(text);
+                aiResponse = requestAiResponse(text);
+                ParsedRequirement aiParsed = parseAiResponse(text, aiResponse);
                 if (aiParsed != null) {
                     result = new ParseResult(aiParsed, new ParseTrace(
                             aiChatClient.getProvider(),
                             aiChatClient.getModel(),
                             "AI",
                             true,
-                            lastAiResponse,
+                            aiResponse,
                             null
                     ));
                     recommendationCacheService.cacheParsedRequirement(text, result);
@@ -109,7 +111,7 @@ public class AiRequirementParserService {
                         aiChatClient.getModel(),
                         "RULE_FALLBACK",
                         false,
-                        lastAiResponse,
+                        aiResponse,
                         ex.getMessage()
                 ));
                 recommendationCacheService.cacheParsedRequirement(text, result);
@@ -129,9 +131,7 @@ public class AiRequirementParserService {
         return result;
     }
 
-    private String lastAiResponse;
-
-    private ParsedRequirement parseByAi(String text) throws Exception {
+    private String requestAiResponse(String text) throws Exception {
         String normalizedText = text == null ? "" : text.trim();
         String systemPrompt = """
                 你是高考志愿需求解析器。请从用户文本中提取字段，并且只输出 JSON 对象，不要输出任何额外说明。
@@ -151,9 +151,11 @@ public class AiRequirementParserService {
                 - strategy: 枚举字符串，值只能是 RUSH、SAFE、GUARANTEE，无法识别则为 null
                 """;
         String userPrompt = "请解析以下文本：" + normalizedText;
+        return aiChatClient.chat(systemPrompt, userPrompt, 0.1, true);
+    }
 
-        String aiContent = aiChatClient.chat(systemPrompt, userPrompt, 0.1, true);
-        this.lastAiResponse = aiContent;
+    private ParsedRequirement parseAiResponse(String text, String aiContent) throws Exception {
+        String normalizedText = text == null ? "" : text.trim();
         JsonNode root = objectMapper.readTree(aiContent);
 
         ParsedRequirement parsed = new ParsedRequirement();

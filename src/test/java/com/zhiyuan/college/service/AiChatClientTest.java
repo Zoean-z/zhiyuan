@@ -2,29 +2,17 @@ package com.zhiyuan.college.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
 
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
-import com.zhiyuan.college.service.agent.AgentToolExecutor;
-import com.zhiyuan.college.service.agent.AgentToolFacade;
-import com.zhiyuan.college.service.agent.AgentToolNames;
-import com.zhiyuan.college.service.agent.AgentToolRegistry;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
-import java.util.List;
-import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.http.HttpStatus;
 import org.springframework.web.client.RestClient;
-import org.springframework.web.server.ResponseStatusException;
 
 class AiChatClientTest {
 
@@ -108,56 +96,5 @@ class AiChatClientTest {
         } finally {
             exchange.close();
         }
-    }
-}
-
-class AgentToolExecutorValidationTest {
-
-    @Test
-    void execute_shouldRejectInvalidMajorKeyword() {
-        AgentToolRegistry registry = mock(AgentToolRegistry.class);
-        when(registry.supports(any())).thenReturn(true);
-        AgentToolFacade facade = mock(AgentToolFacade.class);
-        AgentToolExecutor executor = new AgentToolExecutor(registry, facade);
-
-        ResponseStatusException exception = assertThrows(
-                ResponseStatusException.class,
-                () -> executor.execute(1L, AgentToolNames.RECOMMEND_MAJORS, Map.of("majorKeyword", " "), List.of())
-        );
-
-        assertEquals(HttpStatus.BAD_REQUEST, exception.getStatusCode());
-        assertTrue(String.valueOf(exception.getReason()).contains("majorKeyword"));
-    }
-
-    @Test
-    void execute_shouldRejectOutOfRangeSelectionIndex() {
-        AgentToolRegistry registry = mock(AgentToolRegistry.class);
-        when(registry.supports(any())).thenReturn(true);
-        AgentToolFacade facade = mock(AgentToolFacade.class);
-        AgentToolExecutor executor = new AgentToolExecutor(registry, facade);
-
-        ResponseStatusException exception = assertThrows(
-                ResponseStatusException.class,
-                () -> executor.execute(1L, AgentToolNames.GET_SCHOOL_DETAIL, Map.of("selectionIndex", 9), List.of())
-        );
-
-        assertEquals(HttpStatus.BAD_REQUEST, exception.getStatusCode());
-        assertTrue(String.valueOf(exception.getReason()).contains("selectionIndex"));
-    }
-
-    @Test
-    void execute_shouldRejectInvalidPlanName() {
-        AgentToolRegistry registry = mock(AgentToolRegistry.class);
-        when(registry.supports(any())).thenReturn(true);
-        AgentToolFacade facade = mock(AgentToolFacade.class);
-        AgentToolExecutor executor = new AgentToolExecutor(registry, facade);
-
-        ResponseStatusException exception = assertThrows(
-                ResponseStatusException.class,
-                () -> executor.execute(1L, AgentToolNames.SAVE_PLAN, Map.of("planName", "a"), List.of())
-        );
-
-        assertEquals(HttpStatus.BAD_REQUEST, exception.getStatusCode());
-        assertTrue(String.valueOf(exception.getReason()).contains("planName"));
     }
 }

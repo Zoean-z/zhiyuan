@@ -1,7 +1,7 @@
 <script setup>
 import { computed, ref } from "vue";
 import { Document, Search } from "@element-plus/icons-vue";
-import { buildGroupedFromResult, formatDateTime, sourceTypeLabel, sourceTypeTag } from "../utils/recommendation";
+import { buildGroupedFromResult, formatDateTime, parsePlanResult, sourceTypeLabel, sourceTypeTag } from "../utils/recommendation";
 import { UI_TEXT } from "../utils/ui";
 
 const props = defineProps({
@@ -64,13 +64,7 @@ const stats = computed(() => {
 });
 
 function getPlanCounts(record) {
-  let parsed = null;
-  try {
-    parsed = record.resultJson ? JSON.parse(record.resultJson) : null;
-  } catch {
-    parsed = null;
-  }
-  if (!parsed) return { rush: 0, safe: 0, guarantee: 0 };
+  const parsed = parsePlanResult(record.resultJson);
   const grouped = buildGroupedFromResult(parsed);
   return {
     rush: grouped.rush.length,

@@ -212,14 +212,33 @@ const MOCK_CONVERSATIONS = [
   {
     id: 1,
     title: "关于志愿填报的咨询",
-    createdAt: "2026-08-07T08:00:00"
+    status: "ACTIVE",
+    lastMessageAt: "2026-08-07T08:05:00",
+    messageCount: 2,
+    createdAt: "2026-08-07T08:00:00",
+    updatedAt: "2026-08-07T08:05:00"
   },
   {
     id: 2,
     title: "推荐计算机专业院校",
-    createdAt: "2026-08-06T15:30:00"
+    status: "ACTIVE",
+    lastMessageAt: "2026-08-06T15:35:00",
+    messageCount: 2,
+    createdAt: "2026-08-06T15:30:00",
+    updatedAt: "2026-08-06T15:35:00"
   }
 ];
+
+const MOCK_CONVERSATION_MESSAGES = new Map([
+  [1, [
+    { id: 1, role: "user", messageType: "text", content: "帮我看看当前的志愿方案", toolName: null, payload: null, createdAt: "2026-08-07T08:04:00" },
+    { id: 2, role: "assistant", messageType: "text", content: "可以。我会结合当前志愿表逐项分析冲稳保梯度。", toolName: null, payload: null, createdAt: "2026-08-07T08:05:00" }
+  ]],
+  [2, [
+    { id: 3, role: "user", messageType: "text", content: "推荐计算机专业院校", toolName: null, payload: null, createdAt: "2026-08-06T15:34:00" },
+    { id: 4, role: "assistant", messageType: "text", content: "已准备好按专业优先模式为你推荐。", toolName: null, payload: null, createdAt: "2026-08-06T15:35:00" }
+  ]]
+]);
 
 const MOCK_ADMIN_USERS = [
   {
@@ -318,8 +337,33 @@ function saveAdminRecord(items, body, id = null) {
   return items[index];
 }
 
+function savePlan(body, id = null) {
+  const now = new Date().toISOString();
+  if (id == null) {
+    const created = { id: nextId(MOCK_PLANS), ...body, createdAt: now };
+    MOCK_PLANS.unshift(created);
+    return created;
+  }
+  const index = MOCK_PLANS.findIndex((item) => Number(item.id) === Number(id));
+  if (index < 0) return null;
+  MOCK_PLANS[index] = { ...MOCK_PLANS[index], ...body, id: Number(id) };
+  return MOCK_PLANS[index];
+}
+
+function currentPlan() {
+  return MOCK_PLANS.find((item) => item.planName === "当前方案草稿") || null;
+}
+
+function conversationDetail(conversation) {
+  if (!conversation) return null;
+  return {
+    ...conversation,
+    messages: [...(MOCK_CONVERSATION_MESSAGES.get(Number(conversation.id)) || [])]
+  };
+}
+
 // Mock API 拦截器
-export function setupMockInterceptor() {
+export function setupMockInterceptor({ latencyMs = null } = {}) {
   const originalFetch = window.fetch;
 
   window.fetch = async function(url, options = {}) {
@@ -328,7 +372,8 @@ export function setupMockInterceptor() {
     }
 
     // 模拟网络延迟
-    await new Promise(resolve => setTimeout(resolve, 300 + Math.random() * 200));
+    const delay = latencyMs == null ? 300 + Math.random() * 200 : Math.max(0, latencyMs);
+    if (delay > 0) await new Promise(resolve => setTimeout(resolve, delay));
 
     const method = (options.method || "GET").toUpperCase();
     const requestUrl = new URL(url.toString(), window.location.origin);
@@ -337,7 +382,7 @@ export function setupMockInterceptor() {
 
     // 登录
     if (path === "/api/auth/login" && method === "POST") {
-      const body = JSON.parse(options.body);
+      const body = readJsonBody(options);
       if (body.username === "admin" && body.password === "admin123") {
         return mockResponse(MOCK_ADMIN_USER);
       }
@@ -347,6 +392,10 @@ export function setupMockInterceptor() {
     // 注册
     if (path === "/api/auth/register" && method === "POST") {
       return mockResponse(MOCK_USER);
+    }
+
+    if (path === "/api/auth/logout" && method === "POST") {
+      return mockResponse({ success: true });
     }
 
     // 获取用户信息
@@ -361,7 +410,8 @@ export function setupMockInterceptor() {
 
     // 获取专业选项
     if (path === "/api/meta/major-options") {
-      return mockResponse(MOCK_MAJORS.slice(0, 10));
+      const keyword = (searchParams.get("keyword") || "").trim().toLowerCase();
+      return mockResponse(MOCK_MAJORS.filter((major) => major.toLowerCase().includes(keyword)).slice(0, 10));
     }
 
     // 推荐查询
@@ -371,7 +421,44 @@ export function setupMockInterceptor() {
 
     // 自由文本推荐
     if (path === "/api/recommendations/free-text" && method === "POST") {
-      return mockResponse(generateRecommendations(10));
+      const grouped = generateRecommendations(10);
+      return mockResponse({
+        requestId: `mock-text-${Date.now()}`,
+        parsed: {
+          score: MOCK_USER.score,
+          recommendationMode: "SCHOOL_FIRST",
+          schoolLevels: [],
+          schoolTypes: [],
+          provinces: [],
+          majorKeywords: [],
+          normalizedMajors: [],
+          candidateProvince: MOCK_USER.examProvince,
+          subjectType: MOCK_USER.subjectType
+        },
+        recommendations: [...grouped.rush, ...grouped.safe, ...grouped.guarantee],
+        summary: grouped.summary,
+        aiSummary: grouped.aiSummary,
+        finalAdvice: grouped.finalAdvice,
+        tips: grouped.tips
+      });
+    }
+
+    const schoolDetailMatch = path.match(/^\/api\/recommendations\/schools\/(\d+)\/majors$/);
+    if (schoolDetailMatch && method === "GET") {
+      const school = MOCK_SCHOOLS.find((item) => Number(item.id) === Number(schoolDetailMatch[1]));
+      if (!school) return mockResponse({ message: "University not found" }, 404);
+      return mockResponse({
+        universityId: school.id,
+        universityName: school.name,
+        universityProvince: school.province,
+        universityTier: school.tier,
+        is985: school.is985,
+        is211: school.is211,
+        isDoubleFirstClass: school.isDoubleFirstClass,
+        schoolTags: [school.is985 ? "985" : null, school.is211 ? "211" : null, school.isDoubleFirstClass ? "双一流" : null].filter(Boolean),
+        universityTags: "综合类",
+        majors: MOCK_MAJORS.slice(0, 6).map((major, index) => ({ majorName: major, cutoffScore: 640 + index, minRank: 5000 + index * 300 }))
+      });
     }
 
     // 获取历史记录
@@ -381,10 +468,21 @@ export function setupMockInterceptor() {
 
     // 获取历史详情
     if (path.match(/^\/api\/history\/\d+$/) && method === "GET") {
+      const id = Number(path.split("/").pop());
+      const record = MOCK_HISTORY.find((item) => Number(item.id) === id);
+      if (!record) return mockResponse({ message: "History not found" }, 404);
       return mockResponse({
-        ...MOCK_HISTORY[0],
+        ...record,
         resultJson: JSON.stringify(generateRecommendations(5))
       });
+    }
+
+    if (path.match(/^\/api\/history\/\d+$/) && method === "DELETE") {
+      const id = Number(path.split("/").pop());
+      const index = MOCK_HISTORY.findIndex((item) => Number(item.id) === id);
+      if (index < 0) return mockResponse({ message: "History not found" }, 404);
+      MOCK_HISTORY.splice(index, 1);
+      return mockResponse({ success: true });
     }
 
     // 获取方案列表
@@ -392,27 +490,49 @@ export function setupMockInterceptor() {
       return mockResponse(MOCK_PLANS);
     }
 
+    if (path === "/api/plans/current" && method === "GET") {
+      const plan = currentPlan();
+      return plan ? mockResponse(plan) : mockResponse({ message: "Current plan not found" }, 404);
+    }
+
+    if (path === "/api/plans/current" && method === "PUT") {
+      const body = readJsonBody(options);
+      const plan = currentPlan();
+      return mockResponse(plan
+        ? savePlan({ ...body, planName: "当前方案草稿" }, plan.id)
+        : savePlan({ ...body, planName: "当前方案草稿" }));
+    }
+
+    if (path === "/api/plans/current" && method === "DELETE") {
+      const plan = currentPlan();
+      if (plan) MOCK_PLANS.splice(MOCK_PLANS.indexOf(plan), 1);
+      return mockResponse({ success: true });
+    }
+
     // 获取方案详情
     if (path.match(/^\/api\/plans\/\d+$/) && method === "GET") {
       const id = parseInt(path.split("/").pop());
-      const plan = MOCK_PLANS.find(p => p.id === id) || MOCK_PLANS[0];
-      return mockResponse(plan);
+      const plan = MOCK_PLANS.find(p => p.id === id);
+      return plan ? mockResponse(plan) : mockResponse({ message: "Plan not found" }, 404);
     }
 
     // 保存方案
     if (path === "/api/plans" && method === "POST") {
-      const body = JSON.parse(options.body);
-      return mockResponse({ id: Date.now(), ...body, createdAt: new Date().toISOString() });
+      return mockResponse(savePlan(readJsonBody(options)));
     }
 
     // 更新方案
     if (path.match(/^\/api\/plans\/\d+$/) && method === "PUT") {
-      const body = JSON.parse(options.body);
-      return mockResponse({ id: parseInt(path.split("/").pop()), ...body });
+      const saved = savePlan(readJsonBody(options), parseInt(path.split("/").pop()));
+      return saved ? mockResponse(saved) : mockResponse({ message: "Plan not found" }, 404);
     }
 
     // 删除方案
     if (path.match(/^\/api\/plans\/\d+$/) && method === "DELETE") {
+      const id = parseInt(path.split("/").pop());
+      const index = MOCK_PLANS.findIndex((item) => Number(item.id) === id);
+      if (index < 0) return mockResponse({ message: "Plan not found" }, 404);
+      MOCK_PLANS.splice(index, 1);
       return mockResponse({ success: true });
     }
 
@@ -423,18 +543,63 @@ export function setupMockInterceptor() {
 
     // 创建对话
     if (path === "/api/agent/conversations" && method === "POST") {
-      return mockResponse({ id: Date.now(), title: "新对话", createdAt: new Date().toISOString() });
+      const body = readJsonBody(options);
+      const now = new Date().toISOString();
+      const conversation = {
+        id: nextId(MOCK_CONVERSATIONS),
+        title: body.title || "新的志愿对话",
+        status: "ACTIVE",
+        lastMessageAt: null,
+        messageCount: 0,
+        createdAt: now,
+        updatedAt: now
+      };
+      MOCK_CONVERSATIONS.unshift(conversation);
+      MOCK_CONVERSATION_MESSAGES.set(conversation.id, []);
+      return mockResponse(conversationDetail(conversation));
+    }
+
+    const conversationDetailMatch = path.match(/^\/api\/agent\/conversations\/(\d+)$/);
+    if (conversationDetailMatch && method === "GET") {
+      const conversation = MOCK_CONVERSATIONS.find((item) => Number(item.id) === Number(conversationDetailMatch[1]));
+      return conversation
+        ? mockResponse(conversationDetail(conversation))
+        : mockResponse({ message: "Conversation not found" }, 404);
     }
 
     // 发送消息
-    if (path.match(/^\/api\/agent\/conversations\/\d+\/messages$/) && method === "POST") {
-      const body = JSON.parse(options.body);
+    const conversationMessageMatch = path.match(/^\/api\/agent\/conversations\/(\d+)\/messages$/);
+    if (conversationMessageMatch && method === "POST") {
+      const body = readJsonBody(options);
+      const conversationId = Number(conversationMessageMatch[1]);
+      const conversation = MOCK_CONVERSATIONS.find((item) => Number(item.id) === conversationId);
+      if (!conversation) return mockResponse({ message: "Conversation not found" }, 404);
+      const messages = MOCK_CONVERSATION_MESSAGES.get(conversationId) || [];
+      const now = new Date().toISOString();
+      const userMessage = {
+        id: nextId([...MOCK_CONVERSATION_MESSAGES.values()].flat()),
+        role: "user",
+        messageType: "text",
+        content: body.content,
+        toolName: null,
+        payload: null,
+        createdAt: now
+      };
+      const assistantMessage = {
+        id: userMessage.id + 1,
+        role: "assistant",
+        messageType: "text",
+        content: "这是 AI 的演示回复。我会结合你选择的志愿表继续给出建议。",
+        toolName: null,
+        payload: null,
+        createdAt: now
+      };
+      messages.push(userMessage, assistantMessage);
+      MOCK_CONVERSATION_MESSAGES.set(conversationId, messages);
+      Object.assign(conversation, { lastMessageAt: now, updatedAt: now, messageCount: messages.length });
       return mockResponse({
-        conversationId: parseInt(path.split("/")[3]),
-        messages: [
-          { role: "user", content: body.content, type: "text" },
-          { role: "assistant", content: "这是AI的回复。由于是演示模式，这里显示的是模拟数据。", type: "text" }
-        ]
+        conversationId,
+        generatedMessages: [assistantMessage]
       });
     }
 

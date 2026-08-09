@@ -34,6 +34,9 @@ public class AgentToolExecutor {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unsupported agent tool for execution: " + toolName);
         }
         validateToolArgs(toolName, toolArgs);
+        if (AgentToolNames.REMOVE_PLAN_ITEM.equals(toolName)) {
+            validateDeleteConfirmation(toolArgs, recentMessages);
+        }
         return switch (toolName) {
             case AgentToolNames.GET_USER_PROFILE -> agentToolFacade.getUserProfile(userId);
             case AgentToolNames.GET_CURRENT_PLAN -> agentToolFacade.getCurrentPlan(userId, targetPlanId);
@@ -73,6 +76,69 @@ public class AgentToolExecutor {
         if (selectionIndex <= 0 || selectionIndex > MAX_SELECTION_INDEX) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "selectionIndex must be between 1 and 6");
         }
+    }
+
+    private void validateDeleteConfirmation(Map<String, Object> toolArgs, List<AgentMessage> recentMessages) {
+        int selectionIndex = toolArgs == null || !toolArgs.containsKey("selectionIndex")
+                ? 1
+                : parseInteger(toolArgs.get("selectionIndex"), "selectionIndex");
+        if (recentMessages == null || recentMessages.size() < 3) {
+            throw missingDeleteConfirmation();
+        }
+
+        int confirmationIndex = recentMessages.size() - 1;
+        AgentMessage confirmation = recentMessages.get(confirmationIndex);
+        String expectedConfirmation = "确认删除第" + selectionIndex + "个";
+        String alternateConfirmation = "确定删除第" + selectionIndex + "个";
+        if (!AgentRoles.USER.equals(confirmation.getRole())
+                || (!safeContent(confirmation).contains(expectedConfirmation)
+                && !safeContent(confirmation).contains(alternateConfirmation))) {
+            throw missingDeleteConfirmation();
+        }
+
+        int promptIndex = -1;
+        for (int i = confirmationIndex - 1; i >= 0; i--) {
+            AgentMessage message = recentMessages.get(i);
+            if (!AgentRoles.ASSISTANT.equals(message.getRole())
+                    || !AgentMessageTypes.TEXT.equals(message.getMessageType())) {
+                continue;
+            }
+            if (safeContent(message).contains(expectedConfirmation)) {
+                promptIndex = i;
+            }
+            break;
+        }
+        if (promptIndex < 1) {
+            throw missingDeleteConfirmation();
+        }
+
+        AgentMessage request = recentMessages.get(promptIndex - 1);
+        String requestContent = safeContent(request);
+        if (!AgentRoles.USER.equals(request.getRole())
+                || !containsAny(requestContent, "删除", "移除")
+                || !containsAny(requestContent, "志愿", "方案")) {
+            throw missingDeleteConfirmation();
+        }
+    }
+
+    private ResponseStatusException missingDeleteConfirmation() {
+        return new ResponseStatusException(
+                HttpStatus.BAD_REQUEST,
+                "removePlanItem requires a matching explicit delete confirmation"
+        );
+    }
+
+    private boolean containsAny(String text, String... keywords) {
+        for (String keyword : keywords) {
+            if (text.contains(keyword)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private String safeContent(AgentMessage message) {
+        return message.getContent() == null ? "" : message.getContent();
     }
 
     private void validateMajorKeyword(Map<String, Object> toolArgs) {

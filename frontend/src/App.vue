@@ -7,12 +7,16 @@ import admissionJourneyImage from "./assets/admission-journey.png";
 import AppHeader from "./components/AppHeader.vue";
 import BrandLockup from "./components/BrandLockup.vue";
 import {
-  buildPlanItemKey,
   buildGroupedFromResult,
+  buildPlanItemKey,
+  buildPlanResult,
   clearStoredAuth,
+  flattenPlanItems,
   groupByStrategy,
   isUserProfileComplete,
+  mergePlanItems,
   normalizeItem,
+  parsePlanResult,
   readStoredAuth,
   recommendationModeLabel,
   saveStoredAuth,
@@ -327,75 +331,13 @@ async function clearCurrentPlan() {
 }
 
 function buildPlanPayload() {
-  const groups = { rush: [], safe: [], guarantee: [] };
-  currentPlanItems.value.forEach((item) => {
-    groups[item.strategy || "safe"].push({
-      recommendationMode: item.recommendationMode,
-      universityId: item.universityId ?? null,
-      universityName: item.universityName,
-      majorName: item.majorName || null,
-      universityProvince: item.universityProvince || null,
-      universityTier: item.universityTier || null,
-      is985: item.is985 === true,
-      is211: item.is211 === true,
-      isDoubleFirstClass: item.isDoubleFirstClass === true,
-      schoolTags: Array.isArray(item.schoolTags) ? item.schoolTags : [],
-      universityTags: item.universityTags || null,
-      cutoffScore: item.cutoffScore,
-      scoreGap: item.scoreGap,
-      userRank: item.userRank,
-      minRank: item.minRank,
-      rankGap: item.rankGap,
-      recommendationBasis: item.recommendationBasis,
-      admissionProbability: item.admissionProbability ?? null,
-      strategy: String(item.strategy || "safe").toUpperCase(),
-      strategyLabel: item.strategyLabel || null,
-      riskScore: item.riskScore ?? null,
-      matchReasons: Array.isArray(item.matchReasons) ? item.matchReasons : [],
-      explanation: item.explanation || null
-    });
-  });
-  return {
+  return buildPlanResult(currentPlanItems.value, {
     recommendationMode: currentPlanItems.value[0]?.recommendationMode || latestResult.value?.recommendationMode || scoreForm.recommendationMode,
-    rush: groups.rush,
-    safe: groups.safe,
-    guarantee: groups.guarantee,
     summary: resultSummary.value || `当前方案共选择 ${currentPlanItems.value.length} 条志愿结果。`,
     aiSummary: aiSummary.value || "",
     finalAdvice: finalAdvice.value || "",
     tips: resultTips.value
-  };
-}
-
-function buildPlanItemsFromResult(resultObj) {
-  const groupedData = buildGroupedFromResult(resultObj || {});
-  const items = [];
-  [["rush", groupedData.rush], ["safe", groupedData.safe], ["guarantee", groupedData.guarantee]].forEach(([strategy, list]) => {
-    (list || []).forEach((item) => {
-      const normalized = normalizeItem(item, strategy);
-      items.push({
-        ...normalized,
-        strategy: normalized.strategy || strategy,
-        planKey: buildPlanItemKey(item, normalized.strategy || strategy)
-      });
-    });
   });
-  return items;
-}
-
-function buildPlanPayloadForItems(items, base = {}) {
-  const previousItems = currentPlanItems.value;
-  currentPlanItems.value = items;
-  const payload = buildPlanPayload();
-  currentPlanItems.value = previousItems;
-  return {
-    ...payload,
-    recommendationMode: base.recommendationMode || payload.recommendationMode,
-    summary: `当前方案共选择 ${items.length} 条志愿结果。`,
-    aiSummary: base.aiSummary || payload.aiSummary || "",
-    finalAdvice: base.finalAdvice || payload.finalAdvice || "",
-    tips: Array.isArray(base.tips) ? base.tips : payload.tips
-  };
 }
 
 async function openPlanTargetDialog(items) {
@@ -425,29 +367,20 @@ async function confirmAddToPlan() {
     let parsed = {};
     if (planTargetId.value !== "new") {
       detail = await apiFetch(`/api/plans/${planTargetId.value}`, { method: "GET", headers: getAuthHeaders() });
-      try {
-        parsed = detail?.resultJson ? JSON.parse(detail.resultJson) : {};
-      } catch {
-        parsed = {};
-      }
-      existingItems = buildPlanItemsFromResult(parsed);
+      parsed = parsePlanResult(detail?.resultJson);
+      existingItems = flattenPlanItems(parsed);
     }
 
-    const merged = [...existingItems];
-    let addedCount = 0;
-    pendingPlanItems.value.forEach((item) => {
-      const normalized = normalizeItem(item, item?.strategy);
-      const planKey = buildPlanItemKey(normalized, normalized.strategy);
-      if (merged.some((entry) => buildPlanItemKey(entry, entry.strategy) === planKey)) return;
-      merged.push({ ...normalized, planKey });
-      addedCount += 1;
-    });
+    const { items: merged, addedCount } = mergePlanItems(existingItems, pendingPlanItems.value);
     if (!addedCount) {
       ElMessage.warning("所选结果已在该志愿表中");
       return;
     }
 
-    const payload = buildPlanPayloadForItems(merged, parsed);
+    const payload = buildPlanResult(merged, {
+      ...parsed,
+      summary: `当前方案共选择 ${merged.length} 条志愿结果。`
+    });
     const planName = detail?.planName || planTargetNewName.value.trim();
     const requestBody = {
       planName,
@@ -482,25 +415,7 @@ async function loadCurrentPlanDraft() {
   }
   try {
     const detail = await apiFetch("/api/plans/current", { method: "GET", headers: getAuthHeaders() });
-    let parsed = null;
-    try {
-      parsed = detail?.resultJson ? JSON.parse(detail.resultJson) : null;
-    } catch {
-      parsed = null;
-    }
-    const groupedData = buildGroupedFromResult(parsed || {});
-    const nextItems = [];
-    [["rush", groupedData.rush], ["safe", groupedData.safe], ["guarantee", groupedData.guarantee]].forEach(([strategy, list]) => {
-      (list || []).forEach((item) => {
-        const normalized = normalizeItem(item, strategy);
-        nextItems.push({
-          ...normalized,
-          strategy: normalized.strategy || strategy,
-          planKey: buildPlanItemKey(item, normalized.strategy || strategy)
-        });
-      });
-    });
-    currentPlanItems.value = nextItems;
+    currentPlanItems.value = flattenPlanItems(detail?.resultJson);
     latestSourceType.value = detail?.sourceType || latestSourceType.value;
     latestSourceQuery.value = detail?.sourceQuery || latestSourceQuery.value;
   } catch (ex) {
@@ -942,12 +857,7 @@ async function openHistoryResult(row) {
     historyDetail.value = detail;
     historyResultJson.value = detail?.resultJson || "";
 
-    let parsed = null;
-    try {
-      parsed = detail?.resultJson ? JSON.parse(detail.resultJson) : null;
-    } catch {
-      parsed = null;
-    }
+    const parsed = parsePlanResult(detail?.resultJson);
 
     const groupedData = buildGroupedFromResult(parsed || {});
     historyGrouped.rush = groupedData.rush;
@@ -1029,12 +939,7 @@ async function openPlanDetail(row) {
     planResultJson.value = detail?.resultJson || "";
     planAiSummary.value = detail?.aiSummary || "";
 
-    let parsed = null;
-    try {
-      parsed = detail?.resultJson ? JSON.parse(detail.resultJson) : null;
-    } catch {
-      parsed = null;
-    }
+    const parsed = parsePlanResult(detail?.resultJson);
 
     const groupedData = buildGroupedFromResult(parsed || {});
     planGrouped.rush = groupedData.rush;
@@ -1089,14 +994,12 @@ async function deletePlan(row) {
 
 async function updatePlanDetailItems(items) {
   if (!planDetail.value?.id) return false;
-  let parsed = {};
-  try {
-    parsed = planDetail.value.resultJson ? JSON.parse(planDetail.value.resultJson) : {};
-  } catch {
-    parsed = {};
-  }
+  const parsed = parsePlanResult(planDetail.value.resultJson);
   const normalizedItems = (items || []).map((item) => normalizeItem(item, item?.strategy));
-  const payload = buildPlanPayloadForItems(normalizedItems, parsed);
+  const payload = buildPlanResult(normalizedItems, {
+    ...parsed,
+    summary: `当前方案共选择 ${normalizedItems.length} 条志愿结果。`
+  });
   try {
     const updated = await apiFetch(`/api/plans/${planDetail.value.id}`, {
       method: "PUT",

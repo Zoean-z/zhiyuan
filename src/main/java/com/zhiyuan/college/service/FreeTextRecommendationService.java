@@ -133,7 +133,7 @@ public class FreeTextRecommendationService {
 
     private List<RecommendationItemResponse> filterAndFlatten(RecommendationResponse response, ParsedRequirement parsed) {
         if (response.getRecommendationMode() == RecommendationMode.MAJOR_FIRST) {
-            return filterMajorFirstRecommendations(parsed, response.getUserRank());
+            return filterMajorFirstRecommendations(parsed, response);
         }
         List<RecommendationItemResponse> result = new ArrayList<>();
         if (shouldKeepStrategy(parsed, StrategyType.RUSH)) {
@@ -148,20 +148,17 @@ public class FreeTextRecommendationService {
         return result;
     }
 
-    private List<RecommendationItemResponse> filterMajorFirstRecommendations(ParsedRequirement parsed, Integer userRank) {
+    private List<RecommendationItemResponse> filterMajorFirstRecommendations(ParsedRequirement parsed,
+                                                                              RecommendationResponse firstResponse) {
         List<String> preferredMajors = !parsed.getNormalizedMajors().isEmpty()
                 ? parsed.getNormalizedMajors()
                 : parsed.getMajorKeywords();
         List<RecommendationItemResponse> result = new ArrayList<>();
         List<String> seen = new ArrayList<>();
-        for (String majorKeyword : preferredMajors) {
-            RecommendationRequest request = new RecommendationRequest();
-            request.setScore(parsed.getScore());
-            request.setProvince(parsed.getCandidateProvince());
-            request.setSubjectType(parsed.getSubjectType() == null ? SubjectType.PHYSICS : parsed.getSubjectType());
-            request.setRecommendationMode(RecommendationMode.MAJOR_FIRST);
-            request.setMajorKeyword(majorKeyword);
-            RecommendationResponse response = recommendationService.recommend(request);
+        for (int index = 0; index < preferredMajors.size(); index++) {
+            RecommendationResponse response = index == 0
+                    ? firstResponse
+                    : recommendationService.recommend(buildMajorFirstRequest(parsed, preferredMajors.get(index)));
             List<RecommendationItemResponse> merged = new ArrayList<>();
             if (shouldKeepStrategy(parsed, StrategyType.RUSH)) {
                 merged.addAll(response.getRush());
@@ -181,6 +178,16 @@ public class FreeTextRecommendationService {
             }
         }
         return result;
+    }
+
+    private RecommendationRequest buildMajorFirstRequest(ParsedRequirement parsed, String majorKeyword) {
+        RecommendationRequest request = new RecommendationRequest();
+        request.setScore(parsed.getScore());
+        request.setProvince(parsed.getCandidateProvince());
+        request.setSubjectType(parsed.getSubjectType() == null ? SubjectType.PHYSICS : parsed.getSubjectType());
+        request.setRecommendationMode(RecommendationMode.MAJOR_FIRST);
+        request.setMajorKeyword(majorKeyword);
+        return request;
     }
 
     private List<RecommendationItemResponse> filterItems(List<RecommendationItemResponse> items, ParsedRequirement parsed) {

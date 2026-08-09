@@ -3,10 +3,12 @@ import { ElMessage } from "element-plus";
 import { Document, InfoFilled, Monitor, Promotion, School, User } from "@element-plus/icons-vue";
 import { computed, nextTick, onMounted, ref, watch } from "vue";
 import {
-  buildGroupedFromResult,
-  buildPlanItemKey,
+  buildPlanResult,
+  flattenPlanItems,
   formatDateTime,
-  normalizeItem
+  mergePlanItems,
+  normalizeItem,
+  parsePlanResult
 } from "../utils/recommendation";
 import { UI_TEXT, createHttpError, normalizeUserError } from "../utils/ui";
 
@@ -38,6 +40,8 @@ const addNewPlanName = ref("");
 const pendingAddItem = ref(null);
 const createPlanDialogVisible = ref(false);
 const createPlanName = ref("");
+let activePlanLoadVersion = 0;
+let conversationLoadVersion = 0;
 
 const quickPrompts = [
   { label: "帮我看看我的画像信息", icon: User },
@@ -79,68 +83,8 @@ function resolveErrorMessage(ex, fallback) {
 }
 
 function parsePlanDetail(detail) {
-  let parsed = {};
-  try {
-    parsed = detail?.resultJson ? JSON.parse(detail.resultJson) : {};
-  } catch {
-    parsed = {};
-  }
+  const parsed = parsePlanResult(detail?.resultJson);
   return { parsed, items: flattenPlanItems(parsed) };
-}
-
-function flattenPlanItems(resultObj) {
-  const grouped = buildGroupedFromResult(resultObj || {});
-  const items = [];
-  [["rush", grouped.rush], ["safe", grouped.safe], ["guarantee", grouped.guarantee]].forEach(([strategy, list]) => {
-    (list || []).forEach((item) => {
-      const normalized = normalizeItem(item, strategy);
-      items.push({ ...normalized, strategy: normalized.strategy || strategy, planKey: buildPlanItemKey(item, strategy) });
-    });
-  });
-  return items;
-}
-
-function buildPlanResult(items, base = {}) {
-  const groups = { rush: [], safe: [], guarantee: [] };
-  (items || []).forEach((item) => {
-    const normalized = normalizeItem(item, item?.strategy);
-    const group = ["rush", "safe", "guarantee"].includes(normalized.strategy) ? normalized.strategy : "safe";
-    groups[group].push({
-      recommendationMode: normalized.recommendationMode,
-      universityId: normalized.universityId ?? null,
-      universityName: normalized.universityName,
-      majorName: normalized.majorName || null,
-      universityProvince: normalized.universityProvince || null,
-      universityTier: normalized.universityTier || null,
-      is985: normalized.is985 === true,
-      is211: normalized.is211 === true,
-      isDoubleFirstClass: normalized.isDoubleFirstClass === true,
-      schoolTags: Array.isArray(normalized.schoolTags) ? normalized.schoolTags : [],
-      universityTags: normalized.universityTags || null,
-      cutoffScore: normalized.cutoffScore ?? null,
-      scoreGap: normalized.scoreGap ?? null,
-      userRank: normalized.userRank ?? null,
-      minRank: normalized.minRank ?? null,
-      rankGap: normalized.rankGap ?? null,
-      recommendationBasis: normalized.recommendationBasis || null,
-      admissionProbability: normalized.admissionProbability ?? null,
-      strategy: group.toUpperCase(),
-      strategyLabel: normalized.strategyLabel || null,
-      riskScore: normalized.riskScore ?? null,
-      matchReasons: Array.isArray(normalized.matchReasons) ? normalized.matchReasons : [],
-      explanation: normalized.explanation || null
-    });
-  });
-  return {
-    recommendationMode: base.recommendationMode || items?.[0]?.recommendationMode || "SCHOOL_FIRST",
-    rush: groups.rush,
-    safe: groups.safe,
-    guarantee: groups.guarantee,
-    summary: `当前方案共选择 ${items.length} 条志愿结果。`,
-    aiSummary: base.aiSummary || "",
-    finalAdvice: base.finalAdvice || "",
-    tips: Array.isArray(base.tips) ? base.tips : []
-  };
 }
 
 async function loadPlans(preferredId = activePlanId.value) {
@@ -159,16 +103,20 @@ async function loadPlans(preferredId = activePlanId.value) {
 }
 
 async function loadActivePlan() {
-  if (!activePlanId.value) {
+  const requestedId = activePlanId.value;
+  const loadVersion = ++activePlanLoadVersion;
+  if (!requestedId) {
     activePlanDetail.value = null;
     activePlanItems.value = [];
     return;
   }
   try {
-    const detail = await apiFetch(`/api/plans/${activePlanId.value}`, { headers: getAuthHeaders() });
+    const detail = await apiFetch(`/api/plans/${requestedId}`, { headers: getAuthHeaders() });
+    if (loadVersion !== activePlanLoadVersion || String(activePlanId.value) !== String(requestedId)) return;
     activePlanDetail.value = detail;
     activePlanItems.value = parsePlanDetail(detail).items;
   } catch (ex) {
+    if (loadVersion !== activePlanLoadVersion || String(activePlanId.value) !== String(requestedId)) return;
     activePlanDetail.value = null;
     activePlanItems.value = [];
     ElMessage.error(resolveErrorMessage(ex, "加载当前志愿表失败"));
@@ -192,7 +140,6 @@ async function createEmptyPlan() {
     createPlanDialogVisible.value = false;
     createPlanName.value = "";
     await loadPlans(saved.id);
-    await loadActivePlan();
     ElMessage.success(`已创建《${saved.planName}》`);
   } catch (ex) {
     ElMessage.error(resolveErrorMessage(ex, "创建志愿表失败"));
@@ -222,6 +169,7 @@ async function createConversation(title = "新的志愿对话") {
       headers: getAuthHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify({ title })
     });
+    conversationLoadVersion += 1;
     activeConversationId.value = detail.id;
     messages.value = Array.isArray(detail.messages) ? detail.messages : [];
     await loadConversations();
@@ -233,16 +181,20 @@ async function createConversation(title = "新的志愿对话") {
 }
 
 async function openConversation(id) {
+  const loadVersion = ++conversationLoadVersion;
+  activeConversationId.value = id;
   conversationLoading.value = true;
   try {
     const detail = await apiFetch(`/api/agent/conversations/${id}`, { headers: getAuthHeaders() });
+    if (loadVersion !== conversationLoadVersion || String(activeConversationId.value) !== String(id)) return;
     activeConversationId.value = detail.id;
     messages.value = Array.isArray(detail.messages) ? detail.messages : [];
     await scrollMessagesToBottom();
   } catch (ex) {
+    if (loadVersion !== conversationLoadVersion || String(activeConversationId.value) !== String(id)) return;
     ElMessage.error(resolveErrorMessage(ex, "加载对话失败"));
   } finally {
-    conversationLoading.value = false;
+    if (loadVersion === conversationLoadVersion) conversationLoading.value = false;
   }
 }
 
@@ -336,13 +288,15 @@ async function confirmAddItem() {
       detail = await apiFetch(`/api/plans/${addTargetPlanId.value}`, { headers: getAuthHeaders() });
       ({ parsed, items } = parsePlanDetail(detail));
     }
-    const key = buildPlanItemKey(pendingAddItem.value, pendingAddItem.value.strategy);
-    if (items.some((item) => buildPlanItemKey(item, item.strategy) === key)) {
+    const { items: mergedItems, addedCount } = mergePlanItems(items, [pendingAddItem.value]);
+    if (!addedCount) {
       ElMessage.warning("该结果已在目标志愿表中");
       return;
     }
-    items.push(pendingAddItem.value);
-    const result = buildPlanResult(items, parsed);
+    const result = buildPlanResult(mergedItems, {
+      ...parsed,
+      summary: `当前方案共选择 ${mergedItems.length} 条志愿结果。`
+    });
     const body = {
       planName: detail?.planName || addNewPlanName.value.trim(),
       sourceType: detail?.sourceType || "score",
@@ -371,7 +325,6 @@ watch(activePlanId, loadActivePlan);
 onMounted(async () => {
   await Promise.all([loadPlans(), loadConversations()]);
   if (!conversations.value.length) await createConversation();
-  await loadActivePlan();
 });
 </script>
 

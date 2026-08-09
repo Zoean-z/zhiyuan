@@ -199,6 +199,107 @@ export function buildGroupedFromResult(resultObj) {
   return { rush: [], safe: [], guarantee: [] };
 }
 
+export function parsePlanResult(value) {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    return value;
+  }
+  if (typeof value !== "string" || !value.trim()) {
+    return {};
+  }
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+export function flattenPlanItems(value) {
+  const grouped = buildGroupedFromResult(parsePlanResult(value));
+  const items = [];
+  [["rush", grouped.rush], ["safe", grouped.safe], ["guarantee", grouped.guarantee]].forEach(([strategy, list]) => {
+    (list || []).forEach((item) => {
+      const normalized = normalizeItem(item, strategy);
+      const resolvedStrategy = normalized.strategy || strategy;
+      items.push({
+        ...normalized,
+        strategy: resolvedStrategy,
+        planKey: buildPlanItemKey(normalized, resolvedStrategy)
+      });
+    });
+  });
+  return items;
+}
+
+function serializePlanItem(item, fallbackStrategy) {
+  const normalized = normalizeItem(item, fallbackStrategy);
+  const strategy = ["rush", "safe", "guarantee"].includes(normalized.strategy)
+    ? normalized.strategy
+    : "safe";
+  return {
+    strategy,
+    value: {
+      recommendationMode: normalized.recommendationMode,
+      universityId: normalized.universityId ?? null,
+      universityName: normalized.universityName,
+      majorName: normalized.majorName || null,
+      universityProvince: normalized.universityProvince || null,
+      universityTier: normalized.universityTier || null,
+      is985: normalized.is985 === true,
+      is211: normalized.is211 === true,
+      isDoubleFirstClass: normalized.isDoubleFirstClass === true,
+      schoolTags: Array.isArray(normalized.schoolTags) ? [...normalized.schoolTags] : [],
+      universityTags: normalized.universityTags || null,
+      cutoffScore: normalized.cutoffScore ?? null,
+      scoreGap: normalized.scoreGap ?? null,
+      userRank: normalized.userRank ?? null,
+      minRank: normalized.minRank ?? null,
+      rankGap: normalized.rankGap ?? null,
+      recommendationBasis: normalized.recommendationBasis || null,
+      admissionProbability: normalized.admissionProbability ?? null,
+      strategy: strategy.toUpperCase(),
+      strategyLabel: normalized.strategyLabel || null,
+      riskScore: normalized.riskScore ?? null,
+      matchReasons: Array.isArray(normalized.matchReasons) ? [...normalized.matchReasons] : [],
+      explanation: normalized.explanation || null
+    }
+  };
+}
+
+export function buildPlanResult(items, base = {}) {
+  const sourceItems = Array.isArray(items) ? items : [];
+  const groups = { rush: [], safe: [], guarantee: [] };
+  sourceItems.forEach((item) => {
+    const serialized = serializePlanItem(item, item?.strategy);
+    groups[serialized.strategy].push(serialized.value);
+  });
+  return {
+    recommendationMode: base.recommendationMode || sourceItems[0]?.recommendationMode || "SCHOOL_FIRST",
+    rush: groups.rush,
+    safe: groups.safe,
+    guarantee: groups.guarantee,
+    summary: base.summary || `当前方案共选择 ${sourceItems.length} 条志愿结果。`,
+    aiSummary: base.aiSummary || "",
+    finalAdvice: base.finalAdvice || "",
+    tips: Array.isArray(base.tips) ? [...base.tips] : []
+  };
+}
+
+export function mergePlanItems(existingItems, incomingItems) {
+  const items = flattenPlanItems(buildPlanResult(existingItems || []));
+  const seen = new Set(items.map((item) => buildPlanItemKey(item, item.strategy)));
+  let addedCount = 0;
+  (incomingItems || []).forEach((item) => {
+    const normalized = normalizeItem(item, item?.strategy);
+    const planKey = buildPlanItemKey(normalized, normalized.strategy);
+    if (seen.has(planKey)) return;
+    seen.add(planKey);
+    items.push({ ...normalized, planKey });
+    addedCount += 1;
+  });
+  return { items, addedCount };
+}
+
 export function queryTypeLabel(type) {
   return type === "score" ? "分数查询" : type === "text" ? "文本查询" : "未知";
 }

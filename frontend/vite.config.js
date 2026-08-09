@@ -2,7 +2,7 @@ import { resolve } from "node:path";
 import { defineConfig } from "vite";
 import vue from "@vitejs/plugin-vue";
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   plugins: [vue()],
   server: {
     host: "0.0.0.0",
@@ -15,7 +15,9 @@ export default defineConfig({
     }
   },
   build: {
-    outDir: resolve(__dirname, "../src/main/resources/static"),
+    outDir: mode === "mock"
+      ? resolve(__dirname, "dist-mock")
+      : resolve(__dirname, "../src/main/resources/static"),
     emptyOutDir: true
   }
-});
+}));

@@ -3,9 +3,13 @@
   "private": true,
   "version": "0.0.1",
   "type": "module",
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0"
+  },
   "scripts": {
     "dev": "vite",
     "dev:mock": "vite --mode mock",
+    "test": "node --test src/utils/recommendation.test.js src/utils/mock.test.js",
     "build": "vite build",
     "build:mock": "vite build --mode mock",
     "preview": "vite preview"

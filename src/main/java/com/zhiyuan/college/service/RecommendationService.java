@@ -67,79 +67,11 @@ public class RecommendationService {
     }
 
     private RecommendationResponse recommendSchoolFirst(RecommendationRequest request) {
-
         List<AdmissionCutoffWithUniversity> cutoffs = admissionCutoffMapper.findLatestByProvinceAndSubject(
                 request.getProvince(), request.getSubjectType().getDbValue());
         Integer userRank = scoreRankMappingService.resolveUserRank(
                 request.getProvince(), request.getSubjectType().getDbValue(), request.getScore());
-
-        List<RecommendationItemResponse> rush = new ArrayList<>();
-        List<RecommendationItemResponse> safe = new ArrayList<>();
-        List<RecommendationItemResponse> guarantee = new ArrayList<>();
-
-        for (AdmissionCutoffWithUniversity cutoff : cutoffs) {
-            RecommendationDecision decision = recommendationPolicyService.evaluate(request.getScore(), userRank, cutoff);
-            if (decision == null) {
-                continue;
-            }
-            RecommendationItemResponse item = new RecommendationItemResponse(
-                    RecommendationMode.SCHOOL_FIRST,
-                    cutoff.getUniversityId(),
-                    cutoff.getUniversityName(),
-                    null,
-                    cutoff.getUniversityProvince(),
-                    cutoff.getUniversityTier(),
-                    cutoff.getIs985(),
-                    cutoff.getIs211(),
-                    cutoff.getIsDoubleFirstClass(),
-                    UniversityTagUtils.buildSchoolTags(
-                            cutoff.getIs985(),
-                            cutoff.getIs211(),
-                            cutoff.getIsDoubleFirstClass(),
-                            cutoff.getUniversityTier()),
-                    cutoff.getUniversityTags(),
-                    cutoff.getCutoffScore(),
-                    decision.scoreGap(),
-                    decision.userRank(),
-                    decision.minRank(),
-                    decision.rankGap(),
-                    decision.admissionProbability(),
-                    decision.recommendationBasis(),
-                    decision.strategy().name(),
-                    null,
-                    null,
-                    null,
-                    null
-            );
-            switch (decision.strategy()) {
-                case RUSH -> rush.add(item);
-                case SAFE -> safe.add(item);
-                case GUARANTEE -> guarantee.add(item);
-            }
-        }
-
-        sortAndLimit(rush);
-        sortAndLimit(safe);
-        sortAndLimit(guarantee);
-
-        aiExplanationService.enrichItems(request, rush);
-        aiExplanationService.enrichItems(request, safe);
-        aiExplanationService.enrichItems(request, guarantee);
-
-        int total = rush.size() + safe.size() + guarantee.size();
-        String summary = aiExplanationService.buildSummary(request, total, userRank, hasRankBasedItem(rush, safe, guarantee));
-        List<String> tips = recommendationHintService.buildTips(request, total);
-
-        return new RecommendationResponse(
-                UUID.randomUUID().toString(),
-                RecommendationMode.SCHOOL_FIRST,
-                userRank,
-                rush,
-                safe,
-                guarantee,
-                summary,
-                tips
-        );
+        return buildResponse(request, RecommendationMode.SCHOOL_FIRST, cutoffs, userRank);
     }
 
     private RecommendationResponse recommendMajorFirst(RecommendationRequest request) {
@@ -154,6 +86,13 @@ public class RecommendationService {
         Integer userRank = scoreRankMappingService.resolveUserRank(
                 request.getProvince(), request.getSubjectType().getDbValue(), request.getScore());
 
+        return buildResponse(request, RecommendationMode.MAJOR_FIRST, cutoffs, userRank);
+    }
+
+    private RecommendationResponse buildResponse(RecommendationRequest request,
+                                                  RecommendationMode mode,
+                                                  List<AdmissionCutoffWithUniversity> cutoffs,
+                                                  Integer userRank) {
         List<RecommendationItemResponse> rush = new ArrayList<>();
         List<RecommendationItemResponse> safe = new ArrayList<>();
         List<RecommendationItemResponse> guarantee = new ArrayList<>();
@@ -164,10 +103,10 @@ public class RecommendationService {
                 continue;
             }
             RecommendationItemResponse item = new RecommendationItemResponse(
-                    RecommendationMode.MAJOR_FIRST,
+                    mode,
                     cutoff.getUniversityId(),
                     cutoff.getUniversityName(),
-                    cutoff.getMajorName(),
+                    mode == RecommendationMode.MAJOR_FIRST ? cutoff.getMajorName() : null,
                     cutoff.getUniversityProvince(),
                     cutoff.getUniversityTier(),
                     cutoff.getIs985(),
@@ -213,7 +152,7 @@ public class RecommendationService {
 
         return new RecommendationResponse(
                 UUID.randomUUID().toString(),
-                RecommendationMode.MAJOR_FIRST,
+                mode,
                 userRank,
                 rush,
                 safe,

@@ -115,7 +115,7 @@
 ### 前置条件
 
 - **Java 17+**
-- **Node.js 18+** 和 npm
+- **Node.js 20.19+**（或 22.12+）和 npm
 - **MySQL 8**（或使用 Docker）
 - **Maven**（项目自带 Maven Wrapper `mvnw`/`mvnw.cmd`）
 
@@ -158,7 +158,7 @@ docker run -d --name zhiyuan-mysql `
 
 ```powershell
 cd frontend
-npm install
+npm ci
 npm run dev
 ```
 
@@ -174,7 +174,7 @@ npm run dev
 
 ```powershell
 cd frontend
-npm install
+npm ci
 npm run dev:mock
 ```
 
@@ -207,16 +207,11 @@ Mock 管理操作只保存在当前页面会话内存中，刷新页面后会恢
 
 ### 4. 构建前端并交给后端托管
 
-**重要：前端构建后需要将产物复制到 Spring Boot 的静态资源目录才能被正确加载。**
+生产构建会直接将产物写入 Spring Boot 的 `src/main/resources/static`；Mock 构建则隔离在 `frontend/dist-mock`，不会覆盖生产快照。
 
 ```powershell
 cd frontend
 npm run build
-
-# 将构建产物复制到 Spring Boot 静态资源目录
-Copy-Item -Path ..\src\main\resources\static\index.html -Destination ..\target\classes\static\index.html -Force
-Copy-Item -Path ..\src\main\resources\static\assets\*.js -Destination ..\target\classes\static\assets\ -Force
-Copy-Item -Path ..\src\main\resources\static\assets\*.css -Destination ..\target\classes\static\assets\ -Force
 ```
 
 然后重新启动后端即可通过 `http://localhost:8080` 访问完整页面。
@@ -246,6 +241,8 @@ Copy-Item .env.example .env
 - `AUTH_JWT_SECRET`
 - `QWEN_ENABLED`
 - `QWEN_API_KEY`
+
+`AUTH_JWT_SECRET` 没有默认值，必须设置为 Base64 编码的随机密钥，解码后至少 32 字节；未设置或为空时 Compose 会拒绝启动，避免误用仓库公开密钥。
 
 没有配置 AI Key 时保持 `QWEN_ENABLED=false`，系统仍可使用本地规则完成登录、推荐、志愿表和 Agent 基础工具流程；填入有效 Key 后再改为 `true`。
 

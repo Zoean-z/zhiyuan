@@ -1,5 +1,7 @@
 package com.zhiyuan.college.service;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.zhiyuan.college.mapper.ApplicationPlanMapper;
 import com.zhiyuan.college.model.dto.ApplicationPlanCreateRequest;
@@ -20,9 +22,12 @@ public class ApplicationPlanService {
     public static final String CURRENT_DRAFT_PLAN_NAME = "当前方案草稿";
 
     private final ApplicationPlanMapper applicationPlanMapper;
+    private final ObjectMapper objectMapper;
 
-    public ApplicationPlanService(ApplicationPlanMapper applicationPlanMapper) {
+    public ApplicationPlanService(ApplicationPlanMapper applicationPlanMapper,
+                                  ObjectMapper objectMapper) {
         this.applicationPlanMapper = applicationPlanMapper;
+        this.objectMapper = objectMapper;
     }
 
     public ApplicationPlanDetailResponse save(Long userId, ApplicationPlanCreateRequest request) {
@@ -32,7 +37,7 @@ public class ApplicationPlanService {
         plan.setPlanName(trimRequired(request.getPlanName(), "planName is required"));
         plan.setSourceType(sourceType);
         plan.setSourceQuery(trimRequired(request.getSourceQuery(), "sourceQuery is required"));
-        plan.setResultJson(trimRequired(request.getResultJson(), "resultJson is required"));
+        plan.setResultJson(normalizeResultJson(request.getResultJson()));
         String aiSummary = trimOptional(request.getAiSummary());
         plan.setAiSummary(aiSummary);
         applicationPlanMapper.insert(plan);
@@ -58,7 +63,7 @@ public class ApplicationPlanService {
         }
         draft.setSourceType(sourceType);
         draft.setSourceQuery(trimRequired(request.getSourceQuery(), "sourceQuery is required"));
-        draft.setResultJson(trimRequired(request.getResultJson(), "resultJson is required"));
+        draft.setResultJson(normalizeResultJson(request.getResultJson()));
         draft.setAiSummary(trimOptional(request.getAiSummary()));
 
         if (draft.getId() == null) {
@@ -98,7 +103,7 @@ public class ApplicationPlanService {
         plan.setPlanName(trimRequired(request.getPlanName(), "planName is required"));
         plan.setSourceType(normalizeSourceType(request.getSourceType()));
         plan.setSourceQuery(trimRequired(request.getSourceQuery(), "sourceQuery is required"));
-        plan.setResultJson(trimRequired(request.getResultJson(), "resultJson is required"));
+        plan.setResultJson(normalizeResultJson(request.getResultJson()));
         plan.setAiSummary(trimOptional(request.getAiSummary()));
         applicationPlanMapper.updateById(plan);
         return toDetailResponse(applicationPlanMapper.selectById(id));
@@ -152,6 +157,33 @@ public class ApplicationPlanService {
 
     private String trimOptional(String value) {
         return value == null ? "" : value.trim();
+    }
+
+    private String normalizeResultJson(String resultJson) {
+        String normalized = trimRequired(resultJson, "resultJson is required");
+        try {
+            JsonNode root = objectMapper.readTree(normalized);
+            if (root == null || !root.isObject()) {
+                throw invalidResultJson();
+            }
+            for (String group : List.of("rush", "safe", "guarantee")) {
+                if (root.has(group) && !root.path(group).isArray()) {
+                    throw invalidResultJson();
+                }
+            }
+            return normalized;
+        } catch (ResponseStatusException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            throw invalidResultJson();
+        }
+    }
+
+    private ResponseStatusException invalidResultJson() {
+        return new ResponseStatusException(
+                HttpStatus.BAD_REQUEST,
+                "resultJson must be a JSON object with array groups"
+        );
     }
 
     private ApplicationPlanRecordResponse toRecordResponse(ApplicationPlan plan) {

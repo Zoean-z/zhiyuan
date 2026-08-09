@@ -526,9 +526,16 @@ public class AgentToolFacade {
                 }
                 return objectNode;
             }
-        } catch (Exception ignored) {
+            throw invalidPlanResultJson();
+        } catch (ResponseStatusException ex) {
+            throw ex;
+        } catch (Exception ex) {
+            throw invalidPlanResultJson();
         }
-        return createEmptyPlanRoot("SCHOOL_FIRST");
+    }
+
+    private ResponseStatusException invalidPlanResultJson() {
+        return new ResponseStatusException(HttpStatus.BAD_REQUEST, "Plan resultJson is invalid");
     }
 
     private ObjectNode createEmptyPlanRoot(String recommendationMode) {

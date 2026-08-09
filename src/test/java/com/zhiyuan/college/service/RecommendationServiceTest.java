@@ -148,6 +148,34 @@ class RecommendationServiceTest {
         verify(recommendationCacheService).cacheRecommendation(eq(request), any(RecommendationResponse.class));
     }
 
+    @Test
+    void recommend_shouldUseSharedPipelineForMajorFirstRecommendations() {
+        RecommendationRequest request = buildSchoolFirstRequest();
+        request.setRecommendationMode(RecommendationMode.MAJOR_FIRST);
+        request.setMajorKeyword("  软件工程  ");
+        AdmissionCutoffWithUniversity cutoff = buildCutoff(
+                4L, "专业大学", "浙江", "双一流", false, false, true, "理工类", 612, 28000);
+        cutoff.setMajorName("软件工程");
+        when(recommendationCacheService.getRecommendation(request)).thenReturn(null);
+        when(scoreRankMappingService.resolveUserRank("浙江", "物理", 620)).thenReturn(26000);
+        when(majorAdmissionCutoffMapper.findLatestByProvinceSubjectAndMajorKeyword(
+                "浙江", "物理", "软件工程")).thenReturn(List.of(cutoff));
+        when(recommendationHintService.buildTips(eq(request), eq(1))).thenReturn(List.of("major-tip"));
+        when(aiExplanationService.buildSummary(request, 1, 26000, true)).thenReturn("major-summary");
+
+        RecommendationResponse response = recommendationService.recommend(request);
+
+        assertEquals("软件工程", request.getMajorKeyword());
+        assertEquals(RecommendationMode.MAJOR_FIRST, response.getRecommendationMode());
+        assertEquals(1, response.getSafe().size());
+        assertEquals("软件工程", response.getSafe().get(0).getMajorName());
+        assertEquals(RecommendationMode.MAJOR_FIRST, response.getSafe().get(0).getRecommendationMode());
+        assertEquals("major-summary", response.getSummary());
+        assertEquals(List.of("major-tip"), response.getTips());
+        verify(admissionCutoffMapper, never()).findLatestByProvinceAndSubject(any(), any());
+        verify(recommendationCacheService).cacheRecommendation(eq(request), any(RecommendationResponse.class));
+    }
+
     private RecommendationRequest buildSchoolFirstRequest() {
         RecommendationRequest request = new RecommendationRequest();
         request.setScore(620);
