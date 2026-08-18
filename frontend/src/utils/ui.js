@@ -31,17 +31,13 @@ export const UI_TEXT = {
     removeFromPlan: "已从当前方案移除",
     clearCurrentPlan: "当前方案已清空",
     savePlan: "保存方案成功",
-    deleteHistory: "删除历史记录成功",
     deletePlan: "删除方案成功"
   },
   failure: {
     register: "注册失败，请稍后重试",
     savePlan: "保存方案失败，请稍后重试",
-    deleteHistory: "删除历史记录失败，请稍后重试",
     deletePlan: "删除方案失败，请稍后重试",
-    loadHistory: "加载历史记录失败，请稍后重试",
     loadPlans: "加载志愿方案失败，请稍后重试",
-    loadHistoryDetail: "加载历史结果失败，请稍后重试",
     loadPlanDetail: "加载方案详情失败，请稍后重试",
     loadSchoolDetail: "加载学校专业失败，请稍后重试",
     queryRecommendation: "查询推荐结果失败，请稍后重试",
@@ -49,7 +45,6 @@ export const UI_TEXT = {
     login: "登录失败，请稍后重试"
   },
   empty: {
-    history: "暂无历史记录",
     plans: "暂无志愿方案",
     currentPlan: "当前方案为空，请从右侧推荐结果中加入条目",
     aiSummary: "暂无 AI 总结",

@@ -2,7 +2,13 @@ import { createRouter, createWebHashHistory } from "vue-router";
 import { isUserProfileComplete, readStoredAuth } from "../utils/recommendation";
 
 const routes = [
-  { path: "/", redirect: "/recommend" },
+  { path: "/", redirect: "/home" },
+  { path: "/home", name: "home", component: () => import("../views/HomeView.vue"), meta: { standalone: true, title: "首页" } },
+  { path: "/schools", name: "schools", component: () => import("../views/SchoolsView.vue"), meta: { standalone: true, title: "查大学" } },
+  { path: "/majors", name: "majors", component: () => import("../views/MajorsView.vue"), meta: { standalone: true, title: "查专业" } },
+  { path: "/majors/:code", name: "major-detail", component: () => import("../views/MajorDetailView.vue"), meta: { standalone: true, title: "专业详情" } },
+  { path: "/news", name: "news", component: () => import("../views/NewsView.vue"), meta: { standalone: true, title: "高考资讯" } },
+  { path: "/news/:id", name: "news-detail", component: () => import("../views/NewsDetailView.vue"), meta: { standalone: true, title: "资讯详情" } },
   {
     path: "/login",
     name: "login",
@@ -17,10 +23,9 @@ const routes = [
   },
   { path: "/recommend", name: "recommend", component: () => import("../views/RecommendationView.vue"), meta: { requiresAuth: true, keepAlive: true, title: "推荐查询" } },
   { path: "/agent", name: "agent", component: () => import("../views/AgentView.vue"), meta: { requiresAuth: true, title: "AI 对话" } },
-  { path: "/history", name: "history", component: () => import("../views/HistoryRecordsView.vue"), meta: { requiresAuth: true, title: "历史记录" } },
   { path: "/plans", name: "plans", component: () => import("../views/PlansView.vue"), meta: { requiresAuth: true, title: "志愿方案" } },
   { path: "/admin", name: "admin", component: () => import("../views/AdminView.vue"), meta: { requiresAuth: true, requiresAdmin: true, title: "用户管理" } },
-  { path: "/:pathMatch(.*)*", redirect: "/recommend" }
+  { path: "/:pathMatch(.*)*", redirect: "/home" }
 ];
 
 const router = createRouter({
@@ -43,11 +48,12 @@ router.beforeEach((to) => {
   if (hasAuth && isAdmin && to.name !== "admin" && !to.meta.guestOnly) {
     return { name: "admin" };
   }
-  if (hasAuth && !isAdmin && !profileComplete && !to.meta.profileSetup) {
+  if (hasAuth && !isAdmin && !profileComplete && to.meta.requiresAuth && !to.meta.profileSetup) {
     const redirect = to.meta.guestOnly ? undefined : to.fullPath;
     return { name: "profile-setup", query: redirect ? { redirect } : {} };
   }
-  if (to.meta.profileSetup && (profileComplete || isAdmin)) {
+  const isProfileEdit = to.meta.profileSetup && to.query.edit === "1";
+  if (to.meta.profileSetup && (isAdmin || (profileComplete && !isProfileEdit))) {
     return { name: isAdmin ? "admin" : "recommend" };
   }
   if (to.meta.guestOnly && hasAuth) {

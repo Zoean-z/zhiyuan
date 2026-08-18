@@ -12,6 +12,16 @@ const section = computed(() => String(route.query.section || "users"));
 const token = computed(() => workspace?.auth?.value?.token || "");
 const currentUsername = computed(() => workspace?.auth?.value?.user?.username || "");
 const loading = ref(false);
+const aiSaving = ref(false);
+const aiConfig = reactive({
+  provider: "openai-compatible",
+  baseUrl: "",
+  model: "",
+  apiKey: "",
+  apiKeyConfigured: false,
+  apiKeyMasked: "",
+  apiKeySource: "none"
+});
 
 const overview = reactive({ totalCount: 0, userCount: 0, adminCount: 0, disabledCount: 0 });
 const users = ref([]);
@@ -175,6 +185,37 @@ async function loadMajors() {
   majorPage.value = 1;
 }
 
+async function loadAiConfig() {
+  const data = await api("/api/admin/ai-config");
+  Object.assign(aiConfig, data || {}, { apiKey: "" });
+}
+
+async function saveAiConfig() {
+  if (!aiConfig.provider.trim() || !aiConfig.baseUrl.trim() || !aiConfig.model.trim()) {
+    ElMessage.warning("请完整填写提供方、接口地址和模型名称");
+    return;
+  }
+  aiSaving.value = true;
+  try {
+    const data = await api("/api/admin/ai-config", {
+      method: "PUT",
+      body: JSON.stringify({
+        provider: aiConfig.provider.trim(),
+        baseUrl: aiConfig.baseUrl.trim(),
+        model: aiConfig.model.trim(),
+        apiKey: aiConfig.apiKey,
+        clearApiKey: false
+      })
+    });
+    Object.assign(aiConfig, data || {}, { apiKey: "" });
+    ElMessage.success("AI 配置已保存，后续请求将直接使用新配置");
+  } catch (error) {
+    ElMessage.error(error.message);
+  } finally {
+    aiSaving.value = false;
+  }
+}
+
 function resetUniversityFilters() {
   universityKeyword.value = "";
   universityTier.value = "";
@@ -307,6 +348,7 @@ async function loadSection() {
     if (section.value === "majors") return await loadMajors();
     if (section.value === "cutoffs") return await loadCutoffs();
     if (section.value === "majorCutoffs") return await loadMajorCutoffs();
+    if (section.value === "ai") return await loadAiConfig();
   } catch (error) {
     ElMessage.error(error.message);
   } finally {
@@ -400,9 +442,47 @@ onMounted(loadSection);
       <section class="admin-table-panel"><el-table v-loading="loading" :data="pagedCutoffs" height="100%"><el-table-column label="院校" min-width="220"><template #default="{ row }">{{ universityName(row.universityId) }}</template></el-table-column><el-table-column prop="admissionYear" label="年份" width="100" /><el-table-column prop="province" label="招生省份" width="130" /><el-table-column label="科类" width="120"><template #default="{ row }">{{ subjectLabel(row.subjectType) }}</template></el-table-column><el-table-column prop="cutoffScore" label="最低分" width="110" /><el-table-column prop="minRank" label="最低位次" width="130" /><el-table-column label="操作" width="90"><template #default="{ row }"><el-button link type="primary" @click="openRecordDialog(row)">编辑</el-button></template></el-table-column></el-table><el-pagination v-model:current-page="cutoffPage" :page-size="pageSize" :total="cutoffs.length" layout="total, prev, pager, next" /></section>
     </template>
 
-    <template v-else>
+    <template v-else-if="section === 'majorCutoffs'">
       <section class="admin-filter-bar admin-filter-bar--records admin-filter-bar--major-cutoff"><label><span>院校</span><el-select v-model="majorCutoffFilters.universityId" filterable clearable placeholder="请选择院校"><el-option v-for="item in universities" :key="item.id" :label="item.name" :value="item.id" /></el-select></label><label><span>专业关键词</span><el-input v-model.trim="majorCutoffFilters.majorKeyword" clearable placeholder="请输入专业关键词" /></label><label><span>年份</span><el-input v-model="majorCutoffFilters.admissionYear" clearable placeholder="请输入年份" /></label><label><span>省份</span><el-input v-model.trim="majorCutoffFilters.province" clearable placeholder="请输入省份" /></label><label><span>科类</span><el-select v-model="majorCutoffFilters.subjectType" clearable placeholder="全部"><el-option label="物理类" value="PHYSICS" /><el-option label="历史类" value="HISTORY" /></el-select></label><div class="admin-filter-actions"><el-button type="primary" @click="loadMajorCutoffs">查询</el-button><el-button @click="resetMajorCutoffFilters">重置</el-button></div><el-button class="admin-create-button" type="primary" @click="openRecordDialog()">新增专业录取线</el-button></section>
       <section class="admin-table-panel"><el-table v-loading="loading" :data="pagedMajorCutoffs" height="100%"><el-table-column label="院校" min-width="190"><template #default="{ row }">{{ universityName(row.universityId) }}</template></el-table-column><el-table-column prop="majorName" label="专业名称" min-width="190" /><el-table-column prop="admissionYear" label="年份" width="90" /><el-table-column prop="province" label="招生省份" width="110" /><el-table-column label="科类" width="110"><template #default="{ row }">{{ subjectLabel(row.subjectType) }}</template></el-table-column><el-table-column prop="cutoffScore" label="最低分" width="100" /><el-table-column prop="minRank" label="最低位次" width="120" /><el-table-column label="操作" width="90"><template #default="{ row }"><el-button link type="primary" @click="openRecordDialog(row)">编辑</el-button></template></el-table-column></el-table><el-pagination v-model:current-page="majorCutoffPage" :page-size="pageSize" :total="majorCutoffs.length" layout="total, prev, pager, next" /></section>
+    </template>
+
+    <template v-else-if="section === 'ai'">
+      <section class="admin-ai-panel" v-loading="loading">
+        <div class="admin-ai-panel__heading">
+          <div>
+            <span class="admin-ai-panel__eyebrow">运行时配置</span>
+            <h2>AI 模型与接口</h2>
+            <p>保存后立即作用于新的 AI 对话和解析请求，无需重启服务。</p>
+          </div>
+          <el-tag :type="aiConfig.apiKeyConfigured ? 'success' : 'warning'" effect="light">
+            {{ aiConfig.apiKeyConfigured ? `密钥已配置 ${aiConfig.apiKeyMasked}` : "尚未配置密钥" }}
+          </el-tag>
+        </div>
+
+        <el-form class="admin-ai-form" label-position="top" @submit.prevent="saveAiConfig">
+          <div class="admin-ai-form__grid">
+            <el-form-item label="提供方标识">
+              <el-input v-model.trim="aiConfig.provider" placeholder="openai-compatible" />
+            </el-form-item>
+            <el-form-item label="模型名称">
+              <el-input v-model.trim="aiConfig.model" placeholder="例如 deepseek-v4-flash" />
+            </el-form-item>
+            <el-form-item class="admin-ai-form__wide" label="OpenAI 兼容接口地址">
+              <el-input v-model.trim="aiConfig.baseUrl" placeholder="https://api.example.com" />
+            </el-form-item>
+            <el-form-item class="admin-ai-form__wide" label="API Key">
+              <el-input v-model="aiConfig.apiKey" type="password" show-password autocomplete="new-password" placeholder="留空则保留当前密钥" />
+            </el-form-item>
+          </div>
+          <div class="admin-ai-form__footer">
+            <div>
+              <p>当前来源：{{ aiConfig.apiKeySource === 'database' ? '管理端数据库配置' : (aiConfig.apiKeySource === 'environment' ? '服务器环境变量' : '未配置') }}。页面和接口不会回显完整密钥。</p>
+            </div>
+            <el-button type="primary" :loading="aiSaving" @click="saveAiConfig">保存 AI 配置</el-button>
+          </div>
+        </el-form>
+      </section>
     </template>
   </main>
 

@@ -5,7 +5,10 @@ import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.zhiyuan.college.model.enums.SubjectType;
+import com.zhiyuan.college.model.enums.ElectiveSubject;
 import com.zhiyuan.college.model.enums.UserRole;
+import java.util.Arrays;
+import java.util.List;
 
 @TableName("users")
 public class UserAccount {
@@ -17,6 +20,8 @@ public class UserAccount {
 
     private String password;
 
+    private String email;
+
     private Integer score;
 
     @TableField("subject_type")
@@ -24,6 +29,9 @@ public class UserAccount {
 
     @TableField("exam_province")
     private String examProvince;
+
+    @TableField("elective_subjects")
+    private String electiveSubjectsValue;
 
     private String role;
 
@@ -59,6 +67,14 @@ public class UserAccount {
         this.password = password;
     }
 
+    public String getEmail() {
+        return email;
+    }
+
+    public void setEmail(String email) {
+        this.email = email;
+    }
+
     public Integer getScore() {
         return score;
     }
@@ -89,6 +105,31 @@ public class UserAccount {
 
     public void setExamProvince(String examProvince) {
         this.examProvince = examProvince;
+    }
+
+    public String getElectiveSubjectsValue() {
+        return electiveSubjectsValue;
+    }
+
+    public void setElectiveSubjectsValue(String electiveSubjects) {
+        this.electiveSubjectsValue = electiveSubjects;
+    }
+
+    public List<ElectiveSubject> getElectiveSubjects() {
+        if (electiveSubjectsValue == null || electiveSubjectsValue.isBlank()) {
+            return List.of();
+        }
+        return Arrays.stream(electiveSubjectsValue.split(","))
+                .map(String::trim)
+                .filter(value -> !value.isBlank())
+                .map(ElectiveSubject::valueOf)
+                .toList();
+    }
+
+    public void setElectiveSubjects(List<ElectiveSubject> electiveSubjects) {
+        this.electiveSubjectsValue = electiveSubjects == null || electiveSubjects.isEmpty()
+                ? null
+                : electiveSubjects.stream().map(Enum::name).distinct().sorted().collect(java.util.stream.Collectors.joining(","));
     }
 
     public String getRoleValue() {

@@ -23,8 +23,6 @@ class ApplicationPlanServiceTest {
         ApplicationPlanService service = new ApplicationPlanService(mapper, new ObjectMapper());
         ApplicationPlanCreateRequest request = new ApplicationPlanCreateRequest();
         request.setPlanName("测试方案");
-        request.setSourceType("score");
-        request.setSourceQuery("测试来源");
         request.setResultJson(resultJson);
 
         ResponseStatusException exception = assertThrows(

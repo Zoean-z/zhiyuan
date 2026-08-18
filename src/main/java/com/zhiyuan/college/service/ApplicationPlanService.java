@@ -17,8 +17,6 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 public class ApplicationPlanService {
 
-    public static final String SOURCE_TYPE_SCORE = "score";
-    public static final String SOURCE_TYPE_TEXT = "text";
     public static final String CURRENT_DRAFT_PLAN_NAME = "当前方案草稿";
 
     private final ApplicationPlanMapper applicationPlanMapper;
@@ -31,12 +29,11 @@ public class ApplicationPlanService {
     }
 
     public ApplicationPlanDetailResponse save(Long userId, ApplicationPlanCreateRequest request) {
-        String sourceType = normalizeSourceType(request.getSourceType());
         ApplicationPlan plan = new ApplicationPlan();
         plan.setUserId(userId);
         plan.setPlanName(trimRequired(request.getPlanName(), "planName is required"));
-        plan.setSourceType(sourceType);
-        plan.setSourceQuery(trimRequired(request.getSourceQuery(), "sourceQuery is required"));
+        plan.setSourceType(null);
+        plan.setSourceQuery(null);
         plan.setResultJson(normalizeResultJson(request.getResultJson()));
         String aiSummary = trimOptional(request.getAiSummary());
         plan.setAiSummary(aiSummary);
@@ -54,15 +51,14 @@ public class ApplicationPlanService {
     }
 
     public ApplicationPlanDetailResponse upsertCurrentDraft(Long userId, ApplicationPlanCreateRequest request) {
-        String sourceType = normalizeSourceType(request.getSourceType());
         ApplicationPlan draft = findCurrentDraftEntity(userId);
         if (draft == null) {
             draft = new ApplicationPlan();
             draft.setUserId(userId);
             draft.setPlanName(CURRENT_DRAFT_PLAN_NAME);
         }
-        draft.setSourceType(sourceType);
-        draft.setSourceQuery(trimRequired(request.getSourceQuery(), "sourceQuery is required"));
+        draft.setSourceType(null);
+        draft.setSourceQuery(null);
         draft.setResultJson(normalizeResultJson(request.getResultJson()));
         draft.setAiSummary(trimOptional(request.getAiSummary()));
 
@@ -101,8 +97,8 @@ public class ApplicationPlanService {
     public ApplicationPlanDetailResponse update(Long userId, Long id, ApplicationPlanCreateRequest request) {
         ApplicationPlan plan = requireOwnedEntity(userId, id);
         plan.setPlanName(trimRequired(request.getPlanName(), "planName is required"));
-        plan.setSourceType(normalizeSourceType(request.getSourceType()));
-        plan.setSourceQuery(trimRequired(request.getSourceQuery(), "sourceQuery is required"));
+        plan.setSourceType(null);
+        plan.setSourceQuery(null);
         plan.setResultJson(normalizeResultJson(request.getResultJson()));
         plan.setAiSummary(trimOptional(request.getAiSummary()));
         applicationPlanMapper.updateById(plan);
@@ -131,17 +127,6 @@ public class ApplicationPlanService {
                 .eq(ApplicationPlan::getPlanName, CURRENT_DRAFT_PLAN_NAME)
                 .last("LIMIT 1");
         return applicationPlanMapper.selectOne(wrapper);
-    }
-
-    private String normalizeSourceType(String sourceType) {
-        if (sourceType == null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "sourceType is required");
-        }
-        String normalized = sourceType.trim().toLowerCase();
-        if (SOURCE_TYPE_SCORE.equals(normalized) || SOURCE_TYPE_TEXT.equals(normalized)) {
-            return normalized;
-        }
-        throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "sourceType must be score or text");
     }
 
     private boolean isCurrentDraft(String planName) {
@@ -190,8 +175,6 @@ public class ApplicationPlanService {
         return new ApplicationPlanRecordResponse(
                 plan.getId(),
                 plan.getPlanName(),
-                plan.getSourceType(),
-                plan.getSourceQuery(),
                 plan.getResultJson(),
                 plan.getCreatedAt());
     }
@@ -200,8 +183,6 @@ public class ApplicationPlanService {
         return new ApplicationPlanDetailResponse(
                 plan.getId(),
                 plan.getPlanName(),
-                plan.getSourceType(),
-                plan.getSourceQuery(),
                 plan.getResultJson(),
                 plan.getAiSummary(),
                 plan.getCreatedAt());

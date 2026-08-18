@@ -3,6 +3,13 @@ export const SUBJECT_OPTIONS = [
   { value: "HISTORY", label: "历史" }
 ];
 
+export const ELECTIVE_SUBJECT_OPTIONS = [
+  { value: "CHEMISTRY", label: "化学" },
+  { value: "BIOLOGY", label: "生物" },
+  { value: "POLITICS", label: "政治" },
+  { value: "GEOGRAPHY", label: "地理" }
+];
+
 export const RECOMMENDATION_MODE_OPTIONS = [
   { value: "SCHOOL_FIRST", label: "学校优先" },
   { value: "MAJOR_FIRST", label: "专业优先" }
@@ -32,6 +39,8 @@ export function isUserProfileComplete(user) {
     && user.score !== ""
     && user.subjectType
     && user.examProvince
+    && Array.isArray(user.electiveSubjects)
+    && new Set(user.electiveSubjects).size === 2
   );
 }
 
@@ -116,11 +125,20 @@ export function normalizeItem(item, fallbackStrategy) {
     ? Math.max(0, Math.min(100, 100 - Number(riskScore)))
     : storedProbability;
   const schoolTagModel = normalizeSchoolTags(item);
+  const rawObeyAdjustment = pickValue(item, ["obeyAdjustment", "adjust", "acceptAdjustment"]);
+  const obeyAdjustment = rawObeyAdjustment == null
+    ? true
+    : ![false, 0, "0", "false", "no", "否", "不服从"].includes(
+        typeof rawObeyAdjustment === "string" ? rawObeyAdjustment.trim().toLowerCase() : rawObeyAdjustment
+      );
   return {
     recommendationMode,
     universityId: pickValue(item, ["universityId", "schoolId", "id"]),
     universityName: pickValue(item, ["universityName", "schoolName", "name"]) || "未知院校",
     majorName: pickValue(item, ["majorName", "major", "specialtyName"]) || "",
+    professionalGroupCode: pickValue(item, ["professionalGroupCode", "groupCode"]) || "",
+    professionalGroupName: pickValue(item, ["professionalGroupName", "groupName"]) || "",
+    subjectRequirements: pickValue(item, ["subjectRequirements", "subjectRequirement"]) || "",
     universityProvince: pickValue(item, ["universityProvince", "province"]),
     universityTier: pickValue(item, ["universityTier", "tier"]),
     is985: schoolTagModel.is985,
@@ -139,8 +157,49 @@ export function normalizeItem(item, fallbackStrategy) {
     strategyLabel: pickValue(item, ["strategyLabel"]) || strategyLabel(strategy),
     riskScore,
     matchReasons: Array.isArray(pickValue(item, ["matchReasons"])) ? pickValue(item, ["matchReasons"]) : [],
-    explanation: pickValue(item, ["explanation"])
+    explanation: pickValue(item, ["explanation"]),
+    obeyAdjustment
   };
+}
+
+export function buildPlanSchoolKey(item) {
+  const model = normalizeItem(item, item?.strategy);
+  const id = model.universityId == null ? "" : String(model.universityId).trim();
+  const name = String(model.universityName || "").trim().toLowerCase();
+  return id ? `id:${id}` : `name:${name}`;
+}
+
+export function groupPlanItemsBySchool(items) {
+  const groups = [];
+  const index = new Map();
+  (items || []).forEach((item) => {
+    const normalized = normalizeItem(item, item?.strategy);
+    const schoolKey = buildPlanSchoolKey(normalized);
+    let group = index.get(schoolKey);
+    if (!group) {
+      group = {
+        schoolKey,
+        universityId: normalized.universityId,
+        universityName: normalized.universityName,
+        universityProvince: normalized.universityProvince,
+        universityTier: normalized.universityTier,
+        schoolTags: normalized.schoolTags,
+        strategy: normalized.strategy,
+        admissionProbability: normalized.admissionProbability,
+        obeyAdjustment: normalized.obeyAdjustment !== false,
+        items: [],
+        majors: []
+      };
+      index.set(schoolKey, group);
+      groups.push(group);
+    }
+    group.items.push(normalized);
+    group.obeyAdjustment = group.obeyAdjustment && normalized.obeyAdjustment !== false;
+    if (normalized.majorName && !group.majors.includes(normalized.majorName)) {
+      group.majors.push(normalized.majorName);
+    }
+  });
+  return groups;
 }
 
 export function buildPlanItemKey(item, fallbackStrategy) {
@@ -149,6 +208,7 @@ export function buildPlanItemKey(item, fallbackStrategy) {
     model.recommendationMode || "SCHOOL_FIRST",
     model.universityId ?? "",
     String(model.universityName || "").trim().toLowerCase(),
+    String(model.professionalGroupCode || "").trim().toLowerCase(),
     String(model.majorName || "").trim().toLowerCase(),
     model.strategy || normalizeStrategy(fallbackStrategy)
   ].join("::");
@@ -243,6 +303,9 @@ function serializePlanItem(item, fallbackStrategy) {
       universityId: normalized.universityId ?? null,
       universityName: normalized.universityName,
       majorName: normalized.majorName || null,
+      professionalGroupCode: normalized.professionalGroupCode || null,
+      professionalGroupName: normalized.professionalGroupName || null,
+      subjectRequirements: normalized.subjectRequirements || null,
       universityProvince: normalized.universityProvince || null,
       universityTier: normalized.universityTier || null,
       is985: normalized.is985 === true,
@@ -261,7 +324,8 @@ function serializePlanItem(item, fallbackStrategy) {
       strategyLabel: normalized.strategyLabel || null,
       riskScore: normalized.riskScore ?? null,
       matchReasons: Array.isArray(normalized.matchReasons) ? [...normalized.matchReasons] : [],
-      explanation: normalized.explanation || null
+      explanation: normalized.explanation || null,
+      obeyAdjustment: normalized.obeyAdjustment !== false
     }
   };
 }
@@ -318,6 +382,18 @@ export function sourceTypeTag(type) {
 
 export function subjectTypeLabel(type) {
   return SUBJECT_OPTIONS.find((item) => item.value === type)?.label || type || "-";
+}
+
+export function electiveSubjectLabel(type) {
+  return ELECTIVE_SUBJECT_OPTIONS.find((item) => item.value === type)?.label || type || "-";
+}
+
+export function electiveSubjectsLabel(subjects) {
+  const values = Array.isArray(subjects) ? subjects : [];
+  return ELECTIVE_SUBJECT_OPTIONS
+    .filter((option) => values.includes(option.value))
+    .map((option) => option.label)
+    .join("");
 }
 
 export function recommendationModeLabel(mode) {

@@ -15,6 +15,39 @@ async function request(path, options = {}) {
 }
 
 test("mock mode honors the free-text, plan, school-detail, and conversation contracts", async () => {
+  const adminLogin = await request("/api/auth/admin/login", {
+    method: "POST",
+    body: JSON.stringify({ username: "admin", password: "admin123" })
+  });
+  assert.equal(adminLogin.data.role, "ADMIN");
+
+  const registration = await request("/api/auth/register", {
+    method: "POST",
+    body: JSON.stringify({
+      username: "registered-user",
+      password: "123456",
+      sliderVerified: true
+    })
+  });
+  assert.equal(registration.data.username, "registered-user");
+
+  const unverifiedRegistration = await request("/api/auth/register", {
+    method: "POST",
+    body: JSON.stringify({ username: "unverified-user", password: "123456", sliderVerified: false })
+  });
+  assert.equal(unverifiedRegistration.response.status, 400);
+
+  const profile = await request("/api/auth/profile", {
+    method: "POST",
+    body: JSON.stringify({
+      score: 632,
+      subjectType: "PHYSICS",
+      examProvince: "浙江",
+      electiveSubjects: ["CHEMISTRY", "GEOGRAPHY"]
+    })
+  });
+  assert.deepEqual(profile.data.electiveSubjects, ["CHEMISTRY", "GEOGRAPHY"]);
+
   const freeText = await request("/api/recommendations/free-text", {
     method: "POST",
     body: JSON.stringify({ requirementText: "浙江物理630分，推荐计算机" })
@@ -38,6 +71,9 @@ test("mock mode honors the free-text, plan, school-detail, and conversation cont
   const school = await request("/api/recommendations/schools/3/majors?province=浙江&subjectType=PHYSICS");
   assert.equal(school.data.universityName, "浙江大学");
   assert.ok(Array.isArray(school.data.majors));
+  assert.equal(school.data.majors[0].professionalGroupCode, "301");
+  assert.equal(school.data.majors[0].primarySubject, "PHYSICS");
+  assert.equal(school.data.majors[0].electiveSubjects, "CHEMISTRY");
 
   const created = await request("/api/agent/conversations", {
     method: "POST",

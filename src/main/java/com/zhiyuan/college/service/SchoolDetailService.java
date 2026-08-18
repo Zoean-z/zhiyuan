@@ -30,7 +30,9 @@ public class SchoolDetailService {
 
         List<SchoolMajorItemResponse> majors = queryMajors(
                 """
-                SELECT COALESCE(maj.name, mac.major_name) AS major_name, mac.cutoff_score, mac.min_rank
+                SELECT COALESCE(maj.name, mac.major_name) AS major_name, mac.cutoff_score, mac.min_rank,
+                       mac.professional_group_code, mac.professional_group_name,
+                       mac.primary_subject, mac.elective_subjects
                 FROM major_admission_cutoff mac
                 LEFT JOIN major maj ON maj.id = mac.major_id
                 WHERE mac.university_id = ?
@@ -51,7 +53,9 @@ public class SchoolDetailService {
         if (majors.isEmpty()) {
             majors = queryMajors(
                     """
-                    SELECT COALESCE(maj.name, mac.major_name) AS major_name, mac.cutoff_score, mac.min_rank
+                    SELECT COALESCE(maj.name, mac.major_name) AS major_name, mac.cutoff_score, mac.min_rank,
+                           mac.professional_group_code, mac.professional_group_name,
+                           mac.primary_subject, mac.elective_subjects
                     FROM major_admission_cutoff mac
                     LEFT JOIN major maj ON maj.id = mac.major_id
                     WHERE mac.university_id = ?
@@ -98,7 +102,11 @@ public class SchoolDetailService {
                 (rs, rowNum) -> new SchoolMajorItemResponse(
                         rs.getString("major_name"),
                         (Integer) rs.getObject("cutoff_score"),
-                        (Integer) rs.getObject("min_rank")),
+                        (Integer) rs.getObject("min_rank"),
+                        rs.getString("professional_group_code"),
+                        rs.getString("professional_group_name"),
+                        rs.getString("primary_subject"),
+                        rs.getString("elective_subjects")),
                 args
         );
     }

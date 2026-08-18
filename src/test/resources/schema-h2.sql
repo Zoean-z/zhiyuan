@@ -6,20 +6,40 @@ CREATE TABLE university (
   is_985 BOOLEAN NOT NULL DEFAULT FALSE,
   is_211 BOOLEAN NOT NULL DEFAULT FALSE,
   is_double_first_class BOOLEAN NOT NULL DEFAULT FALSE,
+  city VARCHAR(64),
+  nature VARCHAR(32),
+  belong VARCHAR(120),
+  logo_id INT,
   tags VARCHAR(255)
 );
 
 CREATE TABLE major (
   id BIGINT PRIMARY KEY AUTO_INCREMENT,
   name VARCHAR(120) NOT NULL,
+  major_code VARCHAR(16),
   category VARCHAR(64),
+  subcategory VARCHAR(64),
+  duration VARCHAR(32),
   degree_type VARCHAR(64),
+  gender_ratio VARCHAR(16),
+  average_salary VARCHAR(32),
+  popularity INT,
+  employment_directions VARCHAR(512),
+  demo_data BOOLEAN NOT NULL DEFAULT FALSE,
   tags VARCHAR(255),
   subject_requirement VARCHAR(255),
   description CLOB,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT uk_major_name UNIQUE (name)
+);
+
+CREATE TABLE major_offering (
+  major_id BIGINT NOT NULL,
+  university_id BIGINT NOT NULL,
+  PRIMARY KEY (major_id, university_id),
+  CONSTRAINT fk_major_offering_major FOREIGN KEY (major_id) REFERENCES major(id),
+  CONSTRAINT fk_major_offering_university FOREIGN KEY (university_id) REFERENCES university(id)
 );
 
 CREATE TABLE admission_cutoff (
@@ -43,6 +63,10 @@ CREATE TABLE major_admission_cutoff (
   subject_type VARCHAR(16) NOT NULL,
   cutoff_score INT NULL,
   min_rank INT NULL,
+  professional_group_code VARCHAR(16) NULL,
+  professional_group_name VARCHAR(120) NULL,
+  primary_subject VARCHAR(16) NULL,
+  elective_subjects VARCHAR(64) NULL,
   CONSTRAINT fk_major_cutoff_university FOREIGN KEY (university_id) REFERENCES university(id),
   CONSTRAINT fk_major_cutoff_major FOREIGN KEY (major_id) REFERENCES major(id)
 );
@@ -61,13 +85,36 @@ CREATE TABLE users (
   id BIGINT PRIMARY KEY AUTO_INCREMENT,
   username VARCHAR(64) NOT NULL UNIQUE,
   password VARCHAR(128) NOT NULL,
+  email VARCHAR(254) NULL UNIQUE,
   score INT NULL,
   subject_type VARCHAR(16) NULL,
   exam_province VARCHAR(64) NULL,
+  elective_subjects VARCHAR(64) NULL,
   role VARCHAR(16) NOT NULL DEFAULT 'USER',
   enabled BOOLEAN NOT NULL DEFAULT TRUE,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE email_verification_code (
+  id BIGINT PRIMARY KEY AUTO_INCREMENT,
+  email VARCHAR(254) NOT NULL,
+  code_hash VARCHAR(128) NOT NULL,
+  purpose VARCHAR(32) NOT NULL,
+  expires_at TIMESTAMP NOT NULL,
+  attempt_count INT NOT NULL DEFAULT 0,
+  consumed BOOLEAN NOT NULL DEFAULT FALSE,
+  requested_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  consumed_at TIMESTAMP NULL
+);
+
+CREATE TABLE ai_runtime_config (
+  id INT PRIMARY KEY,
+  provider VARCHAR(64) NOT NULL,
+  base_url VARCHAR(500) NOT NULL,
+  model VARCHAR(160) NOT NULL,
+  encrypted_api_key CLOB NULL,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE recommendation_log (
@@ -84,8 +131,8 @@ CREATE TABLE application_plan (
   id BIGINT PRIMARY KEY AUTO_INCREMENT,
   user_id BIGINT NOT NULL,
   plan_name VARCHAR(128) NOT NULL,
-  source_type VARCHAR(16) NOT NULL,
-  source_query CLOB NOT NULL,
+  source_type VARCHAR(16) NULL,
+  source_query CLOB NULL,
   result_json CLOB NOT NULL,
   ai_summary CLOB NOT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

@@ -8,12 +8,6 @@ public class ApplicationPlanCreateRequest {
     private String planName;
 
     @NotBlank
-    private String sourceType;
-
-    @NotBlank
-    private String sourceQuery;
-
-    @NotBlank
     private String resultJson;
 
     private String aiSummary;
@@ -24,22 +18,6 @@ public class ApplicationPlanCreateRequest {
 
     public void setPlanName(String planName) {
         this.planName = planName;
-    }
-
-    public String getSourceType() {
-        return sourceType;
-    }
-
-    public void setSourceType(String sourceType) {
-        this.sourceType = sourceType;
-    }
-
-    public String getSourceQuery() {
-        return sourceQuery;
-    }
-
-    public void setSourceQuery(String sourceQuery) {
-        this.sourceQuery = sourceQuery;
     }
 
     public String getResultJson() {

@@ -1,11 +1,14 @@
 // Mock 数据 - 用于无后端的演示模式
+import { MOCK_EXPLORE_MAJORS, MOCK_OFFERING_SCHOOLS, mockMajorDetail } from "./majorExploreMockData.js";
 
 const MOCK_USER = {
   id: 1,
   username: "testuser",
+  email: "testuser@example.com",
   score: 630,
   subjectType: "PHYSICS",
   examProvince: "浙江",
+  electiveSubjects: ["CHEMISTRY", "BIOLOGY"],
   role: "USER",
   token: "mock-token-12345"
 };
@@ -13,9 +16,11 @@ const MOCK_USER = {
 const MOCK_ADMIN_USER = {
   id: 100,
   username: "admin",
+  email: "admin@example.com",
   score: null,
   subjectType: null,
   examProvince: null,
+  electiveSubjects: [],
   role: "ADMIN",
   token: "mock-admin-token-12345"
 };
@@ -60,6 +65,21 @@ const MOCK_MAJORS = [
   "法学", "金融学", "会计学", "工商管理",
   "英语", "日语", "法语", "德语"
 ];
+
+const MOCK_PROFESSIONAL_GROUPS = {
+  1: [
+    { code: "101", name: "计算机与智能类", primarySubject: "PHYSICS", electiveSubjects: "CHEMISTRY", majors: ["计算机科学与技术", "软件工程", "人工智能"] },
+    { code: "102", name: "电子信息类", primarySubject: "PHYSICS", electiveSubjects: "BIOLOGY", majors: ["数据科学与大数据技术", "电子信息工程", "通信工程"] }
+  ],
+  2: [
+    { code: "201", name: "工科试验班", primarySubject: "PHYSICS", electiveSubjects: "CHEMISTRY", majors: ["计算机科学与技术", "软件工程", "数据科学与大数据技术"] },
+    { code: "202", name: "智能科学类", primarySubject: "PHYSICS", electiveSubjects: "BIOLOGY", majors: ["人工智能", "电子信息工程", "通信工程"] }
+  ],
+  3: [
+    { code: "301", name: "信息技术类", primarySubject: "PHYSICS", electiveSubjects: "CHEMISTRY", majors: ["计算机科学与技术", "软件工程", "人工智能"] },
+    { code: "302", name: "电子工程类", primarySubject: "PHYSICS", electiveSubjects: "BIOLOGY", majors: ["数据科学与大数据技术", "电子信息工程", "通信工程"] }
+  ]
+};
 
 function generateRecommendation(school, major, strategy) {
   const baseScore = 620 + Math.floor(Math.random() * 40);
@@ -126,85 +146,20 @@ const MOCK_PLANS = [
   {
     id: 1,
     planName: "当前方案草稿",
-    sourceType: "score",
-    sourceQuery: "模式：专业优先，分数：650，省份：浙江，科类：物理，专业：计算机科学与技术",
     createdAt: "2026-08-07T08:53:23",
     resultJson: JSON.stringify(generateRecommendations(5))
   },
   {
     id: 2,
     planName: "冲稳保方案-A",
-    sourceType: "score",
-    sourceQuery: "模式：学校优先，分数：630，省份：浙江，科类：物理",
     createdAt: "2026-03-21T11:22:17",
     resultJson: JSON.stringify(generateRecommendations(8))
   },
   {
     id: 3,
     planName: "最终提交版",
-    sourceType: "score",
-    sourceQuery: "模式：学校优先，分数：600，省份：浙江，科类：物理",
     createdAt: "2026-03-21T11:18:44",
     resultJson: JSON.stringify(generateRecommendations(6))
-  }
-];
-
-const MOCK_HISTORY = [
-  {
-    id: 1,
-    queryType: "score",
-    queryContent: "模式:专业优先，分数:650，省份:浙江，科类:PHYSICS，专业:计算机科学与技术",
-    createdAt: "2026-08-07T09:00:33",
-    summary: "返回 3 个稳妥院校"
-  },
-  {
-    id: 2,
-    queryType: "score",
-    queryContent: "模式:专业优先，分数:630，省份:浙江，科类:PHYSICS，专业:计算机科学与技术",
-    createdAt: "2026-08-07T08:57:07",
-    summary: "返回 5 个推荐院校"
-  },
-  {
-    id: 3,
-    queryType: "score",
-    queryContent: "模式:专业优先，分数:630，省份:浙江，科类:PHYSICS，专业:计算机科学与技术",
-    createdAt: "2026-08-07T08:53:22",
-    summary: "返回 5 个推荐院校"
-  },
-  {
-    id: 4,
-    queryType: "score",
-    queryContent: "模式:学校优先，分数:630，省份:浙江，科类:PHYSICS",
-    createdAt: "2026-08-07T08:53:04",
-    summary: "返回 8 个推荐院校"
-  },
-  {
-    id: 5,
-    queryType: "text",
-    queryContent: "推荐几个华东地区的学校",
-    createdAt: "2026-03-21T11:28:03",
-    summary: "生成 8 条推荐"
-  },
-  {
-    id: 6,
-    queryType: "text",
-    queryContent: "推荐几个华东地区的学校",
-    createdAt: "2026-03-21T11:22:54",
-    summary: "生成 8 条推荐"
-  },
-  {
-    id: 7,
-    queryType: "score",
-    queryContent: "模式:学校优先，分数:630，省份:浙江，科类:PHYSICS",
-    createdAt: "2026-03-21T11:21:53",
-    summary: "返回 8 个推荐院校"
-  },
-  {
-    id: 8,
-    queryType: "agent",
-    queryContent: "帮我推荐计算机专业",
-    createdAt: "2026-03-21T10:59:16",
-    summary: "进入 AI 顾问对话"
   }
 ];
 
@@ -389,8 +344,18 @@ export function setupMockInterceptor({ latencyMs = null } = {}) {
       return mockResponse(MOCK_USER);
     }
 
+    if (path === "/api/auth/admin/login" && method === "POST") {
+      const body = readJsonBody(options);
+      return body.username === "admin" && body.password === "admin123"
+        ? mockResponse(MOCK_ADMIN_USER)
+        : mockResponse({ message: "Invalid administrator credentials" }, 401);
+    }
+
     // 注册
     if (path === "/api/auth/register" && method === "POST") {
+      const body = readJsonBody(options);
+      if (body.sliderVerified !== true) return mockResponse({ message: "请完成滑块验证" }, 400);
+      MOCK_USER.username = body.username || MOCK_USER.username;
       return mockResponse(MOCK_USER);
     }
 
@@ -400,6 +365,13 @@ export function setupMockInterceptor({ latencyMs = null } = {}) {
 
     // 获取用户信息
     if (path === "/api/auth/profile" && method === "POST") {
+      const body = readJsonBody(options);
+      Object.assign(MOCK_USER, {
+        score: body.score,
+        subjectType: body.subjectType,
+        examProvince: body.examProvince,
+        electiveSubjects: Array.isArray(body.electiveSubjects) ? [...body.electiveSubjects] : []
+      });
       return mockResponse(MOCK_USER);
     }
 
@@ -412,6 +384,28 @@ export function setupMockInterceptor({ latencyMs = null } = {}) {
     if (path === "/api/meta/major-options") {
       const keyword = (searchParams.get("keyword") || "").trim().toLowerCase();
       return mockResponse(MOCK_MAJORS.filter((major) => major.toLowerCase().includes(keyword)).slice(0, 10));
+    }
+
+    if (path === "/api/explore/majors" && method === "GET") {
+      const keyword = (searchParams.get("keyword") || "").trim().toLowerCase();
+      const category = (searchParams.get("category") || "").trim();
+      return mockResponse(MOCK_EXPLORE_MAJORS.filter((major) =>
+        (!keyword || [major.name, major.code].some((value) => value.toLowerCase().includes(keyword)))
+        && (!category || major.category === category)
+      ));
+    }
+
+    const exploreMajorSchoolsMatch = path.match(/^\/api\/explore\/majors\/([^/]+)\/schools$/);
+    if (exploreMajorSchoolsMatch && method === "GET") {
+      return mockMajorDetail(decodeURIComponent(exploreMajorSchoolsMatch[1]))
+        ? mockResponse(MOCK_OFFERING_SCHOOLS)
+        : mockResponse({ message: "Major not found" }, 404);
+    }
+
+    const exploreMajorDetailMatch = path.match(/^\/api\/explore\/majors\/([^/]+)$/);
+    if (exploreMajorDetailMatch && method === "GET") {
+      const detail = mockMajorDetail(decodeURIComponent(exploreMajorDetailMatch[1]));
+      return detail ? mockResponse(detail) : mockResponse({ message: "Major not found" }, 404);
     }
 
     // 推荐查询
@@ -457,32 +451,28 @@ export function setupMockInterceptor({ latencyMs = null } = {}) {
         isDoubleFirstClass: school.isDoubleFirstClass,
         schoolTags: [school.is985 ? "985" : null, school.is211 ? "211" : null, school.isDoubleFirstClass ? "双一流" : null].filter(Boolean),
         universityTags: "综合类",
-        majors: MOCK_MAJORS.slice(0, 6).map((major, index) => ({ majorName: major, cutoffScore: 640 + index, minRank: 5000 + index * 300 }))
+        majors: MOCK_PROFESSIONAL_GROUPS[school.id]
+          ? MOCK_PROFESSIONAL_GROUPS[school.id].flatMap((group, groupIndex) =>
+              group.majors.map((majorName, majorIndex) => ({
+                majorName,
+                cutoffScore: 640 + groupIndex * 4 + majorIndex,
+                minRank: 5000 + groupIndex * 1200 + majorIndex * 300,
+                professionalGroupCode: group.code,
+                professionalGroupName: group.name,
+                primarySubject: group.primarySubject,
+                electiveSubjects: group.electiveSubjects
+              }))
+            )
+          : MOCK_MAJORS.slice(0, 6).map((majorName, index) => ({
+              majorName,
+              cutoffScore: 640 + index,
+              minRank: 5000 + index * 300,
+              professionalGroupCode: null,
+              professionalGroupName: null,
+              primarySubject: null,
+              electiveSubjects: null
+            }))
       });
-    }
-
-    // 获取历史记录
-    if (path === "/api/history" && method === "GET") {
-      return mockResponse(MOCK_HISTORY);
-    }
-
-    // 获取历史详情
-    if (path.match(/^\/api\/history\/\d+$/) && method === "GET") {
-      const id = Number(path.split("/").pop());
-      const record = MOCK_HISTORY.find((item) => Number(item.id) === id);
-      if (!record) return mockResponse({ message: "History not found" }, 404);
-      return mockResponse({
-        ...record,
-        resultJson: JSON.stringify(generateRecommendations(5))
-      });
-    }
-
-    if (path.match(/^\/api\/history\/\d+$/) && method === "DELETE") {
-      const id = Number(path.split("/").pop());
-      const index = MOCK_HISTORY.findIndex((item) => Number(item.id) === id);
-      if (index < 0) return mockResponse({ message: "History not found" }, 404);
-      MOCK_HISTORY.splice(index, 1);
-      return mockResponse({ success: true });
     }
 
     // 获取方案列表

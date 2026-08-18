@@ -1,16 +1,18 @@
 <script setup>
 import { ElMessage, ElMessageBox } from "element-plus";
-import { ChatDotRound, Clock, Collection, DataAnalysis, Document, OfficeBuilding, Search, UserFilled } from "@element-plus/icons-vue";
+import { ChatDotRound, Clock, Collection, DataAnalysis, Document, Edit, House, OfficeBuilding, Search, UserFilled } from "@element-plus/icons-vue";
 import { computed, onMounted, provide, reactive, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import admissionJourneyImage from "./assets/admission-journey.png";
 import AppHeader from "./components/AppHeader.vue";
 import BrandLockup from "./components/BrandLockup.vue";
+import GkHeader from "./components/GkHeader.vue";
 import {
   buildGroupedFromResult,
   buildPlanItemKey,
   buildPlanResult,
   clearStoredAuth,
+  electiveSubjectsLabel,
   flattenPlanItems,
   groupByStrategy,
   isUserProfileComplete,
@@ -43,19 +45,6 @@ const latestSourceQuery = ref("");
 const latestRankMeta = ref(null);
 const latestQueryContext = ref(null);
 
-const historyLoading = ref(false);
-const historyRecords = ref([]);
-const historyDialogVisible = ref(false);
-const historyDetailLoading = ref(false);
-const historyDetail = ref(null);
-const historyResultJson = ref("");
-const historyGrouped = reactive({ rush: [], safe: [], guarantee: [] });
-const historySummary = ref("");
-const historyAiSummary = ref("");
-const historyFinalAdvice = ref("");
-const historyTips = ref([]);
-const historyRecommendationMode = ref("");
-
 const planLoading = ref(false);
 const planRecords = ref([]);
 const planDialogVisible = ref(false);
@@ -73,7 +62,6 @@ const planTargetSubmitting = ref(false);
 const planTargetId = ref("");
 const planTargetNewName = ref("");
 const pendingPlanItems = ref([]);
-let historyLoadVersion = 0;
 let planLoadVersion = 0;
 
 const saveDialogVisible = ref(false);
@@ -89,8 +77,8 @@ const schoolDetail = ref(null);
 const schoolDetailMajors = ref([]);
 const schoolDetailSourceItem = ref(null);
 
-const loginForm = reactive({ username: "", password: "" });
-const profileForm = reactive({ score: "", subjectType: "", examProvince: "", confirmed: false });
+const loginForm = reactive({ username: "", password: "", sliderVerified: false });
+const profileForm = reactive({ score: "", subjectType: "", examProvince: "", electiveSubjects: [], confirmed: false });
 const scoreForm = reactive({ score: "", province: "", subjectType: "", recommendationMode: "SCHOOL_FIRST", majorKeyword: "" });
 const textForm = reactive({ requirementText: "" });
 
@@ -102,20 +90,21 @@ const adminSectionTitles = {
   universities: "院校管理",
   majors: "专业管理",
   cutoffs: "院校录取线",
-  majorCutoffs: "专业录取线"
+  majorCutoffs: "专业录取线",
+  ai: "AI 管理"
 };
 const userMeta = computed(() => {
   if (isAdmin.value) return "";
   const user = auth.value?.user || {};
-  return [user.examProvince, subjectTypeLabel(user.subjectType), user.score == null ? "" : `${user.score}分`]
+  const subjectLabel = [subjectTypeLabel(user.subjectType), electiveSubjectsLabel(user.electiveSubjects)].filter((value) => value && value !== "-").join("+");
+  return [user.examProvince, subjectLabel, user.score == null ? "" : `${user.score}分`]
     .filter(Boolean)
     .join(" · ");
 });
 const pageTitle = computed(() => currentRoute.name === "admin"
   ? (adminSectionTitles[adminSection.value] || "数据管理")
-  : (currentRoute.meta.title || "推荐查询"));
+  : (currentRoute.name === "plans" ? "志愿单" : (currentRoute.meta.title || "推荐查询")));
 
-const historyHasResult = computed(() => historyGrouped.rush.length + historyGrouped.safe.length + historyGrouped.guarantee.length > 0);
 const planHasResult = computed(() => planGrouped.rush.length + planGrouped.safe.length + planGrouped.guarantee.length > 0);
 const canSavePlan = computed(() => currentPlanItems.value.length > 0);
 const selectedPlanKeys = computed(() => currentPlanItems.value.map((item) => item.planKey));
@@ -167,10 +156,18 @@ function validateLoginForm() {
   return "";
 }
 
+function validateRegistrationForm() {
+  const loginMessage = validateLoginForm();
+  if (loginMessage) return loginMessage;
+  if (!loginForm.sliderVerified) return "请先完成滑块验证";
+  return "";
+}
+
 function validateProfileForm() {
   const score = Number(profileForm.score);
   if (!profileForm.examProvince) return UI_TEXT.form.provinceRequired;
   if (!profileForm.subjectType) return UI_TEXT.form.subjectTypeRequired;
+  if (new Set(profileForm.electiveSubjects).size !== 2) return "请选择 2 门再选科目";
   if (profileForm.score === "" || Number.isNaN(score) || score < 0 || score > 750) {
     return UI_TEXT.form.scoreRequired;
   }
@@ -273,6 +270,9 @@ function buildSelectedMajorPlanItem(major) {
     universityId: sourceItem.universityId,
     universityName: sourceItem.universityName,
     majorName: major?.majorName || "",
+    professionalGroupCode: major?.professionalGroupCode || "",
+    professionalGroupName: major?.professionalGroupName || "",
+    subjectRequirements: major?.subjectRequirements || "",
     universityProvince: sourceItem.universityProvince,
     universityTier: sourceItem.universityTier,
     is985: sourceItem.is985,
@@ -384,8 +384,6 @@ async function confirmAddToPlan() {
     const planName = detail?.planName || planTargetNewName.value.trim();
     const requestBody = {
       planName,
-      sourceType: detail?.sourceType || latestSourceType.value || "score",
-      sourceQuery: detail?.sourceQuery || latestSourceQuery.value || `手动加入 ${addedCount} 条志愿结果`,
       resultJson: JSON.stringify(payload),
       aiSummary: detail?.aiSummary || payload.aiSummary || payload.summary
     };
@@ -416,8 +414,6 @@ async function loadCurrentPlanDraft() {
   try {
     const detail = await apiFetch("/api/plans/current", { method: "GET", headers: getAuthHeaders() });
     currentPlanItems.value = flattenPlanItems(detail?.resultJson);
-    latestSourceType.value = detail?.sourceType || latestSourceType.value;
-    latestSourceQuery.value = detail?.sourceQuery || latestSourceQuery.value;
   } catch (ex) {
     if (ex?.status === 404) {
       currentPlanItems.value = [];
@@ -443,8 +439,6 @@ async function upsertCurrentPlanDraft() {
     headers: getAuthHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify({
       planName: "当前方案草稿",
-      sourceType: latestSourceType.value || "score",
-      sourceQuery: latestSourceQuery.value || `手动选择 ${currentPlanItems.value.length} 条志愿结果`,
       resultJson: JSON.stringify(payload),
       aiSummary: payload.aiSummary || payload.summary || ""
     })
@@ -478,24 +472,12 @@ function resetMajorSuggestions() {
   majorSuggestionLoading.value = false;
 }
 
-function resetHistoryDialog() {
-  historyDetail.value = null;
-  historyResultJson.value = "";
-  historyGrouped.rush = [];
-  historyGrouped.safe = [];
-  historyGrouped.guarantee = [];
-  historySummary.value = "";
-  historyAiSummary.value = "";
-  historyFinalAdvice.value = "";
-  historyTips.value = [];
-  historyRecommendationMode.value = "";
-}
-
 function fillProfileFromUser() {
   const user = auth.value?.user || {};
   profileForm.score = user.score ?? "";
   profileForm.subjectType = user.subjectType || "";
   profileForm.examProvince = user.examProvince || "";
+  profileForm.electiveSubjects = Array.isArray(user.electiveSubjects) ? [...user.electiveSubjects] : [];
 }
 
 function resetPlanDialog() {
@@ -636,9 +618,43 @@ async function login() {
   }
 }
 
+async function adminLogin(credentials) {
+  error.value = "";
+  const usernameValue = String(credentials?.username || "").trim();
+  const passwordValue = String(credentials?.password || "");
+  if (!usernameValue || !passwordValue) {
+    const message = !usernameValue ? UI_TEXT.form.usernameRequired : UI_TEXT.form.passwordRequired;
+    error.value = message;
+    ElMessage.warning(message);
+    return false;
+  }
+  loading.value = true;
+  try {
+    const data = await apiFetch("/api/auth/admin/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: usernameValue, password: passwordValue })
+    });
+    auth.value = { token: data.token, user: data };
+    saveStoredAuth(auth.value);
+    await router.replace({ name: "admin" });
+    ElMessage.success("管理员登录成功");
+    return true;
+  } catch (ex) {
+    if (ex?.status === 401) {
+      error.value = "管理员账号或密码错误";
+    } else {
+      applyError(ex, "管理员登录失败");
+    }
+    return false;
+  } finally {
+    loading.value = false;
+  }
+}
+
 async function register() {
   error.value = "";
-  const validationMessage = validateLoginForm();
+  const validationMessage = validateRegistrationForm();
   if (validationMessage) {
     error.value = validationMessage;
     ElMessage.warning(validationMessage);
@@ -648,7 +664,8 @@ async function register() {
   try {
     const payload = {
       username: loginForm.username,
-      password: loginForm.password
+      password: loginForm.password,
+      sliderVerified: loginForm.sliderVerified
     };
 
     const data = await apiFetch("/api/auth/register", {
@@ -687,7 +704,8 @@ async function completeProfile() {
       body: JSON.stringify({
         score: Number(profileForm.score),
         subjectType: profileForm.subjectType,
-        examProvince: profileForm.examProvince
+        examProvince: profileForm.examProvince,
+        electiveSubjects: [...profileForm.electiveSubjects]
       })
     });
     auth.value = { token: data.token, user: data };
@@ -718,9 +736,7 @@ async function logout() {
   currentPlanItems.value = [];
   latestSourceType.value = "";
   latestSourceQuery.value = "";
-  historyRecords.value = [];
   planRecords.value = [];
-  historyDialogVisible.value = false;
   planDialogVisible.value = false;
   saveDialogVisible.value = false;
   await router.replace({ name: "login" });
@@ -821,87 +837,6 @@ async function queryByText() {
     applyError(ex, UI_TEXT.failure.queryFreeText);
   } finally {
     loading.value = false;
-  }
-}
-
-async function loadHistory() {
-  const loadVersion = ++historyLoadVersion;
-  historyLoading.value = true;
-  try {
-    const records = await apiFetch("/api/history", { method: "GET", headers: getAuthHeaders() });
-    if (loadVersion === historyLoadVersion) {
-      historyRecords.value = records;
-    }
-  } catch (ex) {
-    if (loadVersion !== historyLoadVersion) return;
-    applyError(ex, UI_TEXT.failure.loadHistory, { notify: true });
-    historyRecords.value = [];
-  } finally {
-    if (loadVersion === historyLoadVersion) {
-      historyLoading.value = false;
-    }
-  }
-}
-
-function invalidateHistoryLoad() {
-  historyLoadVersion += 1;
-  historyLoading.value = false;
-}
-
-async function openHistoryResult(row) {
-  historyDialogVisible.value = true;
-  historyDetailLoading.value = true;
-  resetHistoryDialog();
-  try {
-    const detail = await apiFetch(`/api/history/${row.id}`, { method: "GET", headers: getAuthHeaders() });
-    historyDetail.value = detail;
-    historyResultJson.value = detail?.resultJson || "";
-
-    const parsed = parsePlanResult(detail?.resultJson);
-
-    const groupedData = buildGroupedFromResult(parsed || {});
-    historyGrouped.rush = groupedData.rush;
-    historyGrouped.safe = groupedData.safe;
-    historyGrouped.guarantee = groupedData.guarantee;
-    historySummary.value = parsed?.summary || "";
-    historyAiSummary.value = parsed?.aiSummary || "";
-    historyFinalAdvice.value = parsed?.finalAdvice || "";
-    historyTips.value = Array.isArray(parsed?.tips) ? parsed.tips : [];
-    historyRecommendationMode.value =
-      parsed?.recommendationMode
-      || groupedData.rush[0]?.recommendationMode
-      || groupedData.safe[0]?.recommendationMode
-      || groupedData.guarantee[0]?.recommendationMode
-      || "";
-  } catch (ex) {
-    applyError(ex, UI_TEXT.failure.loadHistoryDetail, { notify: true });
-    resetHistoryDialog();
-  } finally {
-    historyDetailLoading.value = false;
-  }
-}
-
-async function deleteHistoryRecord(row) {
-  try {
-    await ElMessageBox.confirm("删除后不可恢复，是否继续？", "删除历史记录", {
-      type: "warning",
-      confirmButtonText: "删除",
-      cancelButtonText: "取消"
-    });
-  } catch {
-    return;
-  }
-
-  try {
-    await apiFetch(`/api/history/${row.id}`, { method: "DELETE", headers: getAuthHeaders() });
-    if (historyDetail.value?.id === row.id) {
-      historyDialogVisible.value = false;
-      resetHistoryDialog();
-    }
-    ElMessage.success(UI_TEXT.success.deleteHistory);
-    await loadHistory();
-  } catch (ex) {
-    ElMessage.error(applyError(ex, UI_TEXT.failure.deleteHistory));
   }
 }
 
@@ -1006,8 +941,6 @@ async function updatePlanDetailItems(items) {
       headers: getAuthHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify({
         planName: planDetail.value.planName,
-        sourceType: planDetail.value.sourceType,
-        sourceQuery: planDetail.value.sourceQuery,
         resultJson: JSON.stringify(payload),
         aiSummary: planDetail.value.aiSummary || payload.aiSummary || payload.summary
       })
@@ -1049,8 +982,6 @@ async function savePlan() {
       headers: getAuthHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify({
         planName: saveForm.planName.trim(),
-        sourceType: latestSourceType.value || "score",
-        sourceQuery: latestSourceQuery.value || `手动选择 ${currentPlanItems.value.length} 条志愿结果`,
         resultJson: JSON.stringify(payload),
         aiSummary: payload.aiSummary || payload.summary || ""
       })
@@ -1091,6 +1022,26 @@ function navigateTo(name) {
   }
 }
 
+async function persistCurrentPlanItems(items) {
+  currentPlanItems.value = (items || []).map((item) => normalizeItem(item, item?.strategy));
+  await upsertCurrentPlanDraft();
+  await loadPlans();
+  return true;
+}
+
+async function loadPlanIntoCurrent(row) {
+  if (!row?.id) return false;
+  const detail = await apiFetch(`/api/plans/${row.id}`, { method: "GET", headers: getAuthHeaders() });
+  currentPlanItems.value = flattenPlanItems(detail?.resultJson);
+  await upsertCurrentPlanDraft();
+  await loadPlans();
+  return true;
+}
+
+function openProfileEditor() {
+  router.push({ name: "profile-setup", query: { edit: "1", redirect: currentRoute.fullPath } });
+}
+
 function navigateAdminSection(section) {
   if (currentRoute.name !== "admin" || adminSection.value !== section) {
     router.push({ name: "admin", query: section === "users" ? {} : { section } });
@@ -1104,35 +1055,21 @@ provide("workspace", {
   aiSummary,
   auth,
   authMode,
+  adminLogin,
   canSavePlan,
   completeProfile,
   clearCurrentPlan,
   currentPlanItems,
-  deleteHistoryRecord,
   deletePlan,
   error,
   finalAdvice,
   grouped,
-  historyAiSummary,
-  historyDetail,
-  historyDetailLoading,
-  historyDialogVisible,
-  historyFinalAdvice,
-  historyGrouped,
-  historyHasResult,
-  invalidateHistoryLoad,
   invalidatePlanLoad,
-  historyLoading,
-  historyRecommendationMode,
-  historyRecords,
-  historyResultJson,
-  historySummary,
-  historyTips,
   latestRankMeta,
   latestResult,
   latestSourceType,
   loadCurrentPlanDraft,
-  loadHistory,
+  loadPlanIntoCurrent,
   loadMajorSuggestions,
   loadPlans,
   loading,
@@ -1142,7 +1079,6 @@ provide("workspace", {
   majorSuggestionLoading,
   majorSuggestions,
   navigateTo,
-  openHistoryResult,
   openPlanDetail,
   openSavePlanDialog,
   openSchoolDetail,
@@ -1159,6 +1095,7 @@ provide("workspace", {
   planResultJson,
   planSummary,
   planTips,
+  persistCurrentPlanItems,
   updatePlanDetailItems,
   profileForm,
   provinces,
@@ -1166,7 +1103,6 @@ provide("workspace", {
   queryByText,
   register,
   removeCurrentPlanItem,
-  resetHistoryDialog,
   resetPlanDialog,
   resultSummary,
   resultTips,
@@ -1209,28 +1145,15 @@ watch(() => scoreForm.subjectType, () => {
 <template>
   <RouterView v-if="currentRoute.meta.standalone || !currentRoute.meta.requiresAuth" />
 
-  <div v-else class="app-shell app-layout" :class="{ 'app-layout--agent': currentRoute.name === 'agent' }">
+  <div v-else class="app-shell app-layout" :class="{ 'app-layout--agent': currentRoute.name === 'agent', 'app-layout--admin': isAdmin }">
     <aside class="app-sidebar">
+      <GkHeader v-if="!isAdmin" />
+
+      <template v-else>
       <div class="app-brand">
-        <BrandLockup :admin="isAdmin" />
+        <BrandLockup :admin="true" />
       </div>
-
-      <nav v-if="!isAdmin" class="app-nav" aria-label="主导航">
-        <button class="app-nav__item" :class="{ 'is-active': currentRoute.name === 'recommend' }" @click="navigateTo('recommend')">
-          <el-icon><Search /></el-icon><span>推荐查询</span>
-        </button>
-        <button class="app-nav__item" :class="{ 'is-active': currentRoute.name === 'agent' }" @click="navigateTo('agent')">
-          <el-icon><ChatDotRound /></el-icon><span>AI 对话</span>
-        </button>
-        <button class="app-nav__item" :class="{ 'is-active': currentRoute.name === 'history' }" @click="navigateTo('history')">
-          <el-icon><Clock /></el-icon><span>历史记录</span>
-        </button>
-        <button class="app-nav__item" :class="{ 'is-active': currentRoute.name === 'plans' }" @click="navigateTo('plans')">
-          <el-icon><Document /></el-icon><span>志愿方案</span>
-        </button>
-      </nav>
-
-      <nav v-else class="app-nav" aria-label="管理导航">
+      <nav class="app-nav" aria-label="管理导航">
         <button class="app-nav__item" :class="{ 'is-active': adminSection === 'users' }" @click="navigateAdminSection('users')">
           <el-icon><UserFilled /></el-icon><span>用户管理</span>
         </button>
@@ -1246,17 +1169,24 @@ watch(() => scoreForm.subjectType, () => {
         <button class="app-nav__item" :class="{ 'is-active': adminSection === 'majorCutoffs' }" @click="navigateAdminSection('majorCutoffs')">
           <el-icon><DataAnalysis /></el-icon><span>专业录取线</span>
         </button>
+        <button class="app-nav__item" :class="{ 'is-active': adminSection === 'ai' }" @click="navigateAdminSection('ai')">
+          <el-icon><ChatDotRound /></el-icon><span>AI 管理</span>
+        </button>
       </nav>
 
       <div class="app-sidebar__art" aria-hidden="true">
         <img :src="admissionJourneyImage" alt="" />
       </div>
+      </template>
     </aside>
 
     <section class="app-content">
-      <AppHeader :title="pageTitle">
+      <AppHeader v-if="isAdmin" :title="pageTitle">
         <div class="app-user">
           <span class="app-user__meta">{{ userMeta }}</span>
+          <el-button class="app-user__edit" text circle aria-label="编辑个人高考信息" title="编辑个人高考信息" @click="openProfileEditor">
+            <el-icon><Edit /></el-icon>
+          </el-button>
           <span class="app-user__avatar"><el-icon><UserFilled /></el-icon></span>
           <strong>{{ username }}</strong>
           <span class="app-user__divider" />

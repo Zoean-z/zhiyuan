@@ -6,21 +6,15 @@ public class ApplicationPlanRecordResponse {
 
     private Long id;
     private String planName;
-    private String sourceType;
-    private String sourceQuery;
     private String resultJson;
     private LocalDateTime createdAt;
 
     public ApplicationPlanRecordResponse(Long id,
                                          String planName,
-                                         String sourceType,
-                                         String sourceQuery,
                                          String resultJson,
                                          LocalDateTime createdAt) {
         this.id = id;
         this.planName = planName;
-        this.sourceType = sourceType;
-        this.sourceQuery = sourceQuery;
         this.resultJson = resultJson;
         this.createdAt = createdAt;
     }
@@ -31,14 +25,6 @@ public class ApplicationPlanRecordResponse {
 
     public String getPlanName() {
         return planName;
-    }
-
-    public String getSourceType() {
-        return sourceType;
-    }
-
-    public String getSourceQuery() {
-        return sourceQuery;
     }
 
     public String getResultJson() {

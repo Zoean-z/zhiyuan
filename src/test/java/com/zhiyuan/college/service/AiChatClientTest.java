@@ -2,6 +2,8 @@ package com.zhiyuan.college.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
@@ -85,6 +87,21 @@ class AiChatClientTest {
 
         assertThrows(Exception.class, () -> client.chat("system", "user", 0.1, true));
         assertEquals(1, requestCount.get());
+    }
+
+    @Test
+    void modelAndProvider_shouldResolveLatestRuntimeConfigWithoutRestart() {
+        AiRuntimeConfigService runtimeConfigService = mock(AiRuntimeConfigService.class);
+        when(runtimeConfigService.resolve()).thenReturn(
+                new AiRuntimeConfigService.ResolvedAiConfig(
+                        "provider-one", "https://first.example.test", "model-one", "key-one"),
+                new AiRuntimeConfigService.ResolvedAiConfig(
+                        "provider-two", "https://second.example.test", "model-two", "key-two")
+        );
+        AiChatClient client = new AiChatClient(RestClient.builder(), runtimeConfigService, 1, 0);
+
+        assertEquals("model-one", client.getModel());
+        assertEquals("provider-two", client.getProvider());
     }
 
     private void writeJson(HttpExchange exchange, int status, String body) throws IOException {

@@ -13,14 +13,7 @@ const props = defineProps({
 const emit = defineEmits(["add", "view-detail"]);
 const model = computed(() => normalizeItem(props.item, props.strategy));
 const resolvedBasisLabel = computed(() => recommendationBasisLabel(model.value.recommendationBasis));
-const isDirectAddMode = computed(() => model.value.recommendationMode === "MAJOR_FIRST" || !!model.value.majorName);
-const actionLabel = computed(() => {
-  if (!isDirectAddMode.value) {
-    return "查看专业";
-  }
-  return props.added ? "已加入" : "加入志愿表";
-});
-const actionDisabled = computed(() => isDirectAddMode.value && props.added);
+const actionLabel = computed(() => "查看专业组");
 const showRankMetric = computed(() =>
   model.value.recommendationBasis === "RANK"
   || model.value.minRank != null
@@ -61,10 +54,6 @@ const cutoffLabel = computed(() => {
 const cutoffValue = computed(() => showRankMetric.value ? model.value.minRank : model.value.cutoffScore);
 
 function handleAction() {
-  if (isDirectAddMode.value) {
-    emit("add", props.item, props.strategy);
-    return;
-  }
   emit("view-detail", props.item, props.strategy);
 }
 </script>
@@ -76,7 +65,10 @@ function handleAction() {
         <span class="university-card__mark"><el-icon><OfficeBuilding /></el-icon></span>
         <div class="university-card__title">
           <h4 class="university-card__name">{{ model.universityName }}</h4>
-          <div v-if="model.majorName" class="university-card__major">{{ model.majorName }}</div>
+          <div v-if="model.majorName" class="university-card__major">
+            <span v-if="model.professionalGroupCode" class="university-card__group-code">[{{ model.professionalGroupCode }}]</span>
+            {{ model.majorName }}
+          </div>
         </div>
       </div>
       <el-button
@@ -84,7 +76,6 @@ function handleAction() {
         class="university-card__action"
         type="primary"
         plain
-        :disabled="actionDisabled"
         @click="handleAction"
       >
         {{ actionLabel }}
@@ -131,3 +122,11 @@ function handleAction() {
     </div>
   </article>
 </template>
+
+<style scoped>
+.university-card__group-code {
+  margin-right: 4px;
+  color: #ff5a36;
+  font-weight: 700;
+}
+</style>

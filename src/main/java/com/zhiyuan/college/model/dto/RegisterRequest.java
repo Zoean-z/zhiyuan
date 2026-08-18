@@ -2,6 +2,7 @@ package com.zhiyuan.college.model.dto;
 
 import com.zhiyuan.college.model.enums.SubjectType;
 import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 
@@ -12,6 +13,9 @@ public class RegisterRequest {
 
     @NotBlank
     private String password;
+
+    @AssertTrue(message = "请完成滑块验证")
+    private boolean sliderVerified;
 
     @Min(0)
     @Max(750)
@@ -35,6 +39,14 @@ public class RegisterRequest {
 
     public void setPassword(String password) {
         this.password = password;
+    }
+
+    public boolean isSliderVerified() {
+        return sliderVerified;
+    }
+
+    public void setSliderVerified(boolean sliderVerified) {
+        this.sliderVerified = sliderVerified;
     }
 
     public Integer getScore() {

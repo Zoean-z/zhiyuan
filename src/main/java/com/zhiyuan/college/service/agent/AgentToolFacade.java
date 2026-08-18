@@ -88,8 +88,6 @@ public class AgentToolFacade {
         payload.put("hasPlan", true);
         payload.put("planId", plan.getId());
         payload.put("planName", plan.getPlanName());
-        payload.put("sourceType", plan.getSourceType());
-        payload.put("sourceQuery", plan.getSourceQuery());
         payload.put("aiSummary", plan.getAiSummary());
         payload.put("createdAt", plan.getCreatedAt() == null ? null : plan.getCreatedAt().toString());
         payload.put("itemCount", countPlanItems(root));
@@ -236,7 +234,6 @@ public class AgentToolFacade {
         ApplicationPlan savedPlan = saveTargetPlan(
                 userId,
                 plan,
-                buildDraftSourceQuery(storedItem, false),
                 root
         );
 
@@ -281,7 +278,6 @@ public class AgentToolFacade {
         ApplicationPlan savedPlan = saveTargetPlan(
                 userId,
                 plan,
-                buildDraftSourceQuery(target, true),
                 root
         );
 
@@ -310,8 +306,6 @@ public class AgentToolFacade {
                 userId,
                 buildPlanRequest(
                         planName,
-                        ApplicationPlanService.SOURCE_TYPE_TEXT,
-                        "Agent 保存当前志愿单",
                         toJson(root),
                         root.path("summary").asText("")
                 )
@@ -608,11 +602,9 @@ public class AgentToolFacade {
         return majorName.isBlank() ? universityName : universityName + "-" + majorName;
     }
 
-    private ApplicationPlan saveCurrentDraftPlan(Long userId, String sourceQuery, ObjectNode root) {
+    private ApplicationPlan saveCurrentDraftPlan(Long userId, ObjectNode root) {
         ApplicationPlanCreateRequest request = buildPlanRequest(
                 ApplicationPlanService.CURRENT_DRAFT_PLAN_NAME,
-                ApplicationPlanService.SOURCE_TYPE_TEXT,
-                sourceQuery,
                 toJson(root),
                 root.path("summary").asText("")
         );
@@ -622,15 +614,12 @@ public class AgentToolFacade {
 
     private ApplicationPlan saveTargetPlan(Long userId,
                                            ApplicationPlan targetPlan,
-                                           String sourceQuery,
                                            ObjectNode root) {
         if (targetPlan == null) {
-            return saveCurrentDraftPlan(userId, sourceQuery, root);
+            return saveCurrentDraftPlan(userId, root);
         }
         ApplicationPlanCreateRequest request = buildPlanRequest(
                 targetPlan.getPlanName(),
-                targetPlan.getSourceType(),
-                sourceQuery,
                 toJson(root),
                 root.path("summary").asText("")
         );
@@ -638,20 +627,11 @@ public class AgentToolFacade {
         return applicationPlanService.requireOwnedEntity(userId, targetPlan.getId());
     }
 
-    private String buildDraftSourceQuery(JsonNode item, boolean remove) {
-        String action = remove ? "Agent 自动移除志愿项：" : "Agent 自动加入志愿项：";
-        return action + buildSelectionLabel(item);
-    }
-
     private ApplicationPlanCreateRequest buildPlanRequest(String planName,
-                                                          String sourceType,
-                                                          String sourceQuery,
                                                           String resultJson,
                                                           String aiSummary) {
         ApplicationPlanCreateRequest request = new ApplicationPlanCreateRequest();
         request.setPlanName(planName);
-        request.setSourceType(sourceType);
-        request.setSourceQuery(sourceQuery);
         request.setResultJson(resultJson);
         request.setAiSummary(aiSummary);
         return request;

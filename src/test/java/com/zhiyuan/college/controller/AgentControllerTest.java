@@ -224,8 +224,6 @@ class AgentControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of(
                                 "planName", "2026浙江方案-B-调整",
-                                "sourceType", "score",
-                                "sourceQuery", "测试编辑",
                                 "resultJson", secondResult.toString(),
                                 "aiSummary", ""
                         ))))
@@ -344,8 +342,6 @@ class AgentControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(Map.of(
                                 "planName", name,
-                                "sourceType", "score",
-                                "sourceQuery", "测试方案",
                                 "resultJson", emptyResult,
                                 "aiSummary", ""
                         ))))

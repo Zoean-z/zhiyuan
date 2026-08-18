@@ -1,12 +1,18 @@
 <script setup>
 import { computed, inject, onActivated } from "vue";
+import { useRouter } from "vue-router";
 import RecommendationResult from "../components/RecommendationResult.vue";
 import SchoolDetailDrawer from "../components/SchoolDetailDrawer.vue";
 import { RECOMMENDATION_MODE_OPTIONS, SUBJECT_OPTIONS, recommendationModeLabel } from "../utils/recommendation";
 
 const workspace = inject("workspace");
+const router = useRouter();
+const MODE_TABS = [
+  { key: "text", label: "文本查询", desc: "一句话描述报考需求" },
+  { key: "score", label: "分数查询", desc: "按成绩与位次精确定位" }
+];
 const {
-  activeMode, addCurrentPlanItem, addSelectedMajorsToPlan, aiSummary, error,
+  activeMode, addCurrentPlanItem, addSelectedMajorsToPlan, aiSummary, auth, error,
   finalAdvice, grouped, latestRankMeta, latestResult, latestSourceType,
   loadCurrentPlanDraft, loadMajorSuggestions, loading, majorSuggestionLoading,
   openSchoolDetail, provinces, queryByScore, queryByText,
@@ -64,6 +70,10 @@ function formatRank(value) {
   return Number(value).toLocaleString("zh-CN");
 }
 
+function goAgentPlan() {
+  router.push({ path: "/agent", query: { q: "帮我定位目标院校，生成一份冲稳保志愿方案" } });
+}
+
 onActivated(() => {
   loadCurrentPlanDraft();
 });
@@ -71,9 +81,26 @@ onActivated(() => {
 
 <template>
   <el-main class="app-main recommendation-view">
-    <section class="recommend-query">
-      <el-tabs v-model="activeMode" class="query-tabs">
-        <el-tab-pane label="文本查询" name="text">
+    <section class="mnz-rec">
+      <div class="mnz-rec__head">
+        <div>
+          <span class="mnz-rec__eyebrow">智能志愿推荐</span>
+          <h2>从成绩到可保存的专业组志愿</h2>
+          <p>保留真实推荐算法，查询院校后查看符合 3+1+2 选科要求的专业组。</p>
+        </div>
+        <button type="button" class="mnz-rec__ai" @click="goAgentPlan"><strong>AI</strong> 对话式定制</button>
+      </div>
+
+      <div class="mnz-rec__modes" role="tablist" aria-label="推荐查询方式">
+        <button v-for="tab in MODE_TABS" :key="tab.key" type="button" role="tab"
+          :aria-selected="activeMode === tab.key" :class="['mnz-rec__mode', { 'is-active': activeMode === tab.key }]"
+          @click="activeMode = tab.key">
+          <strong>{{ tab.label }}</strong><span>{{ tab.desc }}</span>
+        </button>
+      </div>
+
+      <div class="mnz-rec__panel">
+        <template v-if="activeMode === 'text'">
           <div class="text-query-row">
             <el-input
               v-model.trim="textForm.requirementText"
@@ -91,9 +118,9 @@ onActivated(() => {
             <span>已识别条件：</span>
             <el-tag v-for="item in recognizedConditions" :key="item" effect="light">{{ item }}</el-tag>
           </div>
-        </el-tab-pane>
+        </template>
 
-        <el-tab-pane label="分数查询" name="score">
+        <template v-else>
           <div class="score-query-panel">
             <el-radio-group v-model="scoreForm.recommendationMode" class="priority-switch">
               <el-radio-button v-for="opt in RECOMMENDATION_MODE_OPTIONS" :key="opt.value" :value="opt.value">{{ opt.label }}</el-radio-button>
@@ -130,10 +157,9 @@ onActivated(() => {
               <el-button type="primary" class="query-action" :loading="loading" @click="queryByScore">开始推荐</el-button>
             </div>
           </div>
-        </el-tab-pane>
-      </el-tabs>
-
-      <div v-if="error" class="error query-error">{{ error }}</div>
+        </template>
+        <div v-if="error" class="error query-error">{{ error }}</div>
+      </div>
     </section>
 
     <section v-if="scoreRankSummary" class="score-rank-summary" aria-live="polite">
@@ -173,6 +199,7 @@ onActivated(() => {
       :loading="schoolDetailLoading"
       :school="schoolDetail"
       :majors="schoolDetailMajors"
+      :profile="auth?.user"
       @add-selected="addSelectedMajorsToPlan"
     />
   </el-main>

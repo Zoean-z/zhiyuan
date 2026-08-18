@@ -87,10 +87,12 @@ class RecommendationControllerTest {
         Assertions.assertTrue(response.get("safe").isArray());
         boolean matched = false;
         for (JsonNode item : response.get("safe")) {
-            if (item.get("minRank").asInt() == 28000) {
+            if (item.get("minRank").asInt() == 30400) {
                 Assertions.assertEquals("RANK", item.get("recommendationBasis").asText());
                 Assertions.assertEquals(26000, item.get("userRank").asInt());
-                Assertions.assertEquals(2000, item.get("rankGap").asInt());
+                Assertions.assertEquals(4400, item.get("rankGap").asInt());
+                Assertions.assertTrue(item.get("universityId").asLong() >= 101);
+                Assertions.assertTrue(item.get("universityId").asLong() <= 120);
                 Assertions.assertFalse(item.get("strategyLabel").asText().isBlank());
                 Assertions.assertTrue(item.get("riskScore").asInt() >= 0);
                 Assertions.assertTrue(item.get("matchReasons").isArray());
@@ -122,8 +124,9 @@ class RecommendationControllerTest {
         JsonNode response = objectMapper.readTree(result.getResponse().getContentAsString());
         Assertions.assertTrue(response.get("userRank").isNull());
         Assertions.assertEquals("SCHOOL_FIRST", response.get("recommendationMode").asText());
-        Assertions.assertEquals(1, response.get("rush").size());
+        Assertions.assertTrue(response.get("rush").size() >= 1);
         Assertions.assertFalse(response.get("rush").get(0).get("universityName").asText().isBlank());
+        assertUsesShowcaseUniversities(response);
         Assertions.assertEquals("SCORE", response.get("rush").get(0).get("recommendationBasis").asText());
         Assertions.assertTrue(response.get("safe").isArray());
         Assertions.assertTrue(response.get("guarantee").isArray());
@@ -144,8 +147,8 @@ class RecommendationControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(requestJson))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.rush[0].universityName").value("浙江大学"))
-                .andExpect(jsonPath("$.rush[0].universityId").value(1))
+                .andExpect(jsonPath("$.rush[0].universityName").value("同济大学"))
+                .andExpect(jsonPath("$.rush[0].universityId").value(113))
                 .andExpect(jsonPath("$.rush[0].is985").value(true))
                 .andExpect(jsonPath("$.rush[0].is211").value(true))
                 .andExpect(jsonPath("$.rush[0].isDoubleFirstClass").value(true))
@@ -166,7 +169,7 @@ class RecommendationControllerTest {
                 "majorKeyword", "计算机"
         ));
 
-        mockMvc.perform(post("/api/recommendations")
+        MvcResult result = mockMvc.perform(post("/api/recommendations")
                         .header("Authorization", "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(requestJson))
@@ -179,7 +182,9 @@ class RecommendationControllerTest {
                 .andExpect(jsonPath("$.rush[0].matchReasons").isArray())
                 .andExpect(jsonPath("$.rush[0].explanation").isNotEmpty())
                 .andExpect(jsonPath("$.safe").isArray())
-                .andExpect(jsonPath("$.guarantee").isArray());
+                .andExpect(jsonPath("$.guarantee").isArray())
+                .andReturn();
+        assertUsesShowcaseUniversities(objectMapper.readTree(result.getResponse().getContentAsString()));
     }
 
     @Test
@@ -194,7 +199,11 @@ class RecommendationControllerTest {
                 .andExpect(jsonPath("$.universityId").value(1))
                 .andExpect(jsonPath("$.schoolTags").isArray())
                 .andExpect(jsonPath("$.majors").isArray())
-                .andExpect(jsonPath("$.majors[0].majorName").isNotEmpty());
+                .andExpect(jsonPath("$.majors[0].majorName").isNotEmpty())
+                .andExpect(jsonPath("$.majors[0].professionalGroupCode").value("101"))
+                .andExpect(jsonPath("$.majors[0].professionalGroupName").value("计算机与智能类"))
+                .andExpect(jsonPath("$.majors[0].primarySubject").value("PHYSICS"))
+                .andExpect(jsonPath("$.majors[0].electiveSubjects").value("CHEMISTRY"));
     }
 
     @Test
@@ -388,7 +397,7 @@ class RecommendationControllerTest {
 
     @Test
     void recommendByTextTask_shouldSubmitAndQueryAsyncResult() throws Exception {
-        String token = loginAndGetToken("testuser", "123456", 620, "PHYSICS", "浙江");
+        String token = loginAndGetToken("testuser", "123456", 650, "PHYSICS", "浙江");
         String requestJson = """
                 {
                   "requirementText": "我想报江苏211学校，稳一点"
@@ -444,7 +453,7 @@ class RecommendationControllerTest {
 
     @Test
     void recommendByText_shouldParseStructuredConditionsForSchoolFirst() throws Exception {
-        String token = loginAndGetToken("testuser", "123456", 620, "PHYSICS", "浙江");
+        String token = loginAndGetToken("testuser", "123456", 650, "PHYSICS", "浙江");
         String requestJson = """
                 {
                   "requirementText": "推荐一些江苏的211学校，稳一点"
@@ -462,16 +471,17 @@ class RecommendationControllerTest {
                 .andExpect(jsonPath("$.parsed.riskPreference").value("稳"))
                 .andExpect(jsonPath("$.recommendations").isArray())
                 .andExpect(jsonPath("$.recommendations[0].universityProvince").value("江苏"))
-                .andExpect(jsonPath("$.recommendations[0].is985").value(false))
+                .andExpect(jsonPath("$.recommendations[0].is985").value(true))
                 .andExpect(jsonPath("$.recommendations[0].is211").value(true))
                 .andExpect(jsonPath("$.recommendations[0].isDoubleFirstClass").value(true))
-                .andExpect(jsonPath("$.recommendations[0].schoolTags[0]").value("211"))
-                .andExpect(jsonPath("$.recommendations[0].schoolTags[1]").value("双一流"));
+                .andExpect(jsonPath("$.recommendations[0].schoolTags[0]").value("985"))
+                .andExpect(jsonPath("$.recommendations[0].schoolTags[1]").value("211"))
+                .andExpect(jsonPath("$.recommendations[0].schoolTags[2]").value("双一流"));
     }
 
     @Test
     void recommendByText_shouldAutoRouteToMajorFirst() throws Exception {
-        String token = loginAndGetToken("testuser", "123456", 620, "PHYSICS", "浙江");
+        String token = loginAndGetToken("testuser", "123456", 650, "PHYSICS", "浙江");
         String requestJson = """
                 {
                   "requirementText": "推荐一些计算机专业，保一点"
@@ -493,10 +503,10 @@ class RecommendationControllerTest {
 
     @Test
     void recommendByText_shouldFilterBySchoolType() throws Exception {
-        String token = loginAndGetToken("testuser", "123456", 620, "PHYSICS", "浙江");
+        String token = loginAndGetToken("testuser", "123456", 670, "PHYSICS", "浙江");
         String requestJson = """
                 {
-                  "requirementText": "推荐一些江苏的师范类学校"
+                  "requirementText": "推荐一些北京的理工类学校"
                 }
                 """;
 
@@ -506,15 +516,15 @@ class RecommendationControllerTest {
                         .content(requestJson))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.parsed.recommendationMode").value("SCHOOL_FIRST"))
-                .andExpect(jsonPath("$.parsed.provinces[0]").value("江苏"))
-                .andExpect(jsonPath("$.parsed.schoolTypes[0]").value("师范类"))
+                .andExpect(jsonPath("$.parsed.provinces[0]").value("北京"))
+                .andExpect(jsonPath("$.parsed.schoolTypes[0]").value("理工类"))
                 .andExpect(jsonPath("$.recommendations[0].universityName").isNotEmpty())
-                .andExpect(jsonPath("$.recommendations[0].universityProvince").value("江苏"))
-                .andExpect(jsonPath("$.recommendations[0].universityTags").value(org.hamcrest.Matchers.containsString("师范类")));
+                .andExpect(jsonPath("$.recommendations[0].universityProvince").value("北京"))
+                .andExpect(jsonPath("$.recommendations[0].universityTags").value(org.hamcrest.Matchers.containsString("理工类")));
     }
 
     @Test
-    void recommendByText_shouldHandleMedicalSchoolType() throws Exception {
+    void recommendByText_shouldHandleUnavailableMedicalSchoolType() throws Exception {
         String token = loginAndGetToken("testuser", "123456", 620, "PHYSICS", "浙江");
         String requestJson = """
                 {
@@ -530,11 +540,12 @@ class RecommendationControllerTest {
                 .andExpect(jsonPath("$.parsed.schoolTypes[0]").value("医药类"))
                 .andExpect(jsonPath("$.parsed.riskPreference").value("稳"))
                 .andExpect(jsonPath("$.recommendations").isArray())
-                .andExpect(jsonPath("$.recommendations[0].universityTags").value(org.hamcrest.Matchers.containsString("医药类")));
+                .andExpect(jsonPath("$.recommendations").isEmpty())
+                .andExpect(jsonPath("$.tips").isArray());
     }
 
     @Test
-    void recommendByText_shouldFilterOrdinarySchoolsUsingBooleanTags() throws Exception {
+    void recommendByText_shouldReturnNoResultForUnavailableOrdinarySchools() throws Exception {
         String token = loginAndGetToken("testuser", "123456", 620, "PHYSICS", "浙江");
         String requestJson = """
                 {
@@ -551,12 +562,8 @@ class RecommendationControllerTest {
 
         JsonNode response = objectMapper.readTree(result.getResponse().getContentAsString());
         Assertions.assertTrue(response.get("recommendations").isArray());
-        Assertions.assertTrue(response.get("recommendations").size() >= 1);
-        JsonNode first = response.get("recommendations").get(0);
-        Assertions.assertFalse(first.get("is985").asBoolean());
-        Assertions.assertFalse(first.get("is211").asBoolean());
-        Assertions.assertFalse(first.get("isDoubleFirstClass").asBoolean());
-        Assertions.assertEquals(0, first.get("schoolTags").size());
+        Assertions.assertEquals(0, response.get("recommendations").size());
+        Assertions.assertTrue(response.get("tips").size() >= 1);
     }
 
     @Test
@@ -683,7 +690,7 @@ class RecommendationControllerTest {
     @Test
     void login_shouldAllowIncompleteProfileAndCompleteItAfterLogin() throws Exception {
         jdbcTemplate.update(
-                "UPDATE users SET score = NULL, subject_type = NULL, exam_province = NULL WHERE username = ?",
+                "UPDATE users SET score = NULL, subject_type = NULL, exam_province = NULL, elective_subjects = NULL WHERE username = ?",
                 "freshuser");
 
         String requestJson = """
@@ -703,6 +710,8 @@ class RecommendationControllerTest {
         Assertions.assertTrue(loginResponse.get("score").isNull());
         Assertions.assertTrue(loginResponse.get("subjectType").isNull());
         Assertions.assertTrue(loginResponse.get("examProvince").isNull());
+        Assertions.assertTrue(loginResponse.get("electiveSubjects").isArray());
+        Assertions.assertEquals(0, loginResponse.get("electiveSubjects").size());
 
         mockMvc.perform(post("/api/auth/profile")
                         .header("Authorization", "Bearer " + loginResponse.get("token").asText())
@@ -711,19 +720,46 @@ class RecommendationControllerTest {
                                 {
                                   "score": 618,
                                   "subjectType": "PHYSICS",
-                                  "examProvince": "浙江"
+                                  "examProvince": "浙江",
+                                  "electiveSubjects": ["CHEMISTRY", "BIOLOGY"]
                                 }
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.score").value(618))
                 .andExpect(jsonPath("$.subjectType").value("PHYSICS"))
-                .andExpect(jsonPath("$.examProvince").value("浙江"));
+                .andExpect(jsonPath("$.examProvince").value("浙江"))
+                .andExpect(jsonPath("$.electiveSubjects.length()").value(2))
+                .andExpect(jsonPath("$.electiveSubjects[0]").isNotEmpty())
+                .andExpect(jsonPath("$.electiveSubjects[1]").isNotEmpty());
 
         Integer storedScore = jdbcTemplate.queryForObject(
                 "SELECT score FROM users WHERE username = ?",
                 Integer.class,
                 "freshuser");
         Assertions.assertEquals(618, storedScore);
+        String storedElectives = jdbcTemplate.queryForObject(
+                "SELECT elective_subjects FROM users WHERE username = ?",
+                String.class,
+                "freshuser");
+        Assertions.assertEquals("BIOLOGY,CHEMISTRY", storedElectives);
+    }
+
+    @Test
+    void profile_shouldRejectDuplicateElectiveSubjects() throws Exception {
+        String token = loginAndGetToken("freshuser", "123456", null, null, null);
+
+        mockMvc.perform(post("/api/auth/profile")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "score": 618,
+                                  "subjectType": "PHYSICS",
+                                  "examProvince": "浙江",
+                                  "electiveSubjects": ["CHEMISTRY", "CHEMISTRY"]
+                                }
+                                """))
+                .andExpect(status().isBadRequest());
     }
 
     @Test
@@ -735,6 +771,7 @@ class RecommendationControllerTest {
                                 {
                                   "username": "%s",
                                   "password": "123456",
+                                  "sliderVerified": true,
                                   "score": 612,
                                   "subjectType": "PHYSICS",
                                   "examProvince": "浙江"
@@ -760,12 +797,87 @@ class RecommendationControllerTest {
                                 {
                                   "username": "testuser",
                                   "password": "123456",
+                                  "sliderVerified": true,
                                   "score": 612,
                                   "subjectType": "PHYSICS",
                                   "examProvince": "浙江"
                                 }
                                 """))
                 .andExpect(status().isConflict());
+    }
+
+    @Test
+    void register_shouldRejectIncompleteSliderVerification() throws Exception {
+        mockMvc.perform(post("/api/auth/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "username": "unverified_slider_user",
+                                  "password": "123456",
+                                  "sliderVerified": false
+                                }
+                                """))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void adminLogin_shouldRequireAdministratorRole() throws Exception {
+        mockMvc.perform(post("/api/auth/admin/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"username":"adminuser","password":"123456"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.role").value("ADMIN"));
+
+        mockMvc.perform(post("/api/auth/admin/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"username":"testuser","password":"123456"}
+                                """))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void aiConfig_shouldRequireAdminAndNeverReturnPlainApiKey() throws Exception {
+        String userToken = loginAndGetToken("testuser", "123456", null, null, null);
+        String adminToken = loginAndGetToken("adminuser", "123456", null, null, null);
+
+        mockMvc.perform(get("/api/admin/ai-config")
+                        .header("Authorization", "Bearer " + userToken))
+                .andExpect(status().isForbidden());
+
+        String plainKey = "sk-test-secret-9876";
+        mockMvc.perform(put("/api/admin/ai-config")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "provider":"openai-compatible",
+                                  "baseUrl":"https://ai.example.test/v1/",
+                                  "model":"demo-model",
+                                  "apiKey":"%s",
+                                  "clearApiKey":false
+                                }
+                                """.formatted(plainKey)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.baseUrl").value("https://ai.example.test/v1"))
+                .andExpect(jsonPath("$.model").value("demo-model"))
+                .andExpect(jsonPath("$.apiKeyConfigured").value(true))
+                .andExpect(jsonPath("$.apiKeyMasked").value("••••9876"))
+                .andExpect(jsonPath("$.apiKeySource").value("database"))
+                .andExpect(jsonPath("$.apiKey").doesNotExist());
+
+        String encrypted = jdbcTemplate.queryForObject(
+                "SELECT encrypted_api_key FROM ai_runtime_config WHERE id = 1", String.class);
+        Assertions.assertNotNull(encrypted);
+        Assertions.assertFalse(encrypted.contains(plainKey));
+
+        mockMvc.perform(get("/api/admin/ai-config")
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.apiKeyMasked").value("••••9876"))
+                .andExpect(jsonPath("$.apiKey").doesNotExist());
     }
 
     @Test
@@ -1141,8 +1253,6 @@ class RecommendationControllerTest {
         String requestJson = """
                 {
                   "planName": "绋冲Ε鏂规",
-                  "sourceType": "score",
-                  "sourceQuery": "鍒嗘暟:620, 鐪佷唤:娴欐睙, 绉戠被:PHYSICS",
                   "resultJson": "{\\"summary\\":\\"AI鎬荤粨\\",\\"safe\\":[]}",
                   "aiSummary": "AI鎬荤粨"
                 }
@@ -1154,7 +1264,7 @@ class RecommendationControllerTest {
                         .content(requestJson))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.planName").value("绋冲Ε鏂规"))
-                .andExpect(jsonPath("$.sourceType").value("score"))
+                .andExpect(jsonPath("$.sourceType").doesNotExist())
                 .andExpect(jsonPath("$.aiSummary").value("AI鎬荤粨"))
                 .andReturn();
 
@@ -1165,7 +1275,7 @@ class RecommendationControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].id").value(planId))
                 .andExpect(jsonPath("$[0].planName").value("绋冲Ε鏂规"))
-                .andExpect(jsonPath("$[0].sourceType").value("score"));
+                .andExpect(jsonPath("$[0].sourceType").doesNotExist());
 
         MvcResult emptyResult = mockMvc.perform(get("/api/plans")
                         .header("Authorization", "Bearer " + token2))
@@ -1205,8 +1315,6 @@ class RecommendationControllerTest {
         String draftJson = """
                 {
                   "planName": "当前方案草稿",
-                  "sourceType": "score",
-                  "sourceQuery": "手动选择 1 条志愿结果",
                   "resultJson": "{\\"summary\\":\\"当前方案共选择 1 条志愿结果。\\",\\"safe\\":[{\\"universityName\\":\\"浙江大学\\",\\"strategy\\":\\"SAFE\\"}],\\"rush\\":[],\\"guarantee\\":[]}",
                   "aiSummary": "当前方案共选择 1 条志愿结果。"
                 }
@@ -1218,7 +1326,7 @@ class RecommendationControllerTest {
                         .content(draftJson))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.planName").value("当前方案草稿"))
-                .andExpect(jsonPath("$.sourceType").value("score"));
+                .andExpect(jsonPath("$.sourceType").doesNotExist());
 
         mockMvc.perform(get("/api/plans/current")
                         .header("Authorization", "Bearer " + token))
@@ -1282,6 +1390,19 @@ class RecommendationControllerTest {
         }
         Assertions.fail("Async recommendation task did not finish in time");
         return lastResponse;
+    }
+
+    private void assertUsesShowcaseUniversities(JsonNode response) {
+        int resultCount = 0;
+        for (String groupName : new String[]{"rush", "safe", "guarantee"}) {
+            for (JsonNode item : response.path(groupName)) {
+                long universityId = item.path("universityId").asLong();
+                Assertions.assertTrue(universityId >= 101 && universityId <= 120,
+                        "recommendation should use the 20 showcase universities, but got id=" + universityId);
+                resultCount++;
+            }
+        }
+        Assertions.assertTrue(resultCount >= 1);
     }
 
     private String loginAndGetToken(String username, String password, Integer score, String subjectType, String examProvince) throws Exception {

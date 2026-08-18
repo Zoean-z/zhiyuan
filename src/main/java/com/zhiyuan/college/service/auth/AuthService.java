@@ -12,6 +12,7 @@ import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
 import java.time.Duration;
 import java.util.Map;
+import java.util.HashSet;
 import java.util.concurrent.ConcurrentHashMap;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
@@ -45,11 +46,22 @@ public class AuthService {
     }
 
     public LoginResponse login(LoginRequest request) {
+        return authenticate(request, false);
+    }
+
+    public LoginResponse adminLogin(LoginRequest request) {
+        return authenticate(request, true);
+    }
+
+    private LoginResponse authenticate(LoginRequest request, boolean adminOnly) {
         UserAccount user = userAccountMapper.findByUsername(request.getUsername());
         if (user == null || !Boolean.TRUE.equals(user.getEnabled()) || !passwordMatches(request.getPassword(), user)) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid username or password");
         }
         user.setRole(UserRole.fromValue(userAccountMapper.findRoleByUsername(request.getUsername())));
+        if (adminOnly && user.getRole() != UserRole.ADMIN) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid administrator credentials");
+        }
 
         boolean profileChanged = false;
         if (request.getScore() != null && !request.getScore().equals(user.getScore())) {
@@ -69,10 +81,13 @@ public class AuthService {
         }
 
         String token = jwtTokenService.generateToken(user.getId(), user.getUsername(), user.getRole().name());
-        return new LoginResponse(token, user.getUsername(), user.getScore(), user.getSubjectType(), user.getExamProvince(), user.getRole());
+        return loginResponse(token, user);
     }
 
     public LoginResponse register(RegisterRequest request) {
+        if (!request.isSliderVerified()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "请完成滑块验证");
+        }
         String username = normalizeUsername(request.getUsername());
         if (userAccountMapper.findByUsername(username) != null) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "用户名已存在");
@@ -80,6 +95,7 @@ public class AuthService {
         UserAccount user = new UserAccount();
         user.setUsername(username);
         user.setPassword(passwordEncoder.encode(request.getPassword()));
+        user.setEmail(null);
         user.setScore(request.getScore());
         user.setSubjectType(request.getSubjectType());
         user.setExamProvince(isBlank(request.getExamProvince()) ? null : request.getExamProvince().trim());
@@ -88,7 +104,7 @@ public class AuthService {
         userAccountMapper.insert(user);
 
         String token = jwtTokenService.generateToken(user.getId(), user.getUsername(), user.getRole().name());
-        return new LoginResponse(token, user.getUsername(), user.getScore(), user.getSubjectType(), user.getExamProvince(), user.getRole());
+        return loginResponse(token, user);
     }
 
     public LoginResponse completeProfile(String token, ProfileCompletionRequest request) {
@@ -99,15 +115,12 @@ public class AuthService {
         user.setScore(request.getScore());
         user.setSubjectType(request.getSubjectType());
         user.setExamProvince(request.getExamProvince().trim());
+        if (new HashSet<>(request.getElectiveSubjects()).size() != 2) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "electiveSubjects must contain two distinct subjects");
+        }
+        user.setElectiveSubjects(request.getElectiveSubjects());
         userAccountMapper.updateById(user);
-        return new LoginResponse(
-                token,
-                user.getUsername(),
-                user.getScore(),
-                user.getSubjectType(),
-                user.getExamProvince(),
-                user.getRole()
-        );
+        return loginResponse(token, user);
     }
 
     public UserAccount validateToken(String token) {
@@ -144,6 +157,11 @@ public class AuthService {
         user.setId(userId);
         user.setScore(score);
         userAccountMapper.updateById(user);
+    }
+
+    private LoginResponse loginResponse(String token, UserAccount user) {
+        return new LoginResponse(token, user.getUsername(), user.getScore(), user.getSubjectType(),
+                user.getExamProvince(), user.getElectiveSubjects(), user.getRole());
     }
 
     private boolean isBlank(String value) {

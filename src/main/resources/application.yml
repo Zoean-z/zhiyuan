@@ -16,6 +16,24 @@ spring:
       mode: ${DB_SCHEMA_INIT_MODE:always}
       schema-locations: classpath:db/schema.sql
       continue-on-error: false
+  mail:
+    host: ${MAIL_HOST:}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    protocol: smtp
+    test-connection: false
+    properties:
+      mail:
+        smtp:
+          auth: ${MAIL_SMTP_AUTH:true}
+          starttls:
+            enable: ${MAIL_STARTTLS_ENABLE:true}
+            required: ${MAIL_STARTTLS_REQUIRED:true}
+        debug: false
+app:
+  mail:
+    from: ${MAIL_FROM:${MAIL_USERNAME:}}
 mybatis-plus:
   configuration:
     map-underscore-to-camel-case: true

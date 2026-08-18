@@ -1,7 +1,7 @@
 <script setup>
 import { ElMessage } from "element-plus";
 import { Document, InfoFilled, Monitor, Promotion, School, User } from "@element-plus/icons-vue";
-import { computed, nextTick, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, ref } from "vue";
 import {
   buildPlanResult,
   flattenPlanItems,
@@ -17,7 +17,7 @@ const props = defineProps({
   user: { type: Object, default: () => ({}) }
 });
 
-const emit = defineEmits(["jump-to-plans"]);
+defineEmits(["jump-to-plans"]);
 const conversationsLoading = ref(false);
 const conversationLoading = ref(false);
 const sending = ref(false);
@@ -31,16 +31,11 @@ const messageListRef = ref(null);
 const plansLoading = ref(false);
 const plans = ref([]);
 const activePlanId = ref("");
-const activePlanDetail = ref(null);
-const activePlanItems = ref([]);
 const addDialogVisible = ref(false);
 const addSubmitting = ref(false);
 const addTargetPlanId = ref("");
 const addNewPlanName = ref("");
 const pendingAddItem = ref(null);
-const createPlanDialogVisible = ref(false);
-const createPlanName = ref("");
-let activePlanLoadVersion = 0;
 let conversationLoadVersion = 0;
 
 const quickPrompts = [
@@ -99,52 +94,6 @@ async function loadPlans(preferredId = activePlanId.value) {
     ElMessage.error(resolveErrorMessage(ex, "加载志愿表失败"));
   } finally {
     plansLoading.value = false;
-  }
-}
-
-async function loadActivePlan() {
-  const requestedId = activePlanId.value;
-  const loadVersion = ++activePlanLoadVersion;
-  if (!requestedId) {
-    activePlanDetail.value = null;
-    activePlanItems.value = [];
-    return;
-  }
-  try {
-    const detail = await apiFetch(`/api/plans/${requestedId}`, { headers: getAuthHeaders() });
-    if (loadVersion !== activePlanLoadVersion || String(activePlanId.value) !== String(requestedId)) return;
-    activePlanDetail.value = detail;
-    activePlanItems.value = parsePlanDetail(detail).items;
-  } catch (ex) {
-    if (loadVersion !== activePlanLoadVersion || String(activePlanId.value) !== String(requestedId)) return;
-    activePlanDetail.value = null;
-    activePlanItems.value = [];
-    ElMessage.error(resolveErrorMessage(ex, "加载当前志愿表失败"));
-  }
-}
-
-async function createEmptyPlan() {
-  const name = createPlanName.value.trim();
-  if (!name) {
-    ElMessage.warning("请输入志愿表名称");
-    return;
-  }
-  creating.value = true;
-  try {
-    const result = buildPlanResult([], {});
-    const saved = await apiFetch("/api/plans", {
-      method: "POST",
-      headers: getAuthHeaders({ "Content-Type": "application/json" }),
-      body: JSON.stringify({ planName: name, sourceType: "score", sourceQuery: "AI 对话创建", resultJson: JSON.stringify(result), aiSummary: "" })
-    });
-    createPlanDialogVisible.value = false;
-    createPlanName.value = "";
-    await loadPlans(saved.id);
-    ElMessage.success(`已创建《${saved.planName}》`);
-  } catch (ex) {
-    ElMessage.error(resolveErrorMessage(ex, "创建志愿表失败"));
-  } finally {
-    creating.value = false;
   }
 }
 
@@ -229,7 +178,6 @@ async function sendMessage(content = draft.value) {
     messages.value.push(...(Array.isArray(turn.generatedMessages) ? turn.generatedMessages : []));
     if ((turn.generatedMessages || []).some((message) => ["addPlanItem", "removePlanItem", "savePlan"].includes(message.toolName))) {
       await loadPlans(activePlanId.value);
-      await loadActivePlan();
     }
     await loadConversations();
     await scrollMessagesToBottom();
@@ -299,8 +247,6 @@ async function confirmAddItem() {
     });
     const body = {
       planName: detail?.planName || addNewPlanName.value.trim(),
-      sourceType: detail?.sourceType || "score",
-      sourceQuery: detail?.sourceQuery || "AI 推荐卡片加入",
       resultJson: JSON.stringify(result),
       aiSummary: detail?.aiSummary || result.aiSummary || result.summary
     };
@@ -312,7 +258,6 @@ async function confirmAddItem() {
     addDialogVisible.value = false;
     pendingAddItem.value = null;
     await loadPlans(saved.id);
-    await loadActivePlan();
     ElMessage.success(`已加入《${saved.planName}》`);
   } catch (ex) {
     ElMessage.error(resolveErrorMessage(ex, "加入志愿表失败"));
@@ -321,7 +266,6 @@ async function confirmAddItem() {
   }
 }
 
-watch(activePlanId, loadActivePlan);
 onMounted(async () => {
   await Promise.all([loadPlans(), loadConversations()]);
   if (!conversations.value.length) await createConversation();
@@ -333,7 +277,7 @@ onMounted(async () => {
     <div class="agent-workspace">
       <aside class="agent-rail">
         <div class="agent-rail__head">
-          <strong>对话会话</strong>
+          <strong>AI 志愿助手</strong>
           <el-button type="primary" plain size="small" :loading="creating" @click="createConversation()">新建</el-button>
         </div>
         <div class="agent-quick-title">快速提问</div>
@@ -409,7 +353,7 @@ onMounted(async () => {
               <div v-if="hasErrorPayload(message)" class="agent-error-inline">{{ message.payload.errorMessage || message.payload.errorCode }}</div>
             </div>
           </article>
-          <div v-if="!messages.length" class="agent-empty-state"><strong>开始第一轮对话</strong><span>选择右侧志愿表后，可以让 AI 推荐并协助调整方案。</span></div>
+          <div v-if="!messages.length" class="agent-empty-state"><strong>开始第一轮对话</strong><span>先选择当前志愿单，再让 AI 推荐、解释或协助调整。</span></div>
         </div>
 
         <div class="agent-input-panel">
@@ -430,31 +374,6 @@ onMounted(async () => {
         </div>
       </main>
 
-      <aside class="agent-plan-panel">
-        <div class="agent-plan-panel__head">
-          <strong>当前志愿表</strong>
-          <p>AI 推荐、加入和修改操作将写入当前选择的志愿表。</p>
-        </div>
-        <label class="agent-plan-selector">
-          <span>当前操作志愿表</span>
-          <el-select v-model="activePlanId" placeholder="请选择" :loading="plansLoading">
-            <el-option v-for="plan in plans" :key="plan.id" :label="plan.planName" :value="String(plan.id)" />
-          </el-select>
-        </label>
-        <div class="agent-plan-panel__actions">
-          <el-button type="primary" plain size="small" @click="createPlanDialogVisible = true">新建志愿表</el-button>
-        </div>
-        <div class="agent-plan-preview-title">志愿表预览 <span>{{ activePlanItems.length }} 条</span></div>
-        <div class="agent-plan-preview-list">
-          <article v-for="item in activePlanItems.slice(0, 4)" :key="item.planKey" class="agent-plan-preview-card">
-            <div><strong>{{ item.universityName }}</strong><el-tag size="small" effect="light">{{ formatStrategyLabel(item.strategy) }}</el-tag></div>
-            <span>{{ item.majorName || "院校志愿" }}</span>
-            <small>{{ item.universityProvince || "-" }} · 概率 {{ item.admissionProbability ?? "-" }}%</small>
-          </article>
-          <el-empty v-if="!activePlanItems.length" description="暂无志愿" :image-size="70" />
-        </div>
-        <el-button class="agent-plan-panel__jump" plain @click="emit('jump-to-plans')">查看完整志愿表</el-button>
-      </aside>
     </div>
 
     <el-dialog v-model="addDialogVisible" title="加入志愿表" width="460px" destroy-on-close>
@@ -470,9 +389,5 @@ onMounted(async () => {
       <template #footer><el-button @click="addDialogVisible = false">取消</el-button><el-button type="primary" :loading="addSubmitting" @click="confirmAddItem">确认加入</el-button></template>
     </el-dialog>
 
-    <el-dialog v-model="createPlanDialogVisible" title="新建志愿表" width="420px" destroy-on-close>
-      <el-input v-model.trim="createPlanName" maxlength="30" placeholder="例如：2026浙江志愿方案-A" />
-      <template #footer><el-button @click="createPlanDialogVisible = false">取消</el-button><el-button type="primary" :loading="creating" @click="createEmptyPlan">创建</el-button></template>
-    </el-dialog>
   </section>
 </template>

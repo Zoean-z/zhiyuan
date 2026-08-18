@@ -9,9 +9,10 @@
   "scripts": {
     "dev": "vite",
     "dev:mock": "vite --mode mock",
-    "test": "node --test src/utils/recommendation.test.js src/utils/mock.test.js",
+    "test": "node --test src/utils/recommendation.test.js src/utils/mock.test.js src/utils/publicData.test.js src/utils/majorExploreMockData.test.js",
     "build": "vite build",
     "build:mock": "vite build --mode mock",
+    "preview:mock": "vite preview --outDir dist-mock --host 0.0.0.0",
     "preview": "vite preview"
   },
   "dependencies": {

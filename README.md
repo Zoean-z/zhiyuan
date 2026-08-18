@@ -199,13 +199,25 @@ npm run dev:mock
 
 Mock 管理操作只保存在当前页面会话内存中，刷新页面后会恢复初始演示数据，不会连接或修改真实数据库。若浏览器保留了上一次登录状态，可先点击右上角“退出”，再使用对应演示账号登录。
 
+需要生成可独立部署的静态 Mock 包时执行：
+
+```powershell
+cd frontend
+npm ci
+npm test
+npm run build:mock
+npm run preview:mock -- --port 4173
+```
+
+浏览器访问 `http://localhost:4173`。生成目录为 `frontend/dist-mock`，不会覆盖后端实际托管的生产资源。给其他 Agent 或队友部署、验收时，直接使用 [Mock 演示 Agent 指南](docs/MOCK_DEMO_AGENT_GUIDE.md)，不要让部署 Agent 修改业务代码或生成新的模拟数据。
+
 正式后端使用 `sql/data.sql` 初始化时，测试账号为：
 - 普通用户：`testuser / 123456`
 - 管理员：`adminuser / 123456`
 
 生产环境不要保留示例密码。若不导入示例数据，可先注册普通账号，再由数据库管理员执行受控 SQL 将指定账号的 `role` 更新为 `ADMIN`。
 
-### 4. 构建前端并交给后端托管
+### 5. 构建前端并交给后端托管
 
 生产构建会直接将产物写入 Spring Boot 的 `src/main/resources/static`；Mock 构建则隔离在 `frontend/dist-mock`，不会覆盖生产快照。
 
@@ -246,6 +258,8 @@ Copy-Item .env.example .env
 
 没有配置 AI Key 时保持 `QWEN_ENABLED=false`，系统仍可使用本地规则完成登录、推荐、志愿表和 Agent 基础工具流程；填入有效 Key 后再改为 `true`。
 
+注册页使用演示用滑块验证：滑到最右端后才可提交，后端同时校验完成标记。它用于比赛展示的基础交互校验，不等同于生产级验证码或反自动化服务。
+
 ### 2. 启动整套服务
 
 ```powershell
@@ -261,7 +275,7 @@ docker compose up -d --build
 - RocketMQ Broker：`localhost:10911`
 
 说明：
-- `mysql` 会自动执行 `sql/schema.sql` 和 `sql/data.sql`
+- `mysql` 会依次执行 `sql/schema.sql`、`sql/data.sql` 和幂等的 `sql/sync-demo-data.sql`，保证公共页的 20 所院校、24 个专业和开设关系与前端展示一致
 - `backend` 启动时会再次执行幂等 schema 校验，因此复用旧数据卷时也能补齐新增表和兼容字段
 - `backend` 默认使用 `prod` profile 启动
 - `backend` 会在 `mysql`、`redis` 和 RocketMQ Broker 健康后启动
@@ -401,7 +415,7 @@ npm run build
 
 ## 数据准备说明
 
-- 基础建表与初始化数据：`sql/schema.sql`、`sql/data.sql`
+- 基础建表与初始化数据：`sql/schema.sql`、`sql/data.sql`；已有数据库使用 `sql/sync-demo-data.sql` 非破坏性同步公共演示数据
 - 分数位次批量导入说明：`sql/score-rank-mapping-guide.md`
 - 位次导入 SQL 模板：`sql/import-score-rank-mapping.sql`
 
@@ -461,7 +475,7 @@ chmod +x mvnw
 **解决**：
 AI 功能有本地降级机制，即使不配置 API Key，基础的意图识别和工具调用仍然可用。如需完整 AI 功能：
 1. 设置 `QWEN_ENABLED=true`
-2. 填写 `QWEN_API_KEY`
+2. 可在服务器环境填写 `QWEN_API_KEY`，或用管理员账号进入“AI 管理”保存模型、兼容接口和 API Key。管理端保存的密钥会加密落库，页面不会回显明文，并覆盖环境默认值。
 
 ### 7. 端口被占用
 
@@ -469,6 +483,12 @@ AI 功能有本地降级机制，即使不配置 API Key，基础的意图识别
 
 **解决**：
 修改 `.env` 中的 `SERVER_PORT` 和 `SERVER_HOST_PORT`，或停止占用端口的程序。
+
+### 8. AI 管理显示尚未配置密钥
+
+**原因**：数据库和 `QWEN_API_KEY` 环境变量中均没有有效密钥。
+
+**解决**：先确保 `QWEN_ENABLED=true`，再使用管理员账号进入“AI 管理”填写兼容接口、模型和 API Key。保存后新的 AI 请求立即使用当前配置，无需重启服务。
 
 ## 当前状态
 

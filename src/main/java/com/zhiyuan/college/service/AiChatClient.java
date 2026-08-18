@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import java.util.List;
 import java.util.Map;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
@@ -17,25 +18,39 @@ import org.springframework.web.server.ResponseStatusException;
 @Component
 public class AiChatClient {
 
-    private final RestClient restClient;
-    private final String model;
-    private final String provider;
+    private final RestClient.Builder restClientBuilder;
+    private final AiRuntimeConfigService runtimeConfigService;
+    private final AiRuntimeConfigService.ResolvedAiConfig staticConfig;
     private final int retryMaxAttempts;
     private final long retryBackoffMillis;
 
+    @Autowired
     public AiChatClient(RestClient.Builder builder,
-                        @Value("${ai.qwen.base-url}") String baseUrl,
-                        @Value("${ai.qwen.api-key}") String apiKey,
-                        @Value("${ai.qwen.model}") String model,
+                        AiRuntimeConfigService runtimeConfigService,
                         @Value("${ai.qwen.retry.max-attempts:3}") int retryMaxAttempts,
                         @Value("${ai.qwen.retry.backoff-millis:150}") long retryBackoffMillis) {
-        this.restClient = builder
-                .baseUrl(baseUrl)
-                .defaultHeader("Authorization", "Bearer " + apiKey)
-                .defaultHeader("Content-Type", MediaType.APPLICATION_JSON_VALUE)
-                .build();
-        this.model = model;
-        this.provider = "openai-compatible";
+        this(builder, runtimeConfigService, null, retryMaxAttempts, retryBackoffMillis);
+    }
+
+    AiChatClient(RestClient.Builder builder,
+                 String baseUrl,
+                 String apiKey,
+                 String model,
+                 int retryMaxAttempts,
+                 long retryBackoffMillis) {
+        this(builder, null,
+                new AiRuntimeConfigService.ResolvedAiConfig("openai-compatible", baseUrl, model, apiKey),
+                retryMaxAttempts, retryBackoffMillis);
+    }
+
+    private AiChatClient(RestClient.Builder builder,
+                         AiRuntimeConfigService runtimeConfigService,
+                         AiRuntimeConfigService.ResolvedAiConfig staticConfig,
+                         int retryMaxAttempts,
+                         long retryBackoffMillis) {
+        this.restClientBuilder = builder;
+        this.runtimeConfigService = runtimeConfigService;
+        this.staticConfig = staticConfig;
         this.retryMaxAttempts = Math.max(1, retryMaxAttempts);
         this.retryBackoffMillis = Math.max(0, retryBackoffMillis);
     }
@@ -44,8 +59,9 @@ public class AiChatClient {
                        String userPrompt,
                        double temperature,
                        boolean jsonOutput) {
+        AiRuntimeConfigService.ResolvedAiConfig config = resolveConfig();
         Map<String, Object> requestBody = Map.of(
-                "model", model,
+                "model", config.model(),
                 "temperature", temperature,
                 "messages", List.of(
                         Map.of("role", "system", "content", systemPrompt),
@@ -57,7 +73,7 @@ public class AiChatClient {
         Exception lastFailure = null;
         for (int attempt = 1; attempt <= retryMaxAttempts; attempt++) {
             try {
-                return performChat(requestBody);
+                return performChat(config, requestBody);
             } catch (Exception ex) {
                 lastFailure = ex;
                 if (attempt >= retryMaxAttempts || !isRetryable(ex)) {
@@ -74,14 +90,19 @@ public class AiChatClient {
     }
 
     public String getModel() {
-        return model;
+        return resolveConfig().model();
     }
 
     public String getProvider() {
-        return provider;
+        return resolveConfig().provider();
     }
 
-    private String performChat(Map<String, Object> requestBody) {
+    private String performChat(AiRuntimeConfigService.ResolvedAiConfig config, Map<String, Object> requestBody) {
+        RestClient restClient = restClientBuilder.clone()
+                .baseUrl(config.baseUrl())
+                .defaultHeader("Authorization", "Bearer " + config.apiKey())
+                .defaultHeader("Content-Type", MediaType.APPLICATION_JSON_VALUE)
+                .build();
         JsonNode response = restClient.post()
                 .uri("/chat/completions")
                 .body(requestBody)
@@ -97,6 +118,10 @@ public class AiChatClient {
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "AI response content is empty");
         }
         return contentNode.asText();
+    }
+
+    private AiRuntimeConfigService.ResolvedAiConfig resolveConfig() {
+        return runtimeConfigService == null ? staticConfig : runtimeConfigService.resolve();
     }
 
     private boolean isRetryable(Exception ex) {
