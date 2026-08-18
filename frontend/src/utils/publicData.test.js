@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { MAJORS, NEWS_ARTICLES, SCHOOLS, selectSchoolShowcase } from "./publicData.js";
+import { MAJORS, NEWS_ARTICLES, SCHOOLS, resolveSchoolLogoId, selectSchoolShowcase } from "./publicData.js";
 
 const forbiddenFields = ["admissionProbability", "gender", "heat", "index", "planCount", "rank", "salary", "views"];
 
@@ -26,4 +26,12 @@ test("school showcase filters and rotates existing schools without duplication",
   assert.notDeepEqual(first.map((school) => school.id), next.map((school) => school.id));
   assert.ok(engineering.every((school) => school.type === "理工类"));
   assert.ok([...first, ...next, ...engineering].every((school) => SCHOOLS.includes(school)));
+});
+
+test("school logo resolver supports showcase ids and legacy plan ids without false matches", () => {
+  assert.equal(resolveSchoolLogoId({ id: 101, name: "清华大学" }), 1);
+  assert.equal(resolveSchoolLogoId({ id: 120, name: "厦门大学" }), 20);
+  assert.equal(resolveSchoolLogoId({ id: 1, name: "浙江大学" }), 3);
+  assert.equal(resolveSchoolLogoId({ id: 999, logoId: 6, name: "自定义学校" }), 6);
+  assert.equal(resolveSchoolLogoId({ id: 1, name: "未知学校" }), null);
 });

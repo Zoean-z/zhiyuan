@@ -1,16 +1,18 @@
 <script setup>
-import { ref, watch } from "vue";
+import { computed, ref, watch } from "vue";
+import { resolveSchoolLogoId } from "../utils/publicData";
 
 const props = defineProps({ school: { type: Object, required: true }, size: { type: String, default: "md" } });
 const failed = ref(false);
+const logoId = computed(() => resolveSchoolLogoId(props.school));
 
-watch(() => [props.school.id, props.school.logoId], () => { failed.value = false; });
+watch(logoId, () => { failed.value = false; });
 </script>
 
 <template>
   <span class="gk-school-logo" :class="`gk-school-logo--${size}`">
-    <img v-if="!failed" :src="`/logos/${school.logoId || school.id}.jpg`" :alt="school.name" loading="lazy" @error="failed = true" />
-    <strong v-else>{{ school.name.slice(0, 1) }}</strong>
+    <img v-if="logoId && !failed" :src="`/logos/${logoId}.jpg`" :alt="school.name" loading="lazy" @error="failed = true" />
+    <strong v-else>{{ school.name?.slice(0, 1) || "校" }}</strong>
   </span>
 </template>
 

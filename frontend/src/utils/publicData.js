@@ -24,6 +24,23 @@ export const SCHOOLS = [
 export const SCHOOL_PROVINCES = ["全部", ...new Set(SCHOOLS.map((school) => school.province))];
 export const SCHOOL_TYPES = ["全部", ...new Set(SCHOOLS.map((school) => school.type))];
 
+export function resolveSchoolLogoId(school = {}) {
+  const explicitLogoId = Number(school.logoId);
+  if (Number.isInteger(explicitLogoId) && explicitLogoId >= 1 && explicitLogoId <= 20) {
+    return explicitLogoId;
+  }
+
+  const schoolName = String(school.name || "").trim();
+  const namedSchool = schoolName ? SCHOOLS.find((item) => item.name === schoolName) : null;
+  if (namedSchool) return namedSchool.id;
+
+  const universityId = Number(school.id);
+  if (Number.isInteger(universityId) && universityId >= 101 && universityId <= 120) {
+    return universityId - 100;
+  }
+  return null;
+}
+
 export function selectSchoolShowcase(type = "全部", offset = 0, count = 8) {
   const source = type === "全部" ? SCHOOLS : SCHOOLS.filter((school) => school.type === type);
   if (!source.length || count <= 0) return [];
