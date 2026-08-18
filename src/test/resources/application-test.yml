@@ -1,0 +1,52 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:testdb;MODE=MySQL;DATABASE_TO_UPPER=false;DB_CLOSE_DELAY=-1
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      timeout: 1s
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:schema-h2.sql
+      data-locations: classpath:data-h2.sql
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+ai:
+  qwen:
+    enabled: false
+    base-url: http://localhost
+    model: deepseek-v4-flash
+    api-key: test-key
+    retry:
+      max-attempts: 3
+      backoff-millis: 0
+auth:
+  token-ttl-seconds: 86400
+  jwt-secret: dGVzdC16aGl5dWFuLXNlY3JldC10ZXN0LXpoaXl1YW4tc2VjcmV0LTIwMjYta2V5
+  jwt-issuer: zhiyuan-test
+recommendation:
+  scoring:
+    minimum-probability: 35
+    rank-weight: 0.75
+    score-weight: 0.25
+    rush:
+      min: 35
+      max: 54
+    safe:
+      min: 55
+      max: 74
+    guarantee:
+      min: 75
+      max: 100
+cache:
+  redis:
+    enabled: false
+messaging:
+  rocketmq:
+    enabled: false
