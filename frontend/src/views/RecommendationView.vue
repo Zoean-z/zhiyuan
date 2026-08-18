@@ -85,8 +85,6 @@ onActivated(() => {
       <div class="mnz-rec__head">
         <div>
           <span class="mnz-rec__eyebrow">智能志愿推荐</span>
-          <h2>从成绩到可保存的专业组志愿</h2>
-          <p>保留真实推荐算法，查询院校后查看符合 3+1+2 选科要求的专业组。</p>
         </div>
         <button type="button" class="mnz-rec__ai" @click="goAgentPlan"><strong>AI</strong> 对话式定制</button>
       </div>
