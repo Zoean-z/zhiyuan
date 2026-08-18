@@ -12,3 +12,15 @@
 - 影响文件：`MajorMapper.java`、`frontend/src/styles.css`、静态构建产物及项目状态记录。
 - 验证：真实接口返回专业候选，前端构建通过，全量 67 项测试无失败。
 - 下一步：用户刷新页面验收联想下拉与顶部栏一致性。
+
+## 2026-08-18 offline recovery checkpoint
+- Copied audited backend public API controllers/services/DTOs/mappers into current worktree.
+- Repaired current frontend null-safe probability UI and cloud-draft replacement sync.
+- Removed misleading hash-derived major cutoff presentation from `MajorDetailView.vue`.
+- Added focused offline tests: `ScoreRankControllerTest`, `ProbabilityServiceTest`.
+- Added test shims/resources for offline sandbox verification:
+  - `src/test/java/org/springframework/data/redis/core/StringRedisTemplate.java`
+  - `src/test/resources/mockito-extensions/org.mockito.plugins.MockMaker`
+- Verified offline focused tests passed via manual JUnit launcher in sandbox.
+- Created checkpoint zips under `/data/zhiyuan-fixed-checkpoint-*.zip`.
+- Remaining blockers are sandbox dependency/network limits for full npm/Maven restore.
