@@ -1,0 +1,40 @@
+spring:
+  datasource:
+    url: jdbc:mysql://${DB_HOST}:${DB_PORT:3306}/${DB_NAME:college_recommendation}?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+  sql:
+    init:
+      mode: ${DB_SCHEMA_INIT_MODE:always}
+      schema-locations: classpath:db/schema.sql
+      continue-on-error: false
+
+ai:
+  qwen:
+    enabled: ${QWEN_ENABLED:true}
+
+auth:
+  jwt-secret: ${AUTH_JWT_SECRET}
+
+cache:
+  redis:
+    enabled: ${CACHE_REDIS_ENABLED:true}
+
+messaging:
+  rocketmq:
+    enabled: ${ROCKETMQ_ENABLED:true}
+
+rocketmq:
+  name-server: ${ROCKETMQ_NAME_SERVER:rocketmq-nameserver:9876}
+  producer:
+    group: ${ROCKETMQ_PRODUCER_GROUP:recommendation-task-producer-group}
+    send-message-timeout: ${ROCKETMQ_SEND_TIMEOUT_MS:3000}
+    retry-times-when-send-failed: ${ROCKETMQ_PRODUCER_RETRY_TIMES:2}
+    retry-next-server: true
+
+logging:
+  level:
+    root: INFO
+    com.zhiyuan.college: INFO
+
+springdoc:
+  swagger-ui:
+    enabled: true
