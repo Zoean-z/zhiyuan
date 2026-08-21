@@ -4,7 +4,6 @@ import {
   Collection,
   DataAnalysis,
   EditPen,
-  House,
   Lock,
   Plus,
   Reading,
@@ -69,6 +68,7 @@ const loading = ref(false);
 const lastSyncedAt = ref("");
 const pageSize = 10;
 const overview = reactive({ totalCount: 0, userCount: 0, adminCount: 0, disabledCount: 0 });
+const platformSnapshot = reactive({ latestYear: null, provinceCount: 0 });
 const dashboardUsers = ref([]);
 
 const users = ref([]);
@@ -137,7 +137,8 @@ const dataHealth = computed(() => {
   );
   const coveredMajorNames = new Set(majorCutoffs.value.map((item) => String(item.majorName || "").trim()).filter(Boolean));
   const coveredMajors = majors.value.filter((item) => coveredMajorIds.has(Number(item.id)) || coveredMajorNames.has(String(item.name || "").trim())).length;
-  const completedProfiles = dashboardUsers.value.filter((user) => user.examProvince && user.subjectType && user.score != null).length;
+  const candidateUsers = dashboardUsers.value.filter((user) => user.role !== "ADMIN");
+  const completedProfiles = candidateUsers.filter((user) => user.examProvince && user.subjectType && user.score != null).length;
   const allYears = [...cutoffs.value, ...majorCutoffs.value]
     .map((item) => Number(item.admissionYear))
     .filter(Number.isFinite);
@@ -146,10 +147,11 @@ const dataHealth = computed(() => {
   return {
     universityCoverage: percent(universitiesWithCutoff.size, universities.value.length),
     majorCoverage: percent(coveredMajors, majors.value.length),
-    profileCompletion: percent(completedProfiles, dashboardUsers.value.length),
+    profileCompletion: percent(completedProfiles, candidateUsers.length),
     universitiesWithoutCutoff: Math.max(0, universities.value.length - universitiesWithCutoff.size),
     majorsWithoutCutoff: Math.max(0, majors.value.length - coveredMajors),
-    incompleteProfiles: Math.max(0, dashboardUsers.value.length - completedProfiles),
+    incompleteProfiles: Math.max(0, candidateUsers.length - completedProfiles),
+    candidateCount: candidateUsers.length,
     latestYear: allYears.length ? Math.max(...allYears) : null,
     provinceCount: provinces.size
   };
@@ -159,42 +161,71 @@ const recentCutoffs = computed(() => [...cutoffs.value]
   .sort((a, b) => Number(b.admissionYear || 0) - Number(a.admissionYear || 0) || Number(b.id || 0) - Number(a.id || 0))
   .slice(0, 5));
 
-const attentionItems = computed(() => [
-  {
-    label: "院校录取数据覆盖",
-    detail: dataHealth.value.universitiesWithoutCutoff
-      ? `${dataHealth.value.universitiesWithoutCutoff} 所院校尚无院校/专业录取数据`
-      : "当前院校均已关联录取数据",
-    value: `${dataHealth.value.universityCoverage}%`,
-    section: "cutoffs",
-    tone: dataHealth.value.universitiesWithoutCutoff ? "warning" : "success"
-  },
-  {
-    label: "专业录取数据覆盖",
-    detail: dataHealth.value.majorsWithoutCutoff
-      ? `${dataHealth.value.majorsWithoutCutoff} 个专业尚无专业录取数据`
-      : "当前专业均已关联录取数据",
-    value: `${dataHealth.value.majorCoverage}%`,
-    section: "majorCutoffs",
-    tone: dataHealth.value.majorsWithoutCutoff ? "warning" : "success"
-  },
-  {
-    label: "考生档案完整度",
-    detail: dataHealth.value.incompleteProfiles
-      ? `${dataHealth.value.incompleteProfiles} 个账号尚未完善省份、科类或分数`
-      : "所有账号均已完善报考资料",
-    value: `${dataHealth.value.profileCompletion}%`,
-    section: "users",
-    tone: dataHealth.value.incompleteProfiles ? "info" : "success"
-  },
-  {
-    label: "停用账号",
-    detail: overview.disabledCount ? `${overview.disabledCount} 个账号当前不可登录` : "暂无停用账号",
-    value: String(overview.disabledCount || 0),
-    section: "users",
-    tone: overview.disabledCount ? "danger" : "success"
-  }
-]);
+const attentionItems = computed(() => {
+  const universityItem = universities.value.length
+    ? {
+        label: "院校录取数据覆盖",
+        detail: dataHealth.value.universitiesWithoutCutoff
+          ? `${dataHealth.value.universitiesWithoutCutoff} 所院校尚无院校/专业录取数据`
+          : "当前院校均已关联录取数据",
+        value: `${dataHealth.value.universityCoverage}%`,
+        section: "cutoffs",
+        tone: dataHealth.value.universitiesWithoutCutoff ? "warning" : "success"
+      }
+    : {
+        label: "院校主数据",
+        detail: "暂无院校主数据，需先建立推荐与录取线关联基础",
+        value: "待录入",
+        section: "universities",
+        tone: "info"
+      };
+  const majorItem = majors.value.length
+    ? {
+        label: "专业录取数据覆盖",
+        detail: dataHealth.value.majorsWithoutCutoff
+          ? `${dataHealth.value.majorsWithoutCutoff} 个专业尚无专业录取数据`
+          : "当前专业均已关联录取数据",
+        value: `${dataHealth.value.majorCoverage}%`,
+        section: "majorCutoffs",
+        tone: dataHealth.value.majorsWithoutCutoff ? "warning" : "success"
+      }
+    : {
+        label: "专业主数据",
+        detail: "暂无专业主数据，需先建立专业与录取线关联基础",
+        value: "待录入",
+        section: "majors",
+        tone: "info"
+      };
+  const profileItem = dataHealth.value.candidateCount
+    ? {
+        label: "考生档案完整度",
+        detail: dataHealth.value.incompleteProfiles
+          ? `${dataHealth.value.incompleteProfiles} 个普通用户尚未完善省份、科类或分数`
+          : "所有普通用户均已完善报考资料",
+        value: `${dataHealth.value.profileCompletion}%`,
+        section: "users",
+        tone: dataHealth.value.incompleteProfiles ? "info" : "success"
+      }
+    : {
+        label: "考生档案完整度",
+        detail: "暂无普通用户，当前没有可计算的考生档案",
+        value: "待产生",
+        section: "users",
+        tone: "info"
+      };
+  return [
+    universityItem,
+    majorItem,
+    profileItem,
+    {
+      label: "停用账号",
+      detail: overview.disabledCount ? `${overview.disabledCount} 个账号当前不可登录` : "暂无停用账号",
+      value: String(overview.disabledCount || 0),
+      section: "users",
+      tone: overview.disabledCount ? "danger" : "success"
+    }
+  ];
+});
 
 const settingsVisible = ref(false);
 const settingsSubmitting = ref(false);
@@ -220,30 +251,44 @@ function goSection(nextSection) {
 }
 
 async function logout() {
+  if (typeof workspace?.logout === "function") {
+    await workspace.logout();
+    return;
+  }
   clearStoredAuth();
   if (workspace?.auth) workspace.auth.value = null;
   await router.replace({ name: "login" });
 }
 
 async function api(url, options = {}) {
-  const response = await fetch(url, {
-    ...options,
-    headers: {
-      Authorization: `Bearer ${token.value}`,
-      ...(options.body ? { "Content-Type": "application/json" } : {}),
-      ...(options.headers || {})
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), 15000);
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: options.signal || controller.signal,
+      headers: {
+        Authorization: `Bearer ${token.value}`,
+        ...(options.body ? { "Content-Type": "application/json" } : {}),
+        ...(options.headers || {})
+      }
+    });
+    const data = response.headers.get("content-type")?.includes("application/json") ? await response.json() : null;
+    if (!response.ok) {
+      if (response.status === 401) {
+        clearStoredAuth();
+        if (workspace?.auth) workspace.auth.value = null;
+        router.replace({ name: "login" });
+      }
+      throw new Error(data?.message || data?.error || "操作失败，请稍后重试");
     }
-  });
-  const data = response.headers.get("content-type")?.includes("application/json") ? await response.json() : null;
-  if (!response.ok) {
-    if (response.status === 401) {
-      clearStoredAuth();
-      if (workspace?.auth) workspace.auth.value = null;
-      router.replace({ name: "login" });
-    }
-    throw new Error(data?.message || data?.error || "操作失败，请稍后重试");
+    return data;
+  } catch (error) {
+    if (error?.name === "AbortError") throw new Error("请求超时，请稍后重试");
+    throw error;
+  } finally {
+    window.clearTimeout(timeoutId);
   }
-  return data;
 }
 
 function formatDate(value) {
@@ -295,6 +340,8 @@ async function loadDashboard() {
   majors.value = Array.isArray(majorList) ? majorList : [];
   cutoffs.value = Array.isArray(cutoffList) ? cutoffList : [];
   majorCutoffs.value = Array.isArray(majorCutoffList) ? majorCutoffList : [];
+  platformSnapshot.latestYear = dataHealth.value.latestYear;
+  platformSnapshot.provinceCount = dataHealth.value.provinceCount;
 }
 
 async function loadUsers() {
@@ -532,6 +579,7 @@ onMounted(loadSection);
             type="button"
             class="admin-console__nav-item"
             :class="{ 'is-active': section === item.section }"
+            :aria-current="section === item.section ? 'page' : undefined"
             @click="goSection(item.section)"
           >
             <el-icon><component :is="item.icon" /></el-icon>
@@ -545,7 +593,7 @@ onMounted(loadSection);
         <div>
           <strong>业务数据已连接</strong>
           <small>
-            <template v-if="dataHealth.latestYear">最新录取年份 {{ dataHealth.latestYear }}</template>
+            <template v-if="platformSnapshot.latestYear">最新录取年份 {{ platformSnapshot.latestYear }}</template>
             <template v-else>进入工作台查看数据状态</template>
           </small>
         </div>
@@ -561,7 +609,7 @@ onMounted(loadSection);
           <p>{{ sectionMeta.subtitle }}</p>
         </div>
         <div class="admin-console__header-actions">
-          <button class="admin-console__icon-button" type="button" title="刷新当前数据" :disabled="loading" @click="loadSection">
+          <button class="admin-console__icon-button" type="button" title="刷新当前数据" aria-label="刷新当前数据" :disabled="loading" @click="loadSection">
             <el-icon :class="{ 'is-spinning': loading }"><Refresh /></el-icon>
           </button>
           <div class="admin-console__identity">
@@ -595,15 +643,15 @@ onMounted(loadSection);
             </button>
             <button type="button" @click="goSection('universities')">
               <span class="admin-dashboard__metric-icon"><el-icon><School /></el-icon></span>
-              <div><small>院校主数据</small><strong>{{ universities.length }}</strong><em>{{ dataHealth.universityCoverage }}% 已关联录取数据</em></div>
+              <div><small>院校主数据</small><strong>{{ universities.length }}</strong><em>{{ universities.length ? `${dataHealth.universityCoverage}% 已关联录取数据` : '待录入院校主数据' }}</em></div>
             </button>
             <button type="button" @click="goSection('majors')">
               <span class="admin-dashboard__metric-icon"><el-icon><Reading /></el-icon></span>
-              <div><small>专业主数据</small><strong>{{ majors.length }}</strong><em>{{ dataHealth.majorCoverage }}% 已关联专业录取线</em></div>
+              <div><small>专业主数据</small><strong>{{ majors.length }}</strong><em>{{ majors.length ? `${dataHealth.majorCoverage}% 已关联专业录取线` : '待录入专业主数据' }}</em></div>
             </button>
             <button type="button" @click="goSection('cutoffs')">
               <span class="admin-dashboard__metric-icon"><el-icon><TrendCharts /></el-icon></span>
-              <div><small>录取事实数据</small><strong>{{ cutoffs.length + majorCutoffs.length }}</strong><em>覆盖 {{ dataHealth.provinceCount }} 个招生省份</em></div>
+              <div><small>录取事实数据</small><strong>{{ cutoffs.length + majorCutoffs.length }}</strong><em>覆盖 {{ platformSnapshot.provinceCount }} 个招生省份</em></div>
             </button>
           </section>
 
@@ -622,7 +670,7 @@ onMounted(loadSection);
               <div class="admin-dashboard__progress-list">
                 <div><span>院校录取数据覆盖</span><b>{{ dataHealth.universityCoverage }}%</b><el-progress :percentage="dataHealth.universityCoverage" :show-text="false" /></div>
                 <div><span>专业录取数据覆盖</span><b>{{ dataHealth.majorCoverage }}%</b><el-progress :percentage="dataHealth.majorCoverage" :show-text="false" status="warning" /></div>
-                <div><span>考生档案完整度</span><b>{{ dataHealth.profileCompletion }}%</b><el-progress :percentage="dataHealth.profileCompletion" :show-text="false" status="success" /></div>
+                <div><span>普通用户档案完整度</span><b>{{ dataHealth.profileCompletion }}%</b><el-progress :percentage="dataHealth.profileCompletion" :show-text="false" status="success" /></div>
               </div>
             </article>
           </section>
@@ -847,83 +895,20 @@ onMounted(loadSection);
   color: var(--admin-ink);
   background: #f7f8fb;
 }
-
-.admin-console__sidebar {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  padding: 24px 18px 0;
-  overflow: hidden;
-  border-right: 1px solid #e8e4df;
-  background: linear-gradient(180deg, #fffaf5 0%, #fff 48%, #eef4ff 100%);
-}
-
-.admin-console__brand {
-  display: flex;
-  align-items: center;
-  min-height: 42px;
-  padding: 0 8px;
-}
-
-.admin-console__nav {
-  position: relative;
-  z-index: 2;
-  display: grid;
-  gap: 22px;
-  margin-top: 30px;
-}
-
-.admin-console__nav-group > p {
-  margin: 0 0 7px 14px;
-  color: #a0a7b4;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.12em;
-}
-
-.admin-console__nav-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  width: 100%;
-  min-height: 46px;
-  padding: 0 14px;
-  border: 0;
-  border-radius: 11px;
-  color: #657187;
-  background: transparent;
-  font: inherit;
-  font-size: 14px;
-  text-align: left;
-  cursor: pointer;
-  transition: color 0.18s ease, background 0.18s ease, transform 0.18s ease;
-}
-
+.admin-console__sidebar { position: relative; display: flex; flex-direction: column; min-width: 0; padding: 24px 18px 0; overflow: hidden; border-right: 1px solid #e8e4df; background: linear-gradient(180deg, #fffaf5 0%, #fff 48%, #eef4ff 100%); }
+.admin-console__brand { display: flex; align-items: center; min-height: 42px; padding: 0 8px; }
+.admin-console__nav { position: relative; z-index: 2; display: grid; gap: 22px; margin-top: 30px; }
+.admin-console__nav-group > p { margin: 0 0 7px 14px; color: #a0a7b4; font-size: 11px; font-weight: 700; letter-spacing: 0.12em; }
+.admin-console__nav-item { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 46px; padding: 0 14px; border: 0; border-radius: 11px; color: #657187; background: transparent; font: inherit; font-size: 14px; text-align: left; cursor: pointer; transition: color 0.18s ease, background 0.18s ease, transform 0.18s ease; }
 .admin-console__nav-item .el-icon { font-size: 19px; }
 .admin-console__nav-item:hover { color: var(--admin-accent-dark); background: #fff1e7; transform: translateX(2px); }
 .admin-console__nav-item.is-active { color: var(--admin-accent-dark); background: linear-gradient(90deg, #ffe8d7 0%, #fff3ea 100%); font-weight: 650; box-shadow: inset 3px 0 0 var(--admin-accent); }
-
-.admin-console__connection {
-  position: relative;
-  z-index: 2;
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  margin: auto 4px 18px;
-  padding: 12px 13px;
-  border: 1px solid rgba(47, 111, 237, 0.13);
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.82);
-  backdrop-filter: blur(8px);
-}
-
+.admin-console__connection { position: relative; z-index: 2; display: flex; align-items: flex-start; gap: 10px; margin: auto 4px 18px; padding: 12px 13px; border: 1px solid rgba(47, 111, 237, 0.13); border-radius: 12px; background: rgba(255, 255, 255, 0.82); backdrop-filter: blur(8px); }
 .admin-console__connection-dot { flex: 0 0 auto; width: 8px; height: 8px; margin-top: 5px; border-radius: 50%; background: #20b26b; box-shadow: 0 0 0 4px rgba(32, 178, 107, 0.12); }
 .admin-console__connection div { display: grid; gap: 4px; min-width: 0; }
 .admin-console__connection strong { color: #344054; font-size: 12px; }
 .admin-console__connection small { overflow: hidden; color: #8a94a6; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .admin-console__art { position: absolute; z-index: 0; right: -35px; bottom: -48px; width: 265px; opacity: 0.4; pointer-events: none; mask-image: linear-gradient(to bottom, transparent, #000 28%); }
-
 .admin-console__workspace { display: grid; grid-template-rows: 78px minmax(0, 1fr); min-width: 0; min-height: 0; }
 .admin-console__header { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 0 28px; border-bottom: 1px solid var(--admin-border); background: rgba(255, 255, 255, 0.94); backdrop-filter: blur(12px); }
 .admin-console__heading { min-width: 0; }
@@ -942,7 +927,6 @@ onMounted(loadSection);
 .admin-console__logout { display: inline-flex; align-items: center; gap: 6px; min-height: 34px; padding: 0 11px; border: 0; color: #667085; background: transparent; font: inherit; font-size: 12px; cursor: pointer; }
 .admin-console__logout:hover { color: #d92d20; }
 .admin-console__content { min-height: 0; padding: 24px 28px 36px; overflow: auto; }
-
 .admin-dashboard__hero { display: flex; align-items: center; justify-content: space-between; gap: 28px; padding: 24px 26px; border: 1px solid #f1dfd2; border-radius: 16px; background: linear-gradient(120deg, #fff9f4 0%, #fff 55%, #f1f6ff 100%); box-shadow: 0 8px 28px rgba(45, 55, 72, 0.035); }
 .admin-dashboard__eyebrow { color: var(--admin-accent); font-size: 11px; font-weight: 800; letter-spacing: 0.13em; }
 .admin-dashboard__hero h2 { margin: 7px 0 0; font-size: 24px; line-height: 1.3; }
@@ -951,7 +935,6 @@ onMounted(loadSection);
 .admin-dashboard__sync span { display: inline-flex; align-items: center; gap: 7px; padding: 7px 11px; border-radius: 999px; color: #18794e; background: #ecfdf3; font-size: 12px; font-weight: 600; }
 .admin-dashboard__sync i { width: 7px; height: 7px; border-radius: 50%; background: #20b26b; }
 .admin-dashboard__sync small { color: #98a2b3; font-size: 11px; }
-
 .admin-dashboard__metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin-top: 18px; }
 .admin-dashboard__metrics > button { display: flex; align-items: center; gap: 15px; min-width: 0; min-height: 112px; padding: 20px; border: 1px solid var(--admin-border); border-radius: 14px; color: inherit; background: #fff; text-align: left; cursor: pointer; box-shadow: 0 7px 22px rgba(16, 24, 40, 0.025); transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease; }
 .admin-dashboard__metrics > button:hover { transform: translateY(-2px); border-color: #fac9a7; box-shadow: 0 12px 28px rgba(55, 65, 81, 0.07); }
@@ -963,7 +946,6 @@ onMounted(loadSection);
 .admin-dashboard__metrics small { color: #667085; font-size: 12px; }
 .admin-dashboard__metrics strong { margin-top: 3px; color: #101828; font-size: 27px; line-height: 1.2; }
 .admin-dashboard__metrics em { overflow: hidden; margin-top: 5px; color: #98a2b3; font-size: 10px; font-style: normal; text-overflow: ellipsis; white-space: nowrap; }
-
 .admin-dashboard__grid { display: grid; grid-template-columns: minmax(0, 1.18fr) minmax(360px, 0.82fr); gap: 16px; margin-top: 16px; }
 .admin-dashboard__grid--bottom { grid-template-columns: minmax(0, 0.95fr) minmax(420px, 1.05fr); }
 .admin-dashboard__panel { min-width: 0; padding: 21px 22px; border: 1px solid var(--admin-border); border-radius: 14px; background: #fff; box-shadow: 0 7px 22px rgba(16, 24, 40, 0.025); }
@@ -983,7 +965,6 @@ onMounted(loadSection);
 .admin-dashboard__progress-list b { color: #344054; font-size: 12px; }
 .admin-dashboard__progress-list :deep(.el-progress) { grid-column: 1 / -1; }
 .admin-dashboard__progress-list :deep(.el-progress-bar__outer) { height: 7px !important; background: #f0f2f5; }
-.admin-dashboard__progress-list :deep(.el-progress-bar__inner) { background: var(--admin-blue); }
 .admin-dashboard__attention-list { display: grid; gap: 8px; margin-top: 17px; }
 .admin-dashboard__attention-list > button { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; align-items: center; gap: 11px; width: 100%; padding: 11px 12px; border: 1px solid transparent; border-radius: 9px; color: inherit; background: #fafbfc; text-align: left; cursor: pointer; }
 .admin-dashboard__attention-list > button:hover { border-color: #f2d2bd; background: #fffaf6; }
@@ -1005,14 +986,12 @@ onMounted(loadSection);
 .admin-dashboard__recent-list small { color: #98a2b3; font-size: 9px; }
 .admin-dashboard__recent-list p { display: grid; justify-items: end; gap: 2px; margin: 0; color: #667085; font-size: 10px; }
 .admin-dashboard__recent-list p b { color: #1d2939; font-size: 14px; }
-
 .admin-user-overview { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); min-height: 104px; padding: 0 18px; border: 1px solid var(--admin-border); border-radius: 14px; background: linear-gradient(110deg, #fffaf6 0%, #fff 48%, #f6f9ff 100%); }
 .admin-user-overview > div { position: relative; display: flex; align-items: center; justify-content: center; gap: 14px; }
 .admin-user-overview > div:not(:last-child)::after { position: absolute; top: 31px; right: 0; width: 1px; height: 42px; content: ""; background: #e7ebf1; }
 .admin-user-overview > div > span { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 50%; color: var(--admin-accent); background: #fff0e4; font-size: 20px; }
 .admin-user-overview p { display: grid; gap: 3px; margin: 0; color: #667085; font-size: 12px; }
 .admin-user-overview strong { color: var(--admin-accent-dark); font-size: 26px; }
-
 .admin-filter-panel { display: grid; grid-template-columns: minmax(210px, 1.3fr) repeat(2, minmax(160px, 1fr)) auto; gap: 18px; align-items: end; margin-top: 16px; padding: 18px 20px; border: 1px solid var(--admin-border); border-radius: 14px; background: #fff; }
 .admin-filter-panel--entity { grid-template-columns: minmax(250px, 1.6fr) minmax(160px, 0.8fr) auto 132px; }
 .admin-filter-panel--major { grid-template-columns: minmax(220px, 1.4fr) repeat(2, minmax(145px, 0.8fr)) auto 132px; }
@@ -1024,7 +1003,6 @@ onMounted(loadSection);
 .admin-filter-panel__actions { display: flex; gap: 8px; }
 .admin-filter-panel__actions :deep(.el-button--primary), .admin-create-button { min-width: 92px; }
 .admin-filter-panel :deep(.el-button--primary), .admin-create-button { --el-button-bg-color: var(--admin-accent); --el-button-border-color: var(--admin-accent); --el-button-hover-bg-color: #ff8b42; --el-button-hover-border-color: #ff8b42; }
-
 .admin-table-panel { margin-top: 16px; overflow: hidden; border: 1px solid var(--admin-border); border-radius: 14px; background: #fff; }
 .admin-table-panel > header { display: flex; align-items: center; justify-content: space-between; gap: 20px; min-height: 68px; padding: 0 20px; border-bottom: 1px solid #edf0f4; }
 .admin-table-panel > header h3 { margin: 0; font-size: 15px; }
@@ -1036,7 +1014,6 @@ onMounted(loadSection);
 .admin-table-panel :deep(.el-pagination) { justify-content: flex-end; padding: 14px 18px; border-top: 1px solid #edf0f4; }
 .admin-table-panel :deep(.el-pagination .is-active) { background: var(--admin-accent) !important; }
 .admin-text--muted { color: #98a2b3; }
-
 .admin-dialog-form { display: grid; gap: 18px; }
 .admin-dialog-form dl { display: grid; gap: 11px; margin: 0; padding: 15px; border-radius: 11px; background: #f8f9fb; }
 .admin-dialog-form dl > div { display: grid; grid-template-columns: 82px minmax(0, 1fr); gap: 12px; }
@@ -1047,10 +1024,8 @@ onMounted(loadSection);
 .admin-record-form__wide { grid-column: 1 / -1; }
 .admin-record-form__checks { display: flex; gap: 24px; padding-top: 2px; }
 .admin-record-form :deep(.el-input__wrapper), .admin-record-form :deep(.el-select__wrapper), .admin-record-form :deep(.el-input-number) { min-height: 39px; border-radius: 8px; }
-
 .is-spinning { animation: admin-spin 0.85s linear infinite; }
 @keyframes admin-spin { to { transform: rotate(360deg); } }
-
 @media (max-width: 1380px) {
   .admin-console { grid-template-columns: 232px minmax(0, 1fr); }
   .admin-console__content { padding: 20px; }
@@ -1060,7 +1035,6 @@ onMounted(loadSection);
   .admin-filter-panel__actions { justify-content: flex-end; }
   .admin-create-button { width: 100%; }
 }
-
 @media (max-width: 900px) {
   .admin-console { display: block; height: auto; min-height: 100vh; overflow: visible; }
   .admin-console__sidebar { height: auto; padding-bottom: 14px; border-right: 0; border-bottom: 1px solid #e8e4df; }
@@ -1070,7 +1044,6 @@ onMounted(loadSection);
   .admin-console__workspace { display: block; }
   .admin-console__header { min-height: 78px; }
 }
-
 @media (max-width: 680px) {
   .admin-console__nav { grid-template-columns: 1fr; }
   .admin-console__header { align-items: flex-start; padding: 16px; }
