@@ -30,7 +30,6 @@ const guaranteeList = computed(() => (Array.isArray(props.grouped?.guarantee) ? 
 const TYPE_FILTERS = [
   { value: "ALL", label: "类型不限" },
   { value: "985", label: "985" },
-  { value: "211", label: "211" },
   { value: "DOUBLE", label: "双一流" }
 ];
 const SORTERS = [
@@ -62,8 +61,8 @@ function matchTypeFilter(item) {
   if (typeFilter.value === "ALL") return true;
   const flags = normalizeSchoolTags(item);
   if (typeFilter.value === "985") return flags.is985;
-  if (typeFilter.value === "211") return flags.is211;
-  return flags.isDoubleFirstClass;
+  // 双一流 ≡ 211：选双一流时 211 院校同样命中（20260820 概念归并）
+  return flags.is211 || flags.isDoubleFirstClass;
 }
 function matchKeyword(item) {
   const kw = keyword.value.trim().toLowerCase();

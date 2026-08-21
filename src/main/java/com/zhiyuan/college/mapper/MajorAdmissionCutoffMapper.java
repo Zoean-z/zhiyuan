@@ -38,7 +38,7 @@ public interface MajorAdmissionCutoffMapper extends BaseMapper<MajorAdmissionCut
                 FROM major_admission_cutoff m2
                 WHERE m2.province = #{province}
                   AND m2.subject_type = #{subjectType}
-                  AND m2.university_id = #{universityId}
+                  AND m2.university_id = m.university_id
               )
             """)
     List<AdmissionCutoffWithUniversity> findLatestByProvinceSubjectAndMajorKeyword(@Param("province") String province,

@@ -30,7 +30,12 @@ const filtered = computed(() => {
   const kw = keyword.value.trim();
   const list = SCHOOLS.filter((school) => {
     if (provinceFilter.value !== "全部" && school.province !== provinceFilter.value) return false;
-    if (levelFilter.value !== "all" && !school[levelFilter.value]) return false;
+    if (levelFilter.value !== "all") {
+      // 双一流 ≡ 211：选双一流时 211 院校同样命中（20260820 概念归并）
+      if (levelFilter.value === "isDoubleFirstClass") {
+        if (!school.is211 && !school.isDoubleFirstClass) return false;
+      } else if (!school[levelFilter.value]) return false;
+    }
     if (kw && !school.name.includes(kw)) return false;
     return true;
   });

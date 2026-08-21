@@ -263,7 +263,8 @@ public class UniversityQueryService {
         List<String> schoolProvinces = safeList(universityMapper.findDistinctProvinces());
         List<String> examProvinces = safeList(admissionCutoffMapper.findDistinctProvinces());
         List<String> subjectTypes = Arrays.stream(SubjectType.values()).map(SubjectType::getDisplayName).toList();
-        List<String> levels = List.of("985", "211", "双一流", "普通");
+        // 双一流 ≡ 211：筛选项不再单列 211（20260820 概念归并）
+        List<String> levels = List.of("985", "双一流", "普通");
 
         LinkedHashSet<String> tags = new LinkedHashSet<>();
         for (String raw : safeList(universityMapper.findDistinctTagValues())) {

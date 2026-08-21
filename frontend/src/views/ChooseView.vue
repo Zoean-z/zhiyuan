@@ -1,5 +1,5 @@
 <script setup>
-import { Promotion, Search } from "@element-plus/icons-vue";
+import { Promotion } from "@element-plus/icons-vue";
 import { computed, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import GkHeader from "../components/GkHeader.vue";
@@ -35,11 +35,10 @@ import {
 const router = useRouter();
 const route = useRoute();
 const probability = ref("全部");
-const submitted = ref(false);
 
 onMounted(() => {
   syncFromAuth();
-  // 首页「智能推荐大学」会带 score/rank/subject/second/province 过来
+  // 首页「智能推荐大学」会带 score/subject/second/province 过来
   const q = route.query;
   const patch = {};
   const presetScore = Number(Array.isArray(q.score) ? q.score[0] : q.score);
@@ -50,7 +49,6 @@ onMounted(() => {
     patch.secondSubjects = q.second.split(",").filter((item) => SECOND_SUBJECTS.includes(item)).slice(0, 2);
   }
   if (Object.keys(patch).length) patchProfile(patch);
-  if (isReady.value) submitted.value = true;
 });
 
 const opts = computed(() => ({
@@ -68,25 +66,31 @@ function probLabelOf(key) {
 
 const allResults = computed(() =>
   RANK_LIST.map((school) => {
-    const seed = school.id * 37;
-    const group = ((seed % 24) + 6).toString().padStart(3, "0");
     const cutoff = schoolCutoff(school, opts.value);
     const detail = probDetailOf(school, score.value, opts.value);
-    const strategy = detail.probability == null ? null : strategyOf(detail.probability);
+    // 已设分数但位次落后超模型下界 → 判「<1%」极低概率，不允许出现「待测」
+    const belowLine = isReady.value && detail.cutoff != null
+      && detail.rankGap != null && detail.rankGap < 0
+      && detail.scoreGap != null && detail.scoreGap < 0;
+    const strategy = detail.probability != null
+      ? strategyOf(detail.probability)
+      : (belowLine ? { key: "risk" } : null);
     const second = profile.secondSubjects.length ? profile.secondSubjects.join(" / ") : "不限";
     return {
       ...school,
-      group,
       rule: `首选${profile.firstSubject}，再选${second}`,
       minScore: cutoff?.score ?? null,
       minRank: cutoff?.minRank ?? null,
       probability: detail.probability,
+      probText: detail.probability != null
+        ? `${detail.probability}%`
+        : (belowLine ? "<1%" : "待测"),
       rankGap: detail.rankGap,
       scoreGap: detail.scoreGap,
       strategyKey: strategy?.key ?? "unknown",
       prob: strategy ? probLabelOf(strategy.key) : "待测算"
     };
-  }).sort((a, b) => (b.probability ?? -1) - (a.probability ?? -1))
+  }).sort((a, b) => (b.probability ?? (b.probText === "<1%" ? 0 : -1)) - (a.probability ?? (a.probText === "<1%" ? 0 : -1)))
 );
 
 const results = computed(() =>
@@ -97,16 +101,8 @@ function onScoreInput(event) {
   setScore(event.target.value);
 }
 
-function onRankInput(event) {
-  const raw = event.target.value;
-  profile.manualRank = raw === "" ? null : Number(raw);
-}
-
-function runChoose() {
-  submitted.value = isReady.value;
-}
-
 function probClass(item) {
+  if (item.probability == null && item.probText !== "<1%") return "is-unknown";
   if (item.prob === "概率大") return "is-high";
   if (item.prob === "概率中") return "is-mid";
   return "is-low";
@@ -147,7 +143,7 @@ function goAgentPlan() {
           <div class="gk-choose__hero">
             <div>
               <h2 class="gk-choose__title">智能选大学</h2>
-              <p class="gk-choose__desc">输入科类、选科与分数，按「位次差 75% + 分差 25%」测算每个专业组的录取概率</p>
+              <p class="gk-choose__desc">输入科类、选科与分数，按「位次差 75% + 分差 25%」测算每所院校的参考录取概率</p>
             </div>
             <button class="gk-choose__ai" type="button" @click="goAgentPlan">
               <el-icon><Promotion /></el-icon>
@@ -188,24 +184,13 @@ function goAgentPlan() {
               <input
                 class="gk-choose__input"
                 type="number"
-                min="0"
+                min="100"
                 max="750"
                 placeholder="高考分数"
                 :value="profile.score ?? ''"
                 @input="onScoreInput"
               />
-              <span class="gk-filter__label gk-choose__label2">位次</span>
-              <input
-                class="gk-choose__input"
-                type="number"
-                placeholder="选填，默认自动换算"
-                :value="profile.manualRank ?? ''"
-                @input="onRankInput"
-              />
-              <button class="gk-choose__run" type="button" @click="runChoose">
-                <el-icon><Search /></el-icon>
-                开始匹配
-              </button>
+              <i class="gk-filter__tip">位次按一分一段曲线自动换算，改分数即实时重算</i>
             </div>
             <div class="gk-filter__row">
               <span class="gk-filter__label">概率</span>
@@ -222,32 +207,31 @@ function goAgentPlan() {
             </div>
           </div>
 
-          <p v-if="submitted && isReady" class="gk-page__meta">
+          <p v-if="isReady" class="gk-page__meta">
             {{ profile.province }} · {{ profile.firstSubject }}类 {{ score }} 分 · 位次约
             <b>{{ rank.toLocaleString() }}</b>（超过 {{ percent }}% 考生）· 匹配到
-            <b>{{ results.length }}</b> 个专业组
+            <b>{{ results.length }}</b> 所院校
           </p>
 
-          <ul v-if="submitted && isReady" class="gk-choose-list">
-            <li v-for="item in results" :key="`${item.id}-${item.group}`" class="gk-choose" @click="openSchool(item)">
+          <ul v-if="isReady" class="gk-choose-list">
+            <li v-for="item in results" :key="item.id" class="gk-choose" @click="openSchool(item)">
               <GkSchoolLogo :school="item" />
               <div class="gk-choose__info">
                 <p class="gk-school__name">
                   {{ item.name }}
                   <span class="gk-school__loc">@{{ schoolLoc(item) }}</span>
-                  <span class="gk-choose__group">专业组({{ item.group }})</span>
                 </p>
-                <p class="gk-choose__rule">选科规则：{{ item.rule }}</p>
+                <p class="gk-choose__rule">当前筛选：{{ item.rule }}</p>
                 <p class="gk-school__tags">
                   {{ item.type }} | {{ item.nature }}
                   <i v-for="tag in schoolTags(item)" :key="tag">{{ tag }}</i>
                 </p>
               </div>
               <div class="gk-choose__nums">
-                <p><b>{{ item.minScore }}</b><span>最低分</span></p>
+                <p><b>{{ item.minScore == null ? "暂无" : item.minScore }}</b><span>最低分</span></p>
                 <p><b>{{ item.minRank == null ? "待测" : item.minRank.toLocaleString() }}</b><span>最低位次</span></p>
                 <p class="gk-choose__rate">
-                  <b>{{ item.probability }}%</b><span>录取概率</span>
+                  <b>{{ item.probText }}</b><span>录取概率</span>
                 </p>
               </div>
               <div class="gk-choose__gap">
@@ -261,19 +245,20 @@ function goAgentPlan() {
               <span class="gk-choose__prob" :class="probClass(item)">{{ item.prob }}</span>
               <button class="gk-school__action" type="button" @click.stop="openSchool(item)">院校详情 &gt;</button>
             </li>
-            <li v-if="!results.length" class="gk-school__empty">没有匹配的专业组，试试放宽概率筛选</li>
+            <li v-if="!results.length" class="gk-school__empty">没有匹配的院校，试试放宽概率筛选</li>
           </ul>
 
           <div v-else class="gk-choose__placeholder">
             <p class="gk-choose__ph-title">概率是怎么算出来的？</p>
             <p class="gk-choose__ph-desc">
-              ① 先用一分一段曲线把你的分数换成全省位次；
-              ② 拿你的位次与院校历年最低位次相减得到「位次差」，分数与最低分相减得到「分差」；
+              ① 先用一分一段曲线（浙江为省考试院 2025/2026 年真实一分一段表）把你的分数换成全省位次；
+              ② 拿你的位次与院校最低位次相减得到「位次差」，分数与最低分相减得到「分差」；
               ③ 两个差值分段换算成概率后，按 位次 75% + 分数 25% 加权（与后端
               <code>RecommendationPolicyService</code> 完全一致）；
               ④ ≥75% 为保底、≥55% 为稳妥、≥35% 为冲击，低于 35% 判为高风险。
+              录取线：浙江为 2026 年一段平行投档真实数据，其余省份为按浙江真实位次百分位换算的估算值。
             </p>
-            <p class="gk-choose__ph-desc">请先在上方填入高考分数，再点「开始匹配」。</p>
+            <p class="gk-choose__ph-desc">填入高考分数后，匹配结果会立即显示并随分数实时更新。</p>
           </div>
         </section>
 

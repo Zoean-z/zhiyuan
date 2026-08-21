@@ -90,8 +90,8 @@ export function normalizeSchoolTags(item) {
 
   const normalized = [];
   if (is985) normalized.push("985");
-  if (is211) normalized.push("211");
-  if (isDoubleFirstClass) normalized.push("双一流");
+  // 双一流 ≡ 211：211 不再单独展示，按最高标准并入双一流（20260820 概念更新）
+  if (is211 || isDoubleFirstClass) normalized.push("双一流");
   schoolTags.forEach((tag) => {
     if (tag !== "普通" && !normalized.includes(tag)) {
       normalized.push(tag);

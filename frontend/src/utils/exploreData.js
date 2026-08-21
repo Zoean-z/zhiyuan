@@ -1,27 +1,36 @@
-// 公开数据查询页（查大学/院校排行/一分一段/招生计划）共享演示数据
+// 公开数据查询页（查大学/院校排行/一分一段/招生计划）共享数据
 // 与 utils/mock.js 的 MOCK_SCHOOLS 保持同源（id/name/province/tier 一致），补充展示字段
-
+import { hasRealCurve, rankOfScore } from "./scoreModel";
+//
+// 数据来源（20260820 联网核实）：
+//  - ruanke：软科2025中国大学排名（上海软科）
+//  - xiaoyouhui：校友会2026中国大学排名（艾瑞深研究院）
+//  - baoyan/baoyanCohort：各校2024/2025届毕业生就业质量报告（新高考网整理）
+//  - masters/phds：一级学科硕士点/博士点数（各校研究生院统计，39所985盘点）
+//  - cutoffs.浙江：浙江省教育考试院2026年普通类一段平行投档线（最低专业组；
+//    rank 为官方位次号，null 时由真实一分一段曲线换算；note 标注专业组口径）
+//  - clubTags：C9/华东五校/中坚九校/国防七子/建筑老八校/四大工学院/电气四虎/机械五虎（通行口径）
 export const SCHOOLS = [
-  { id: 1, name: "清华大学", province: "北京", city: "北京", type: "综合类", nature: "公办", belong: "教育部直属", is985: true, is211: true, isDoubleFirstClass: true, planCount: 320, majorCount: 82, planDelta: 12 },
-  { id: 2, name: "北京大学", province: "北京", city: "北京", type: "综合类", nature: "公办", belong: "教育部直属", is985: true, is211: true, isDoubleFirstClass: true, planCount: 298, majorCount: 96, planDelta: 8 },
-  { id: 3, name: "浙江大学", province: "浙江", city: "杭州", type: "综合类", nature: "公办", belong: "教育部直属", is985: true, is211: true, isDoubleFirstClass: true, planCount: 356, majorCount: 104, planDelta: 15 },
-  { id: 4, name: "复旦大学", province: "上海", city: "上海", type: "综合类", nature: "公办", belong: "教育部直属", is985: true, is211: true, isDoubleFirstClass: true, planCount: 286, majorCount: 78, planDelta: -6 },
-  { id: 5, name: "上海交通大学", province: "上海", city: "上海", type: "综合类", nature: "公办", belong: "教育部直属", is985: true, is211: true, isDoubleFirstClass: true, planCount: 312, majorCount: 88, planDelta: 17 },
-  { id: 6, name: "南京大学", province: "江苏", city: "南京", type: "综合类", nature: "公办", belong: "教育部直属", is985: true, is211: true, isDoubleFirstClass: true, planCount: 264, majorCount: 74, planDelta: 6 },
-  { id: 7, name: "中国科学技术大学", province: "安徽", city: "合肥", type: "理工类", nature: "公办", belong: "中国科学院直属", is985: true, is211: true, isDoubleFirstClass: true, planCount: 186, majorCount: 52, planDelta: 10 },
-  { id: 8, name: "华中科技大学", province: "湖北", city: "武汉", type: "理工类", nature: "公办", belong: "教育部直属", is985: true, is211: true, isDoubleFirstClass: true, planCount: 342, majorCount: 92, planDelta: 28 },
-  { id: 9, name: "武汉大学", province: "湖北", city: "武汉", type: "综合类", nature: "公办", belong: "教育部直属", is985: true, is211: true, isDoubleFirstClass: true, planCount: 328, majorCount: 98, planDelta: 12 },
-  { id: 10, name: "中山大学", province: "广东", city: "广州", type: "综合类", nature: "公办", belong: "教育部直属", is985: true, is211: true, isDoubleFirstClass: true, planCount: 368, majorCount: 108, planDelta: 20 },
-  { id: 11, name: "哈尔滨工业大学", province: "黑龙江", city: "哈尔滨", type: "理工类", nature: "公办", belong: "工业和信息化部直属", is985: true, is211: true, isDoubleFirstClass: true, planCount: 296, majorCount: 76, planDelta: 14 },
-  { id: 12, name: "西安交通大学", province: "陕西", city: "西安", type: "综合类", nature: "公办", belong: "教育部直属", is985: true, is211: true, isDoubleFirstClass: true, planCount: 302, majorCount: 84, planDelta: 9 },
-  { id: 13, name: "同济大学", province: "上海", city: "上海", type: "理工类", nature: "公办", belong: "教育部直属", is985: true, is211: true, isDoubleFirstClass: true, planCount: 278, majorCount: 72, planDelta: -8 },
-  { id: 14, name: "北京航空航天大学", province: "北京", city: "北京", type: "理工类", nature: "公办", belong: "工业和信息化部直属", is985: true, is211: true, isDoubleFirstClass: true, planCount: 232, majorCount: 64, planDelta: 11 },
-  { id: 15, name: "天津大学", province: "天津", city: "天津", type: "理工类", nature: "公办", belong: "教育部直属", is985: true, is211: true, isDoubleFirstClass: true, planCount: 288, majorCount: 70, planDelta: 5 },
-  { id: 16, name: "华南理工大学", province: "广东", city: "广州", type: "理工类", nature: "公办", belong: "教育部直属", is985: true, is211: true, isDoubleFirstClass: true, planCount: 316, majorCount: 86, planDelta: 22 },
-  { id: 17, name: "东南大学", province: "江苏", city: "南京", type: "综合类", nature: "公办", belong: "教育部直属", is985: true, is211: true, isDoubleFirstClass: true, planCount: 274, majorCount: 80, planDelta: 7 },
-  { id: 18, name: "大连理工大学", province: "辽宁", city: "大连", type: "理工类", nature: "公办", belong: "教育部直属", is985: true, is211: true, isDoubleFirstClass: true, planCount: 262, majorCount: 68, planDelta: -5 },
-  { id: 19, name: "山东大学", province: "山东", city: "济南", type: "综合类", nature: "公办", belong: "教育部直属", is985: true, is211: true, isDoubleFirstClass: true, planCount: 352, majorCount: 102, planDelta: 18 },
-  { id: 20, name: "厦门大学", province: "福建", city: "厦门", type: "综合类", nature: "公办", belong: "教育部直属", is985: true, is211: true, isDoubleFirstClass: true, planCount: 284, majorCount: 90, planDelta: 3 }
+  { id: 1, name: "清华大学", province: "北京", city: "北京", district: "海淀区", type: "综合类", nature: "公办", belong: "教育部直属", is985: true, is211: true, isDoubleFirstClass: true, planCount: 320, majorCount: 82, planDelta: 12, clubTags: ["C9", "电气四虎", "机械五虎"], masters: 60, phds: 58, baoyan: 76.0, baoyanCohort: "2025届", ruanke: 1, xiaoyouhui: 2, cutoffs: { 浙江: { score: 700, rank: 94, year: 2026 } } },
+  { id: 2, name: "北京大学", province: "北京", city: "北京", district: "海淀区", type: "综合类", nature: "公办", belong: "教育部直属", is985: true, is211: true, isDoubleFirstClass: true, planCount: 298, majorCount: 96, planDelta: 8, clubTags: ["C9"], masters: 49, phds: 52, baoyan: 65.07, baoyanCohort: "2025届", ruanke: 2, xiaoyouhui: 1, cutoffs: { 浙江: { score: 700, rank: 94, year: 2026 } } },
+  { id: 3, name: "浙江大学", province: "浙江", city: "杭州", type: "综合类", nature: "公办", belong: "教育部直属", is985: true, is211: true, isDoubleFirstClass: true, planCount: 356, majorCount: 104, planDelta: 15, clubTags: ["C9", "华东五校", "电气四虎"], masters: 62, phds: 62, baoyan: 40.67, baoyanCohort: "2025届", ruanke: 3, xiaoyouhui: 3, cutoffs: { 浙江: { score: 665, rank: 6043, year: 2026 } } },
+  { id: 4, name: "复旦大学", province: "上海", city: "上海", district: "杨浦区", type: "综合类", nature: "公办", belong: "教育部直属", is985: true, is211: true, isDoubleFirstClass: true, planCount: 286, majorCount: 78, planDelta: -6, clubTags: ["C9", "华东五校"], masters: 43, phds: 40, baoyan: 44.95, baoyanCohort: "2025届", ruanke: 5, xiaoyouhui: 4, cutoffs: { 浙江: { score: 691, rank: null, year: 2026 } } },
+  { id: 5, name: "上海交通大学", province: "上海", city: "上海", district: "闵行区", type: "综合类", nature: "公办", belong: "教育部直属", is985: true, is211: true, isDoubleFirstClass: true, planCount: 312, majorCount: 88, planDelta: 17, clubTags: ["C9", "华东五校", "机械五虎"], masters: 58, phds: 52, baoyan: 45.95, baoyanCohort: "2025届", ruanke: 4, xiaoyouhui: 5, cutoffs: { 浙江: { score: 698, rank: 150, year: 2026 } } },
+  { id: 6, name: "南京大学", province: "江苏", city: "南京", type: "综合类", nature: "公办", belong: "教育部直属", is985: true, is211: true, isDoubleFirstClass: true, planCount: 264, majorCount: 74, planDelta: 6, clubTags: ["C9", "华东五校"], masters: 48, phds: 44, baoyan: 44.72, baoyanCohort: "2025届", ruanke: 6, xiaoyouhui: 6, cutoffs: { 浙江: { score: 677, rank: 2617, year: 2026 } } },
+  { id: 7, name: "中国科学技术大学", province: "安徽", city: "合肥", type: "理工类", nature: "公办", belong: "中国科学院直属", is985: true, is211: true, isDoubleFirstClass: true, planCount: 186, majorCount: 52, planDelta: 10, clubTags: ["C9", "华东五校"], masters: 38, phds: 30, baoyan: 56.22, baoyanCohort: "2025届", ruanke: 7, xiaoyouhui: 8, cutoffs: { 浙江: { score: 678, rank: 2397, year: 2026 } } },
+  { id: 8, name: "华中科技大学", province: "湖北", city: "武汉", type: "理工类", nature: "公办", belong: "教育部直属", is985: true, is211: true, isDoubleFirstClass: true, planCount: 342, majorCount: 92, planDelta: 28, clubTags: ["中坚九校", "电气四虎", "机械五虎"], masters: 47, phds: 45, baoyan: 37.2, baoyanCohort: "2025届", ruanke: 9, xiaoyouhui: 10, cutoffs: { 浙江: { score: 644, rank: null, year: 2026, note: "最低专业组为中外合作办学" } } },
+  { id: 9, name: "武汉大学", province: "湖北", city: "武汉", type: "综合类", nature: "公办", belong: "教育部直属", is985: true, is211: true, isDoubleFirstClass: true, planCount: 328, majorCount: 98, planDelta: 12, clubTags: ["中坚九校"], masters: 61, phds: 54, baoyan: 30.9, baoyanCohort: "2025届", ruanke: 8, xiaoyouhui: 9, cutoffs: { 浙江: { score: 664, rank: null, year: 2026 } } },
+  { id: 10, name: "中山大学", province: "广东", city: "广州", type: "综合类", nature: "公办", belong: "教育部直属", is985: true, is211: true, isDoubleFirstClass: true, planCount: 368, majorCount: 108, planDelta: 20, clubTags: ["中坚九校"], masters: 65, phds: 57, baoyan: 29.29, baoyanCohort: "2024届", ruanke: 12, xiaoyouhui: 14, cutoffs: { 浙江: { score: 658, rank: 8820, year: 2026 } } },
+  { id: 11, name: "哈尔滨工业大学", province: "黑龙江", city: "哈尔滨", type: "理工类", nature: "公办", belong: "工业和信息化部直属", is985: true, is211: true, isDoubleFirstClass: true, planCount: 296, majorCount: 76, planDelta: 14, clubTags: ["C9", "国防七子", "中坚九校", "机械五虎"], masters: 41, phds: 29, baoyan: 36.1, baoyanCohort: "2024届", ruanke: 14, xiaoyouhui: 12, cutoffs: { 浙江: { score: 678, rank: null, year: 2026, note: "本部普通类专业组最低线" } } },
+  { id: 12, name: "西安交通大学", province: "陕西", city: "西安", type: "综合类", nature: "公办", belong: "教育部直属", is985: true, is211: true, isDoubleFirstClass: true, planCount: 302, majorCount: 84, planDelta: 9, clubTags: ["C9", "中坚九校", "电气四虎", "机械五虎"], masters: 43, phds: 36, baoyan: 36.6, baoyanCohort: "2024届", ruanke: 10, xiaoyouhui: 13, cutoffs: { 浙江: { score: 666, rank: null, year: 2026 } } },
+  { id: 13, name: "同济大学", province: "上海", city: "上海", district: "杨浦区", type: "理工类", nature: "公办", belong: "教育部直属", is985: true, is211: true, isDoubleFirstClass: true, planCount: 278, majorCount: 72, planDelta: -8, clubTags: ["建筑老八校"], masters: 46, phds: 37, baoyan: 41.41, baoyanCohort: "2025届", ruanke: 18, xiaoyouhui: 17, cutoffs: { 浙江: { score: 663, rank: null, year: 2026 } } },
+  { id: 14, name: "北京航空航天大学", province: "北京", city: "北京", district: "海淀区", type: "理工类", nature: "公办", belong: "工业和信息化部直属", is985: true, is211: true, isDoubleFirstClass: true, planCount: 232, majorCount: 64, planDelta: 11, clubTags: ["国防七子"], masters: 38, phds: 21, baoyan: 49.8, baoyanCohort: "2025届", ruanke: 11, xiaoyouhui: 18, cutoffs: { 浙江: { score: 663, rank: null, year: 2026 } } },
+  { id: 15, name: "天津大学", province: "天津", city: "天津", district: "南开区", type: "理工类", nature: "公办", belong: "教育部直属", is985: true, is211: true, isDoubleFirstClass: true, planCount: 288, majorCount: 70, planDelta: 5, clubTags: ["建筑老八校", "中坚九校"], masters: 47, phds: 33, baoyan: 35.05, baoyanCohort: "2025届", ruanke: 20, xiaoyouhui: 22, cutoffs: { 浙江: { score: 657, rank: null, year: 2026 } } },
+  { id: 16, name: "华南理工大学", province: "广东", city: "广州", type: "理工类", nature: "公办", belong: "教育部直属", is985: true, is211: true, isDoubleFirstClass: true, planCount: 316, majorCount: 86, planDelta: 22, clubTags: ["建筑老八校", "四大工学院"], masters: 43, phds: 35, baoyan: 23.76, baoyanCohort: "2025届", ruanke: 31, xiaoyouhui: 25, cutoffs: { 浙江: { score: 657, rank: null, year: 2026, note: "经济学类专业组最低线" } } },
+  { id: 17, name: "东南大学", province: "江苏", city: "南京", type: "综合类", nature: "公办", belong: "教育部直属", is985: true, is211: true, isDoubleFirstClass: true, planCount: 274, majorCount: 80, planDelta: 7, clubTags: ["建筑老八校", "中坚九校", "四大工学院"], masters: 50, phds: 37, baoyan: 37.29, baoyanCohort: "2025届", ruanke: 16, xiaoyouhui: 20, cutoffs: { 浙江: { score: 652, rank: null, year: 2026, note: "最低专业组为中外合作办学" } } },
+  { id: 18, name: "大连理工大学", province: "辽宁", city: "大连", type: "理工类", nature: "公办", belong: "教育部直属", is985: true, is211: true, isDoubleFirstClass: true, planCount: 262, majorCount: 68, planDelta: -5, clubTags: ["四大工学院"], masters: 42, phds: 29, baoyan: 23.99, baoyanCohort: "2025届", ruanke: 28, xiaoyouhui: 27, cutoffs: { 浙江: { score: 641, rank: null, year: 2026, note: "最低专业组为中外合作办学" } } },
+  { id: 19, name: "山东大学", province: "山东", city: "济南", type: "综合类", nature: "公办", belong: "教育部直属", is985: true, is211: true, isDoubleFirstClass: true, planCount: 352, majorCount: 102, planDelta: 18, clubTags: [], masters: 52, phds: 44, baoyan: 29.8, baoyanCohort: "2025届", ruanke: 22, xiaoyouhui: 19, cutoffs: { 浙江: { score: 651, rank: null, year: 2026 } } },
+  { id: 20, name: "厦门大学", province: "福建", city: "厦门", type: "综合类", nature: "公办", belong: "教育部直属", is985: true, is211: true, isDoubleFirstClass: true, planCount: 284, majorCount: 90, planDelta: 3, clubTags: ["中坚九校"], masters: 46, phds: 37, baoyan: 28.8, baoyanCohort: "2025届", ruanke: 24, xiaoyouhui: 23, cutoffs: { 浙江: { score: 660, rank: 7907, year: 2026 } } }
 ];
 
 export const SCHOOL_PROVINCES = ["全部", ...Array.from(new Set(SCHOOLS.map((s) => s.province)))];
@@ -29,18 +38,21 @@ export const SCHOOL_TYPES = ["全部", ...Array.from(new Set(SCHOOLS.map((s) => 
 export const SCHOOL_LEVELS = [
   { label: "全部", key: "all" },
   { label: "985", key: "is985" },
-  { label: "211", key: "is211" },
   { label: "双一流", key: "isDoubleFirstClass" }
 ];
 
-// 排行榜：综合榜按加权指数；理工榜/综合榜切换由视图过滤
-export const RANK_LIST = SCHOOLS.map((school, index) => ({
-  ...school,
-  rank: index + 1,
-  index: (99.9 - index * 0.42).toFixed(1)
-}));
+// 排行榜：按软科2025真实排名排序；index 为演示用加权指数
+export const RANK_LIST = [...SCHOOLS]
+  .sort((a, b) => a.ruanke - b.ruanke)
+  .map((school, index) => ({
+    ...school,
+    rank: school.ruanke,
+    index: (99.9 - index * 0.42).toFixed(1)
+  }));
 
-// 一分一段：按省份+科类生成稳定演示分布（700 → 500 分段）
+// 一分一段：浙江用真实曲线（省考试院 2025/2026 一分一段锚点）换算本段人数；
+// 其余省份按省份+科类生成稳定演示分布（700 → 500 分段）
+
 const SEGMENT_TEMPLATE = [
   3, 5, 8, 12, 18, 25, 34, 46, 60, 78,
   98, 122, 150, 182, 218, 258, 300, 346, 395, 446,
@@ -52,6 +64,21 @@ export const SEGMENT_PROVINCES = ["浙江", "广东", "北京", "上海", "江�
 export const SEGMENT_SUBJECTS = ["物理类", "历史类"];
 
 export function buildSegments(province, subject) {
+  const opts = { province, subjectType: subject === "历史类" ? "HISTORY" : "PHYSICS" };
+  if (hasRealCurve(province)) {
+    // 真实锚点曲线：本段人数 = rank(score) - rank(score+5)，累计到 rank(score)
+    const rows = [];
+    let total = 0;
+    for (let score = 700; score >= 500; score -= 5) {
+      const current = rankOfScore(score, opts);
+      const higher = rankOfScore(score + 5, opts);
+      if (current == null) continue;
+      const count = Math.max(0, current - (higher ?? 0));
+      total = current;
+      rows.push({ score, count, total });
+    }
+    return rows;
+  }
   const seedBase = SEGMENT_PROVINCES.indexOf(province) * 7 + (subject === "历史类" ? 40 : 0);
   let total = 0;
   return SEGMENT_TEMPLATE.map((count, i) => {
@@ -191,9 +218,17 @@ export function buildChooseResults({ score = 620, subject = "物理", selections
 }
 
 export function schoolTags(school) {
-  return [school.is985 && "985", school.is211 && "211", school.isDoubleFirstClass && "双一流"].filter(Boolean);
+  // 双一流 ≡ 211：按最高标准展示，211 不再单独作为标签（20260820 概念更新）
+  return [school.is985 && "985", (school.is211 || school.isDoubleFirstClass) && "双一流"].filter(Boolean);
+}
+
+/** 联盟/圈层标签（C9、国防七子、建筑老八校……），排在 985/双一流 之后展示 */
+export function schoolClubTags(school) {
+  return Array.isArray(school?.clubTags) ? school.clubTags.filter(Boolean) : [];
 }
 
 export function schoolLoc(school) {
-  return school.province === school.city ? school.city : `${school.province}${school.city}`;
+  // 直辖市精确到区（北京市海淀区），其余省显示到地级市（浙江杭州市）
+  if (school.district) return `${school.city}市${school.district}`;
+  return school.province === school.city ? `${school.city}市` : `${school.province}${school.city}`;
 }

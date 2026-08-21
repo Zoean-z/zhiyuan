@@ -111,6 +111,8 @@ const offeringSchools = computed(() => {
   if (!major.value) return [];
   return SCHOOLS.map((school) => ({
     ...school,
+    // 双一流 ≡ 211：派生字段按最高标准归并，筛选与标签展示统一走双一流（20260820 概念更新）
+    isDoubleFirstClass: school.isDoubleFirstClass || school.is211,
     subjectScore: subjectScoreOf(school),
     rating: ratingOf(school),
     satisfaction: satisfactionOf(school)
@@ -120,7 +122,7 @@ const offeringSchools = computed(() => {
 const provinces = computed(() => ["不限", ...Array.from(new Set(offeringSchools.value.map((s) => s.province)))]);
 const types = computed(() => ["不限", ...Array.from(new Set(offeringSchools.value.map((s) => s.type.replace("类", ""))))]);
 
-const FEATURE_FIELD = { 985: "is985", 211: "is211", 双一流: "isDoubleFirstClass" };
+const FEATURE_FIELD = { 985: "is985", 双一流: "isDoubleFirstClass" };
 
 const filteredSchools = computed(() => {
   let list = offeringSchools.value.filter((s) => {
@@ -157,7 +159,7 @@ const isHot = (school) => school.id <= 8;
 function schoolTags(school) {
   const tags = ["本科", school.type, school.nature];
   if (school.is985) tags.push("985");
-  if (school.is211) tags.push("211");
+  // 双一流 ≡ 211：211 不再单独展示，由双一流标签统一承载（20260820 概念归并）
   if (school.isDoubleFirstClass) tags.push("双一流");
   return tags;
 }
@@ -275,7 +277,7 @@ const scoreBands = computed(() =>
                   </button>
                   <template #dropdown>
                     <el-dropdown-menu>
-                      <el-dropdown-item v-for="f in ['不限', '985', '211', '双一流']" :key="f" :command="f" :class="{ 'is-active': featureFilter === f }" class="gks-drop__opt">{{ f }}</el-dropdown-item>
+                      <el-dropdown-item v-for="f in ['不限', '985', '双一流']" :key="f" :command="f" :class="{ 'is-active': featureFilter === f }" class="gks-drop__opt">{{ f }}</el-dropdown-item>
                     </el-dropdown-menu>
                   </template>
                 </el-dropdown>

@@ -20,12 +20,52 @@
 /* ══════════════════════════════════════════════════════════════
  * §1  分数 → 位次（一分一段曲线）
  * ══════════════════════════════════════════════════════════════
- * 用「分数线以上考生占比」锚点做单调分段线性插值。
- * 锚点取自公开一分一段表的典型形态（新高考物理类），
- * 只做演示用，替换成真实一分一段表时只需改 TAIL_ANCHORS。
+ * 浙江：真实一分一段锚点（浙江省教育考试院，2025/2026年普通类；
+ *       综合改革省份统一排位，物理类/历史类共用同一条曲线）。
+ * 其余省份：以公开一分一段表典型形态（新高考物理类）做单调分段线性插值，
+ *       属演示口径，接入真实数据时只需替换 PROVINCE_CURVES 对应条目。
  */
 
-// [分数, 该分数及以上考生占全科类考生的比例]，分数降序
+// 真实锚点：[分数, 该分数对应的全省累计位次]，分数降序。
+// 来源：2026年一分一段/一段投档位次（700→94、698→150、694→292、678→2397、
+// 677→2617、675→3049、665→6043、662→7050、660→7907、658→8820、631→24286、610→43300），
+// 2025年一分一段（600→52529、592→61619、550→112672、520→149572、500→173134、
+// 490→184368、268→290790）、2024年表补中间段（560-590）。
+const ZJ_REAL_ANCHORS = [
+  [708, 15], [700, 94], [698, 150], [694, 292], [688, 755], [687, 853],
+  [678, 2397], [677, 2617], [675, 3049], [665, 6043], [662, 7050],
+  [660, 7907], [658, 8820], [631, 24286], [610, 43300], [600, 52529],
+  [592, 61619], [590, 63270], [580, 74330], [570, 85530], [560, 96950],
+  [550, 112672], [520, 149572], [500, 173134], [490, 184368], [268, 290790]
+];
+
+// 各省一分一段曲线：浙江=真实锚点；其余省份走通用演示形状
+const PROVINCE_CURVES = {
+  浙江: { anchors: ZJ_REAL_ANCHORS, real: true }
+};
+
+/** 是否命中真实曲线省份 */
+export function hasRealCurve(province) {
+  return Boolean(PROVINCE_CURVES[String(province || "").trim()]);
+}
+
+/** 真实曲线插值：分数 → 累计位次 */
+function realCurveRank(anchors, score) {
+  if (score >= anchors[0][0]) return anchors[0][1];
+  for (let i = 0; i < anchors.length - 1; i += 1) {
+    const [highScore, highRank] = anchors[i];
+    const [lowScore, lowRank] = anchors[i + 1];
+    if (score <= highScore && score >= lowScore) {
+      const span = highScore - lowScore;
+      if (span <= 0) return highRank;
+      const t = (highScore - score) / span;
+      return Math.max(1, Math.round(highRank + (lowRank - highRank) * t));
+    }
+  }
+  return anchors[anchors.length - 1][1];
+}
+
+// [分数, 该分数及以上考生占全科类考生的比例]，分数降序（通用演示形状）
 const TAIL_ANCHORS = [
   [750, 0.00002],
   [720, 0.00010],
@@ -106,12 +146,18 @@ export function tailRatio(score) {
 }
 
 /**
- * 分数 → 全省位次（历史类/物理类分开排名）
+ * 分数 → 全省位次
+ * 浙江走真实一分一段锚点（综合改革统一排位，不分科）；
+ * 其余省份按「分数线以上占比 × 科类考生数」的演示曲线换算。
  * @returns {number|null} 位次；分数非法时返回 null
  */
 export function rankOfScore(score, { province = "", subjectType = "PHYSICS" } = {}) {
   const value = Number(score);
   if (!Number.isFinite(value) || value <= 0 || value > 750) return null;
+  const curve = PROVINCE_CURVES[String(province).trim()];
+  if (curve) {
+    return realCurveRank(curve.anchors, value);
+  }
   const ratio = tailRatio(value);
   if (ratio == null) return null;
   return Math.max(1, Math.round(ratio * totalCandidates(province, subjectType)));
@@ -142,6 +188,13 @@ export function segmentCount(score, opts = {}) {
 
 /** 超过本省多少百分比的考生 */
 export function beatPercent(score, opts = {}) {
+  const province = String(opts.province || "").trim();
+  if (PROVINCE_CURVES[province]) {
+    const rank = rankOfScore(score, opts);
+    const total = ZJ_REAL_ANCHORS[ZJ_REAL_ANCHORS.length - 1][1];
+    if (rank == null) return null;
+    return Math.min(99.9, Math.max(0.1, Math.round((1 - rank / total) * 1000) / 10));
+  }
   const ratio = tailRatio(score);
   if (ratio == null) return null;
   return Math.min(99.9, Math.max(0.1, Math.round((1 - ratio) * 1000) / 10));
@@ -241,6 +294,13 @@ export function scoreProbability(scoreGap) {
  *   rankProbability: number|null, scoreProbability: number|null, recommended: boolean
  * }}
  */
+/** null/undefined/空串 → null（Number(null)===0 会把「没填」伪装成「第 0 名」） */
+function finiteOrNull(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const num = Number(value);
+  return Number.isFinite(num) ? num : null;
+}
+
 export function admissionProbability({
   userScore = null,
   userRank = null,
@@ -249,14 +309,10 @@ export function admissionProbability({
   province = "",
   subjectType = "PHYSICS"
 } = {}) {
-  const score = Number.isFinite(Number(userScore)) ? Number(userScore) : null;
-  const resolvedRank = Number.isFinite(Number(userRank))
-    ? Number(userRank)
-    : rankOfScore(score, { province, subjectType });
-  const line = Number.isFinite(Number(cutoffScore)) ? Number(cutoffScore) : null;
-  const lineRank = Number.isFinite(Number(minRank))
-    ? Number(minRank)
-    : rankOfScore(line, { province, subjectType });
+  const score = finiteOrNull(userScore);
+  const resolvedRank = finiteOrNull(userRank) ?? rankOfScore(score, { province, subjectType });
+  const line = finiteOrNull(cutoffScore);
+  const lineRank = finiteOrNull(minRank) ?? rankOfScore(line, { province, subjectType });
 
   const scoreGap = score == null || line == null ? null : score - line;
   const rankGap = resolvedRank == null || lineRank == null ? null : lineRank - resolvedRank;

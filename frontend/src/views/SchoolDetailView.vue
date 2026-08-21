@@ -5,10 +5,10 @@ import { useRoute, useRouter } from "vue-router";
 import GkHeader from "../components/GkHeader.vue";
 import GkSchoolLogo from "../components/GkSchoolLogo.vue";
 import GkSidePanel from "../components/GkSidePanel.vue";
-import { SCHOOLS, schoolLoc, schoolTags } from "../utils/exploreData";
+import { SCHOOLS, schoolClubTags, schoolLoc, schoolTags } from "../utils/exploreData";
 import { cutoffHistory, majorCutoff, majorDetailsOfSchool, probDetailOf, schoolCutoff } from "../utils/volunteerCore";
 import { strategyOf } from "../utils/scoreModel";
-import { isReady, profile, rank, score, setScore, subjectType, syncFromAuth } from "../utils/examProfile";
+import { isReady, profile, rank, score, subjectType, syncFromAuth } from "../utils/examProfile";
 
 /**
  * 院校详情页（新增）
@@ -40,7 +40,24 @@ const opts = computed(() => ({
 const cutoff = computed(() => (school.value ? schoolCutoff(school.value, opts.value) : null));
 const history = computed(() => (school.value ? cutoffHistory(school.value, opts.value, 3) : []));
 const detail = computed(() => (school.value ? probDetailOf(school.value, score.value, opts.value) : null));
-const strategy = computed(() => (detail.value?.probability == null ? null : strategyOf(detail.value.probability)));
+
+/**
+ * 有效策略：有概率 → 保/稳/冲/险；已设分数但位次落后超 3000 名（模型可测算下界）
+ * → 判「险」并显示 <1%，对齐参考站「难 1%」的呈现，而不是误报「未设置分数」。
+ */
+const strategy = computed(() => {
+  if (!detail.value) return null;
+  if (detail.value.probability != null) return strategyOf(detail.value.probability);
+  if (isReady.value && detail.value.cutoff && detail.value.rankGap != null && detail.value.rankGap < 0) {
+    return { key: "risk", label: "险", full: "风险" };
+  }
+  return null;
+});
+/** 概率显示值：模型给不出精确值（超出下界）时显示 <1 */
+const displayProbability = computed(() => {
+  if (detail.value?.probability != null) return String(detail.value.probability);
+  return "<1";
+});
 const majors = computed(() => (school.value ? majorDetailsOfSchool(school.value) : []));
 
 const planRows = computed(() => {
@@ -59,8 +76,12 @@ const planRows = computed(() => {
   });
 });
 
-function onScoreInput(event) {
-  setScore(event.target.value);
+/**
+ * 【分数统一】分数在登录时确定、志愿填报页维护，全站生效；详情页不再提供
+ * 「填入分数测录取概率」输入框，避免与全局档案形成两套数据。
+ */
+function goProfile() {
+  router.push({ path: "/volunteer" });
 }
 
 function goFill() {
@@ -103,17 +124,29 @@ function scoreGapLine(detailValue) {
                   {{ school.name }}
                   <span class="gkd-hero__loc">{{ schoolLoc(school) }}</span>
                 </h1>
-                <p class="gkd-hero__meta">{{ school.type }} · {{ school.nature }} · {{ school.belong }}</p>
+                <p class="gkd-hero__meta">
+                  {{ school.type }} · {{ school.nature }} · {{ school.belong }}
+                  <template v-if="school.masters">
+                    · 硕博点 {{ school.masters }}/{{ school.phds }}
+                  </template>
+                  <template v-if="school.baoyan">
+                    · 保研率 {{ school.baoyan }}%（{{ school.baoyanCohort }}）
+                  </template>
+                  <template v-if="school.ruanke">
+                    · 软科 {{ school.ruanke }}（2025）· 校友会 {{ school.xiaoyouhui }}（2026）
+                  </template>
+                </p>
                 <p class="gkd-hero__tags">
-                  <i v-for="item in schoolTags(school)" :key="item">{{ item }}</i>
+                  <i v-for="item in schoolTags(school)" :key="item" class="is-level">{{ item }}</i>
+                  <i v-for="item in schoolClubTags(school)" :key="item">{{ item }}</i>
                 </p>
               </div>
 
-              <!-- 录取概率卡：没分数就引导填，有分数就把依据全部展开 -->
+              <!-- 录取概率卡：分数来自全局考生档案（登录时确定、志愿填报页可改） -->
               <aside class="gkd-prob" :class="strategy ? `is-${strategy.key}` : 'is-empty'">
                 <template v-if="strategy">
                   <p class="gkd-prob__label">我的录取概率</p>
-                  <strong>{{ detail.probability }}<i>%</i></strong>
+                  <strong>{{ displayProbability }}<i>%</i></strong>
                   <span class="gkd-prob__seg">{{ strategy.full }}</span>
                   <ul class="gkd-prob__why">
                     <li>
@@ -127,22 +160,19 @@ function scoreGapLine(detailValue) {
                       {{ scoreGapLine(detail) }}
                       <b>{{ detail.scoreGap == null ? "待测" : Math.abs(detail.scoreGap) }}</b> 分（权重 25%）
                     </li>
+                    <li v-if="detail.probability == null && isReady">
+                      位次落后超出可测算范围，按 <b>&lt;1%</b> 极低概率处理
+                    </li>
                   </ul>
                 </template>
                 <template v-else>
-                  <p class="gkd-prob__label">填入分数测录取概率</p>
-                  <input
-                    class="gkd-prob__input"
-                    type="number"
-                    min="100"
-                    max="750"
-                    placeholder="我的高考分数"
-                    :value="profile.score ?? ''"
-                    @input="onScoreInput"
-                  />
-                  <span class="gkd-prob__hint">{{ profile.province }} · {{ profile.firstSubject }}类</span>
+                  <p class="gkd-prob__label">我的录取概率</p>
+                  <strong class="gkd-prob__placeholder">待测算</strong>
+                  <span class="gkd-prob__seg">{{ profile.province }} · {{ profile.firstSubject }}类 · 未设置分数</span>
+                  <p class="gkd-prob__hint">分数在登录时确定，可在志愿填报页的高考信息中修改，全站同步生效</p>
+                  <button class="gkd-prob__cta" type="button" @click="goProfile">去设置高考信息</button>
                 </template>
-                <button class="gkd-prob__cta" type="button" @click="goFill">加入志愿填报</button>
+                <button v-if="strategy" class="gkd-prob__cta" type="button" @click="goFill">加入志愿填报</button>
               </aside>
             </header>
 
@@ -187,12 +217,18 @@ function scoreGapLine(detailValue) {
                 <div><dt>院校类型</dt><dd>{{ school.type }}</dd></div>
                 <div><dt>办学性质</dt><dd>{{ school.nature }}</dd></div>
                 <div><dt>主管部门</dt><dd>{{ school.belong }}</dd></div>
-                <div><dt>院校特色</dt><dd>{{ schoolTags(school).join(" / ") || "—" }}</dd></div>
-                <div><dt>今年计划变化</dt><dd>{{ school.planDelta >= 0 ? `+${school.planDelta}` : school.planDelta }} 人</dd></div>
+                <div><dt>院校特色</dt><dd>{{ [...schoolTags(school), ...schoolClubTags(school)].join(" / ") || "—" }}</dd></div>
+                <div><dt>保研率</dt><dd>{{ school.baoyan ? `${school.baoyan}%（${school.baoyanCohort}）` : "—" }}</dd></div>
+                <div><dt>硕士/博士点</dt><dd>{{ school.masters ? `${school.masters} 个 / ${school.phds} 个（一级学科）` : "—" }}</dd></div>
+                <div><dt>软科 / 校友会排名</dt><dd>{{ school.ruanke ? `第 ${school.ruanke} 名（2025） / 第 ${school.xiaoyouhui} 名（2026）` : "—" }}</dd></div>
+                <div><dt>今年计划变化</dt><dd>{{ school.planDelta >= 0 ? `+${school.planDelta}` : school.planDelta }} 人（演示值）</dd></div>
               </dl>
               <p class="gkd-note">
-                数据说明：未登录 / 未联调时，最低分与位次由本地统一模型（院校实力 → 省内位次锚点 → 一分一段曲线反算分数）生成；
-                登录后调用后端 <code>/api/recommendations</code> 时，优先使用数据库里的真实录取线。
+                数据说明：录取线优先级为 后端数据库真实数据 → 内置真实投档线（浙江为省考试院 2026 年一段平行投档线）→ 真实位次百分位换算的估算值；
+                位次换算使用真实一分一段曲线（浙江锚点取自省考试院 2025/2026 年一分一段表）。
+                概率算法：位次差 75% + 分差 25% 加权（与后端 <code>RecommendationPolicyService</code> 同一套口径）。
+                排名来源：软科 2025 / 校友会 2026；保研率来源：各校 {{ school.baoyanCohort }}毕业生就业质量报告。
+                招生计划数为演示值。概率是参考不是保证，受招生计划、报考热度与专业组差异影响。
               </p>
             </section>
 
@@ -211,7 +247,11 @@ function scoreGapLine(detailValue) {
                 </thead>
                 <tbody>
                   <tr v-for="row in history" :key="row.year">
-                    <td>{{ row.year }}</td>
+                    <td>
+                      {{ row.year }}
+                      <i v-if="row.source === 'real' || row.source === 'backend'" class="gkd-tag-real">真实</i>
+                      <i v-else class="gkd-tag-est">估算</i>
+                    </td>
                     <td><b>{{ row.score }}</b></td>
                     <td>{{ fmt(row.minRank) }}</td>
                     <td>
@@ -232,7 +272,10 @@ function scoreGapLine(detailValue) {
                   </tr>
                 </tbody>
               </table>
-              <p class="gkd-note">位次比分数更可靠：各年题目难度不同，分数会潮起潮落，但位次直接反映你在全省的相对位置。</p>
+              <p class="gkd-note">
+                「真实」= 官方发布的当年录取线（浙江为省考试院 2026 年普通类一段平行投档线，最低专业组）；「估算」= 在真实位次基础上按年均约 6% 的门槛位次后移推算，外省由浙江位次百分位换算。
+                位次比分数更可靠：各年题目难度不同，分数会潮起潮落，但位次直接反映你在全省的相对位置。
+              </p>
             </section>
 
             <!-- 开设专业 -->

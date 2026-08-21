@@ -311,7 +311,7 @@ const MOCK_ADMIN_USERS = [
 
 const MOCK_ADMIN_UNIVERSITIES = MOCK_SCHOOLS.map((school) => ({
   ...school,
-  tags: [school.is985 ? "985" : null, school.is211 ? "211" : null, school.isDoubleFirstClass ? "双一流" : null]
+  tags: [school.is985 ? "985" : null, (school.is211 || school.isDoubleFirstClass) ? "双一流" : null]
     .filter(Boolean)
     .join(",")
 }));

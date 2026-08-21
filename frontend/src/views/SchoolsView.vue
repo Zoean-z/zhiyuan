@@ -1,27 +1,36 @@
 <script setup>
 import { ArrowDown, Search } from "@element-plus/icons-vue";
-import { computed, onMounted, ref } from "vue";
-import { useRouter } from "vue-router";
+import { computed, onMounted, ref, watch } from "vue";
+import { useRoute, useRouter } from "vue-router";
 import GkHeader from "../components/GkHeader.vue";
 import GkSchoolLogo from "../components/GkSchoolLogo.vue";
 import GkSidePanel from "../components/GkSidePanel.vue";
-import { SCHOOLS, schoolLoc, schoolTags } from "../utils/exploreData";
+import { SCHOOLS, schoolClubTags, schoolLoc, schoolTags } from "../utils/exploreData";
 import { probDetailOf, schoolCutoff } from "../utils/volunteerCore";
 import { strategyOf } from "../utils/scoreModel";
-import { isReady, profile, rank, score, setScore, subjectType, syncFromAuth } from "../utils/examProfile";
-import hotIcon from "../assets/gk_hot.png";
+import { isReady, profile, rank, score, subjectType, syncFromAuth } from "../utils/examProfile";
 import searchIcon from "../assets/gk_search_icon.png";
 
 const router = useRouter();
+const route = useRoute();
 
-onMounted(() => syncFromAuth());
+function applyHeaderQuery(value) {
+  const preset = Array.isArray(value) ? value[0] : value;
+  if (typeof preset === "string") keyword.value = preset.trim();
+}
+
+onMounted(() => {
+  syncFromAuth();
+  applyHeaderQuery(route.query.q);
+});
+watch(() => route.query.q, applyHeaderQuery);
 
 /* 与掌上高考 /school/search 一致的筛选项（军校-国际本科快捷栏已按需求舍弃） */
 const PROVINCE_OPTS = ["不限", ...Array.from(new Set(SCHOOLS.map((s) => s.province)))];
 const TYPE_OPTS = ["不限", "综合", "理工", "师范", "农林", "医药", "财经", "政法", "语言", "艺术", "体育", "民族"];
 const NATURE_OPTS = ["不限", "公办", "民办", "中外合作办学"];
-const FEATURE_OPTS = ["不限", "985", "211", "双一流", "强基", "研究生院"];
-const SORT_OPTS = ["默认排序", "录取概率由高到低", "分数由高到低", "分数由低到高", "搜索热度由高到低", "保研率由高到低"];
+const FEATURE_OPTS = ["不限", "985", "双一流", "强基", "研究生院"];
+const SORT_OPTS = ["默认排序", "录取概率由高到低", "分数由高到低", "分数由低到高"];
 
 /* 专业大类 → 院校类型映射（数据为院校维度，按类型近似筛选） */
 const MAJOR_TYPE_MAP = {
@@ -41,7 +50,7 @@ const majorFilter = ref("不限");
 const sortKey = ref("默认排序");
 const keyword = ref("");
 
-const FEATURE_FIELD = { "985": "is985", "211": "is211", "双一流": "isDoubleFirstClass" };
+const FEATURE_FIELD = { "985": "is985" };
 
 /**
  * 【修复】原来这里的录取概率是 `42 + (school.id * 37) % 52`，
@@ -57,22 +66,49 @@ const cutoffOpts = computed(() => ({
 
 function minScoreOf(school) {
   const cutoff = schoolCutoff(school, cutoffOpts.value);
-  return cutoff ? cutoff.score : 0;
-}
-function minRankOf(school) {
-  const cutoff = schoolCutoff(school, cutoffOpts.value);
-  return cutoff ? cutoff.minRank : null;
+  return cutoff ? cutoff.score : null;
 }
 function probOfSchool(school) {
   return probDetailOf(school, score.value, cutoffOpts.value);
 }
+
+/**
+ * 徽章模型：有概率 → 保/稳/冲/险四档；已设分数但位次落后超 3000 名、
+ * 分差低于线超 10 分（模型的可测算下界）→ 直接判「险 <1%」，
+ * 对齐 gaokao.cn「难 1%」红徽章的呈现，而不是显示成空态。
+ */
+function badgeOf(school) {
+  const detail = probOfSchool(school);
+  if (detail.probability != null) {
+    const seg = strategyOf(detail.probability);
+    return { detail, key: seg.key, label: seg.label, value: `${detail.probability}%`, flame: seg.key === "rush" || seg.key === "risk" };
+  }
+  if (isReady.value && detail.cutoff && detail.rankGap != null && detail.rankGap < 0) {
+    return { detail, key: "risk", label: "险", value: "<1%", flame: true };
+  }
+  return null;
+}
+
 function probTip(school) {
   const detail = probOfSchool(school);
   const cutoff = detail.cutoff;
   if (!cutoff) return "暂无录取数据";
   const minRankText = cutoff.minRank == null ? "—" : cutoff.minRank.toLocaleString();
-  const base = `${cutoff.year} 年最低分 ${cutoff.score}分 / 最低位次 ${minRankText}`;
-  if (detail.probability == null) return `${base}（填入分数后可测算录取概率）`;
+  const sourceText = cutoff.source === "real"
+    ? "（浙江考试院2026一段投档线）"
+    : cutoff.source === "backend"
+      ? "（后端录取数据）"
+      : cutoff.source === "derived"
+        ? "（估算）"
+        : "";
+  const noteText = cutoff.note ? `【${cutoff.note}】` : "";
+  const base = `${cutoff.year} 年最低分 ${cutoff.score}分 / 最低位次 ${minRankText}${sourceText}${noteText}`;
+  if (detail.probability == null) {
+    if (isReady.value && detail.rankGap != null && detail.rankGap < 0) {
+      return `${base}；你位次落后 ${Math.abs(detail.rankGap).toLocaleString()} 名，超出可测算范围，录取概率极低（<1%）`;
+    }
+    return `${base}（设置高考分数后可测算录取概率）`;
+  }
   const rankText = detail.rankGap == null
     ? "位次待测"
     : detail.rankGap >= 0
@@ -92,13 +128,6 @@ function rankGapText(detail) {
     ? `位次靠前 ${detail.rankGap.toLocaleString()} 名`
     : `位次落后 ${Math.abs(detail.rankGap).toLocaleString()} 名`;
 }
-function isHot(school) {
-  return school.id <= 8;
-}
-function baoyanOf(school) {
-  return 18 + ((school.id * 13) % 38);
-}
-
 const filtered = computed(() => {
   const kw = keyword.value.trim();
   const list = SCHOOLS.filter((school) => {
@@ -106,21 +135,24 @@ const filtered = computed(() => {
     if (typeFilter.value !== "不限" && !school.type.startsWith(typeFilter.value)) return false;
     if (natureFilter.value !== "不限" && school.nature !== natureFilter.value) return false;
     if (featureFilter.value !== "不限") {
-      const field = FEATURE_FIELD[featureFilter.value];
-      if (field && !school[field]) return false;
+      if (featureFilter.value === "双一流") {
+        // 双一流 ≡ 211：选双一流时 211 院校同样命中（20260820 概念归并）
+        if (!school.is211 && !school.isDoubleFirstClass) return false;
+      } else {
+        const field = FEATURE_FIELD[featureFilter.value];
+        if (field && !school[field]) return false;
+      }
     }
     if (majorFilter.value !== "不限" && !school.type.startsWith(MAJOR_TYPE_MAP[majorFilter.value] || "")) return false;
     if (kw && !school.name.includes(kw)) return false;
     return true;
   });
   const sorted = [...list];
-  if (sortKey.value === "分数由高到低") sorted.sort((a, b) => minScoreOf(b) - minScoreOf(a));
-  else if (sortKey.value === "分数由低到高") sorted.sort((a, b) => minScoreOf(a) - minScoreOf(b));
+  if (sortKey.value === "分数由高到低") sorted.sort((a, b) => (minScoreOf(b) ?? -1) - (minScoreOf(a) ?? -1));
+  else if (sortKey.value === "分数由低到高") sorted.sort((a, b) => (minScoreOf(a) ?? Number.MAX_SAFE_INTEGER) - (minScoreOf(b) ?? Number.MAX_SAFE_INTEGER));
   else if (sortKey.value === "录取概率由高到低" && isReady.value) {
     sorted.sort((a, b) => (probOfSchool(b).probability ?? -1) - (probOfSchool(a).probability ?? -1));
   }
-  else if (sortKey.value === "搜索热度由高到低") sorted.sort((a, b) => a.id - b.id);
-  else if (sortKey.value === "保研率由高到低") sorted.sort((a, b) => baoyanOf(b) - baoyanOf(a));
   return sorted;
 });
 
@@ -138,8 +170,12 @@ function openSchool(school) {
   router.push({ name: "school-detail", params: { id: school.id } });
 }
 
-function onScoreInput(event) {
-  setScore(event.target.value);
+/**
+ * 【分数统一】本页不再提供分数输入：分数只来自全局考生档案（登录时确定，
+ * 志愿填报页可修改并全站生效）。这里只负责把用户带去唯一维护入口。
+ */
+function goProfile() {
+  router.push({ path: "/volunteer" });
 }
 </script>
 
@@ -235,19 +271,18 @@ function onScoreInput(event) {
 
             <div class="gks-meta">
               <p class="gks-count">院校 <b>{{ filtered.length }}</b> 所</p>
-              <!-- 考生分数条：全站共享（examProfile），在哪一页填都算，换页不丢 -->
-              <div class="gks-score">
-                <span>{{ profile.province }} · {{ profile.firstSubject }}类</span>
-                <input
-                  type="number"
-                  min="100"
-                  max="750"
-                  placeholder="我的分数"
-                  :value="profile.score ?? ''"
-                  @input="onScoreInput"
-                />
-                <b v-if="isReady">位次约 {{ rank.toLocaleString() }}</b>
-                <em v-else>填分数即可测录取概率</em>
+              <!-- 考生档案条：全局唯一（examProfile），分数在登录/志愿填报页维护，此页只展示 -->
+              <div class="gks-score" :class="{ 'is-empty': !isReady }">
+                <template v-if="isReady">
+                  <span class="gks-score__info">
+                    {{ profile.province }} · {{ profile.firstSubject }}类 · <b>{{ score }} 分</b> · 位次约 {{ rank.toLocaleString() }}
+                  </span>
+                  <button class="gks-score__edit" type="button" @click="goProfile">修改</button>
+                </template>
+                <template v-else>
+                  <span class="gks-score__info">尚未设置高考分数，无法测算录取概率</span>
+                  <button class="gks-score__edit" type="button" @click="goProfile">去设置</button>
+                </template>
               </div>
             </div>
           </div>
@@ -258,40 +293,84 @@ function onScoreInput(event) {
               <div class="gks-item__info">
                 <p class="gks-item__name">
                   {{ school.name }}<span class="gks-item__city">{{ schoolLoc(school) }}</span>
-                  <img v-if="isHot(school)" class="gks-item__hot" :src="hotIcon" alt="热门" />
                 </p>
-                <p class="gks-item__core">本科 · {{ school.type }} · {{ school.nature }}</p>
+                <p class="gks-item__core">本科 · {{ school.type }} · {{ school.nature }} · {{ school.belong }}</p>
                 <p class="gks-item__tags">
-                  <i v-for="tag in schoolTags(school)" :key="tag">{{ tag }}</i>
-                </p>
-                <p class="gks-item__line">
-                  参考最低分 <b>{{ minScoreOf(school) }}</b>
-                  <em v-if="minRankOf(school)">最低位次 {{ minRankOf(school).toLocaleString() }}</em>
+                  <i v-for="tag in schoolTags(school)" :key="tag" class="is-level">{{ tag }}</i>
+                  <i v-for="tag in schoolClubTags(school)" :key="tag">{{ tag }}</i>
                 </p>
               </div>
               <button
-                v-if="isReady && probOfSchool(school).probability != null"
+                v-if="badgeOf(school)"
                 class="gks-prob"
+                :class="`is-${badgeOf(school).key}`"
                 type="button"
                 :title="probTip(school)"
                 @click.stop="openSchool(school)"
               >
                 <span>录取概率</span>
-                <b :class="`is-${strategyOf(probOfSchool(school).probability).key}`">
-                  {{ strategyOf(probOfSchool(school).probability).label }}{{ probOfSchool(school).probability }}%
+                <b>
+                  <svg
+                    v-if="badgeOf(school).flame"
+                    class="gks-prob__flame"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.975 7.975 0 0120 13a7.975 7.975 0 01-2.343 5.657z" />
+                    <path d="M9.879 16.121A3 3 0 1012.015 11L11 14H9c0 .768.293 1.536.879 2.121z" />
+                  </svg>
+                  {{ badgeOf(school).label }} {{ badgeOf(school).value }}
                 </b>
                 <i class="gks-prob__gap">
-                  {{ rankGapText(probOfSchool(school)) }}
+                  {{ rankGapText(badgeOf(school).detail) }}
                 </i>
               </button>
-              <button v-else class="gks-prob gks-prob--empty" type="button" @click.stop="openSchool(school)">
+              <button v-else class="gks-prob gks-prob--empty" type="button" @click.stop="goProfile()">
                 <span>录取概率</span>
-                <b>填分数测算</b>
-                <i class="gks-prob__gap">查看详情 &gt;</i>
+                <b>设置分数后测算</b>
+                <i class="gks-prob__gap">去设置高考信息 &gt;</i>
               </button>
             </li>
             <li v-if="!filtered.length" class="gks-empty">没有符合条件的院校，试试放宽筛选条件</li>
           </ul>
+
+          <!-- 数据来源与测算方法：把「概率怎么算 / 数据从哪来 / 根据在哪」写在明面上 -->
+          <details class="gks-source">
+            <summary>数据来源与测算方法<i>概率怎么算的？数据是真实的吗？点开看依据</i></summary>
+            <div class="gks-source__body">
+              <div class="gks-source__block">
+                <h4>① 录取概率怎么算？</h4>
+                <p>
+                  先用<b>一分一段曲线</b>把你的分数换成全省位次；再把「院校最低位次 − 我的位次」（<b>权重 75%</b>）与「我的分数 − 院校最低分」（<b>权重 25%</b>）分段换算并加权求和；
+                  结果按 ≥75% 保底 / 55–74% 稳妥 / 35–54% 冲刺 / &lt;35% 高风险分档。与后端 <code>RecommendationPolicyService</code> 是同一套算法，前后端不会出现两个数。
+                </p>
+              </div>
+              <div class="gks-source__block">
+                <h4>② 数据从哪里来？</h4>
+                <ul>
+                  <li><b>浙江一分一段 / 投档线</b>：浙江省教育考试院 2025、2026 年普通类一分一段表与一段平行投档分数线（真实数据，卡片徽章 tooltip 会标注来源）</li>
+                  <li><b>院校排名</b>：软科 2025 中国大学排名、校友会 2026 中国大学排名（艾瑞深研究院）</li>
+                  <li><b>保研率</b>：各校 2024 / 2025 届毕业生就业质量报告</li>
+                  <li><b>硕博点</b>：各校研究生院一级学科硕士点 / 博士点统计</li>
+                  <li><b>联盟标签</b>：C9、华东五校、中坚九校、国防七子、建筑老八校、四大工学院、电气四虎、机械五虎（社会通行口径）</li>
+                  <li><b>外省录取线</b>：以该校在浙江的真实最低位次百分位、按该省考生规模换算，属<b>估算值</b>（tooltip 标注「估算」）</li>
+                  <li><b>招生计划 / 专业组计划数</b>：演示值，仅供参考</li>
+                </ul>
+              </div>
+              <div class="gks-source__block">
+                <h4>③ 判断逻辑</h4>
+                <p>
+                  录取线取用优先级：<b>后端数据库真实数据 → 内置官方投档线（浙江 2026）→ 真实位次百分位换算的估算值</b>；每个数字都能追溯到来源。
+                  概率反映的是「以你的位次相对该校去年门槛的历史位置」，受招生计划增减、报考热度、专业组差异影响，是参考不是保证。
+                </p>
+              </div>
+            </div>
+          </details>
         </section>
 
         <GkSidePanel />

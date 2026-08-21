@@ -1,4 +1,5 @@
 <script setup>
+import { ElMessage } from "element-plus";
 import { computed, ref } from "vue";
 import { useRouter } from "vue-router";
 import GkHeader from "../components/GkHeader.vue";
@@ -40,6 +41,7 @@ function queryScore() {
   const value = Number(scoreInput.value);
   if (!Number.isFinite(value) || value < 100 || value > 750) {
     queriedScore.value = null;
+    ElMessage.warning("请输入 100–750 之间的有效分数");
     return;
   }
   queriedScore.value = Math.round(value);

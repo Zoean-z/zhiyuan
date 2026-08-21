@@ -18,7 +18,7 @@
 
 import { computed, reactive, watch } from "vue";
 import { rankOfScore, beatPercent, normalizeSubjectType, subjectTypeText } from "./scoreModel";
-import { readStoredAuth } from "./recommendation";
+import { readStoredAuth, saveStoredAuth } from "./recommendation";
 
 const STORAGE_KEY = "zhiyuan_exam_profile";
 
@@ -68,6 +68,38 @@ if (!Array.isArray(profile.secondSubjects)) profile.secondSubjects = [...DEFAULT
 if (!FIRST_SUBJECTS.includes(profile.firstSubject)) profile.firstSubject = DEFAULTS.firstSubject;
 if (!PROVINCES.includes(profile.province)) profile.province = DEFAULTS.province;
 
+/* ══════ 改动同步：本地持久化 + 已登录时回写后端 ══════
+ * 分数/省份/科类是全局权限数据：登录时确定，志愿填报页修改后必须全站生效，
+ * 且后端用户档案（推荐接口、AI 免文本解析的兜底分数）也要同步更新。
+ */
+let syncTimer = null;
+let suppressAuthEcho = false;
+
+function scheduleAuthSync() {
+  if (suppressAuthEcho) return;
+  const auth = readStoredAuth();
+  if (!auth?.token) return; // 未登录：仅本地生效
+  if (syncTimer) clearTimeout(syncTimer);
+  syncTimer = setTimeout(async () => {
+    try {
+      const response = await fetch("/api/auth/profile", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${auth.token}` },
+        body: JSON.stringify({
+          score: score.value,
+          subjectType: subjectType.value,
+          examProvince: profile.province
+        })
+      });
+      if (!response.ok) return;
+      const data = await response.json();
+      if (data?.token) saveStoredAuth({ token: data.token, user: data });
+    } catch {
+      /* 离线 / 会话过期：静默降级，本地档案仍然全站生效 */
+    }
+  }, 800);
+}
+
 watch(
   profile,
   (value) => {
@@ -76,6 +108,7 @@ watch(
     } catch {
       /* localStorage 不可用时静默降级 */
     }
+    scheduleAuthSync();
   },
   { deep: true }
 );
@@ -187,14 +220,22 @@ export function resetProfile() {
 export function syncFromAuth(force = false) {
   const user = readStoredAuth()?.user;
   if (!user) return profile;
-  if (user.examProvince && (force || !profile.confirmed)) {
-    if (PROVINCES.includes(user.examProvince)) profile.province = user.examProvince;
-  }
-  if (user.subjectType && (force || !profile.confirmed)) {
-    profile.firstSubject = subjectTypeText(user.subjectType);
-  }
-  if ((force || profile.score == null) && user.score != null && user.score !== "") {
-    setScore(user.score);
+  suppressAuthEcho = true;
+  try {
+    if (user.examProvince && (force || !profile.confirmed)) {
+      if (PROVINCES.includes(user.examProvince)) profile.province = user.examProvince;
+    }
+    if (user.subjectType && (force || !profile.confirmed)) {
+      profile.firstSubject = subjectTypeText(user.subjectType);
+    }
+    if ((force || profile.score == null) && user.score != null && user.score !== "") {
+      setScore(user.score);
+    }
+  } finally {
+    // watch 回调在下一个微任务触发，稍晚一点再解除抑制
+    setTimeout(() => {
+      suppressAuthEcho = false;
+    }, 0);
   }
   return profile;
 }

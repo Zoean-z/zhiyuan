@@ -6,7 +6,7 @@ import { useRouter } from "vue-router";
 import GkSchoolLogo from "./GkSchoolLogo.vue";
 import { SCHOOLS } from "../utils/exploreData";
 import {
-  SEGMENTS, TOTAL, calLine, majorDetailsOfSchool, majorsOfSchool, normalizeSchoolLike, probOf, readCurrentSheet, strategyOf, writeCurrentSheet
+  SEGMENTS, TOTAL, calLine, cutoffHistory, majorsOfSchool, normalizeSchoolLike, probOf, readCurrentSheet, strategyOf, writeCurrentSheet
 } from "../utils/volunteerCore";
 import { normalizeSubjectType, rankOfScore, scoreOfRank } from "../utils/scoreModel";
 
@@ -89,21 +89,16 @@ watch(lineBounds, (b) => {
   scoreRange.value = [...b];
 });
 
-function yearLine(school, yearsAgo) {
-  const line = calLine(school, modelOpts.value);
-  if (yearsAgo === 0) return line;
-  return line + (yearsAgo === 1 ? 1 + (school.id * 3) % 4 : 3 + (school.id * 5) % 5);
-}
 function schoolFacts(school) {
   const prob = probOfHere(school);
-  const years = [0, 1, 2].map((ago) => {
-    const line = yearLine(school, ago);
-    const cutoffRank = rankOf(line);
+  const years = cutoffHistory(school, modelOpts.value, 3).filter(Boolean).map((cutoff) => {
+    const line = cutoff.score;
+    const cutoffRank = cutoff.minRank;
     const gap = myRank.value - cutoffRank;
     const equiv = scoreForRank(cutoffRank);
     return {
-      year: 2026 - ago,
-      admit: 3 + ((school.id * (7 + ago)) % 48),
+      year: cutoff.year,
+      source: cutoff.source,
       line,
       cutoffRank,
       gap,
@@ -113,27 +108,12 @@ function schoolFacts(school) {
       diffText: equiv >= Number(props.profile.score || 0) ? `高 ${equiv - Number(props.profile.score || 0)} 分` : `低 ${Number(props.profile.score || 0) - equiv} 分`
     };
   });
-  const disciplineMap = {};
-  majorDetailsOfSchool(school).forEach((m) => {
-    disciplineMap[m.category] = (disciplineMap[m.category] || 0) + 1;
-  });
-  const disciplines = Object.entries(disciplineMap).slice(0, 2).map(([k, v]) => `${k}:${v}`).join("·");
   return {
     school,
     prob,
     strategy: strategyOf(prob),
-    line: yearLine(school, 0),
+    line: years[0]?.line ?? calLine(school, modelOpts.value),
     years,
-    purity: (3.5 + ((school.id * 3) % 16) / 10).toFixed(1),
-    disciplines,
-    code: String(1000 + (school.id * 137) % 9000),
-    plan: 2 + ((school.id * 29) % 55),
-    subjectReq: school.type === "理工类" ? "物且化" : "物",
-    doct: 18 + ((school.id * 7) % 30),
-    mast: 24 + ((school.id * 11) % 34),
-    rate: (15 + ((school.id * 13) % 26) + 0.4).toFixed(1),
-    soft: school.id,
-    alu: school.id + (school.id % 3) - 1,
     majorList: majorsOfSchool(school)
   };
 }
@@ -192,7 +172,7 @@ function addFromPick(facts) {
   ElMessage.success(`已加入第 ${target + 1} 志愿位（${seg.label}）`);
 }
 function askAbout(facts) {
-  router.push({ path: "/agent", query: { q: `帮我分析${facts.school.name}：${props.profile.score}分报考${facts.strategy.label}不${facts.strategy.label}？录取概率约${facts.prob}%，近三年最低分${facts.years.map((y) => y.line).join("/")}，值得放志愿表吗？` } });
+  router.push({ path: "/agent", query: { q: `帮我分析${facts.school.name}：我现在${props.profile.score}分，页面判断为${facts.strategy.label}，参考概率${probabilityText(facts.prob)}，近三年参考线为${facts.years.map((y) => y.line).join("/")}。请说明数据局限，并分析是否适合放进志愿表。` } });
 }
 
 /* 下拉可选项 = 本地院校库 + 已填的外部院校（来自推荐结果投放） */
@@ -548,24 +528,14 @@ defineExpose({ smartFill });
             </div>
 
             <div class="mnz-pcard__tags">
-              <span v-for="t in [f.school.province, f.school.type, f.school.nature, f.school.belong, f.school.is985 ? '985' : '', f.school.is211 ? '211' : '', f.school.isDoubleFirstClass ? '双一流' : ''].filter(Boolean)" :key="t" class="mnz-pcard__tag">{{ t }}</span>
-              <span class="mnz-pcard__tag mnz-pcard__tag--metric">硕博点 {{ f.doct }}/{{ f.mast }}</span>
-              <span class="mnz-pcard__tag mnz-pcard__tag--metric">保研率 {{ f.rate }}%</span>
-              <span class="mnz-pcard__tag mnz-pcard__tag--metric">软科 {{ f.soft }}</span>
-              <span class="mnz-pcard__tag mnz-pcard__tag--metric">校友会 {{ f.alu }}</span>
-            </div>
-
-            <div class="mnz-pcard__meta">
-              <span>26年计划 <b>{{ f.plan }} 人</b></span>
-              <span>院校代码 <b>{{ f.code }}</b></span>
-              <span>选科要求 <b>{{ f.subjectReq }}</b></span>
+              <span v-for="t in [f.school.province, f.school.type, f.school.nature, f.school.belong, f.school.is985 ? '985' : '', (f.school.is211 || f.school.isDoubleFirstClass) ? '双一流' : ''].filter(Boolean)" :key="t" class="mnz-pcard__tag">{{ t }}</span>
             </div>
 
             <div class="mnz-pcard__years">
               <div v-for="y in f.years" :key="y.year" class="mnz-pcard__year">
-                <header>{{ y.year }}年录取 {{ y.admit }} 人</header>
-                <p><label>最低分</label><b>{{ y.line }} 分</b></p>
-                <p><label>最低位次</label><b>{{ y.cutoffRank.toLocaleString("zh-CN") }} 名</b></p>
+                <header>{{ y.year }}年{{ y.source === "backend" ? "录取数据" : "模型参考" }}</header>
+                <p><label>{{ y.source === "backend" ? "最低分" : "参考分" }}</label><b>{{ y.line }} 分</b></p>
+                <p><label>{{ y.source === "backend" ? "最低位次" : "参考位次" }}</label><b>{{ y.cutoffRank.toLocaleString("zh-CN") }} 名</b></p>
                 <p><label>比我位次</label><span class="mnz-pcard__gap" :class="y.gap > 0 ? 'is-ahead' : 'is-behind'">{{ y.gapText }}</span></p>
                 <p><label>等效分</label><b>{{ y.equiv }} 分</b></p>
                 <p><label>等效分差</label><span :class="y.diff >= 0 ? 'is-ahead' : 'is-behind'">{{ y.diffText }}</span></p>
@@ -733,7 +703,7 @@ defineExpose({ smartFill });
               >
                 <el-option v-for="s in schoolOptions" :key="s.id" :value="s.id" :label="s.name">
                   <span class="mnz-vrow__school-name">{{ s.name }}</span>
-                  <span class="mnz-vrow__school-meta">{{ s.province ? s.province + " · " : "" }}{{ s.is985 ? "985" : s.is211 ? "211" : s.isDoubleFirstClass ? "双一流" : s.province ? "" : "推荐投放" }}</span>
+                  <span class="mnz-vrow__school-meta">{{ s.province ? s.province + " · " : "" }}{{ s.is985 ? "985" : (s.is211 || s.isDoubleFirstClass) ? "双一流" : s.province ? "" : "推荐投放" }}</span>
                 </el-option>
               </el-select>
 
@@ -786,7 +756,7 @@ defineExpose({ smartFill });
               >
                 <el-option v-for="s in schoolOptions" :key="s.id" :value="s.id" :label="s.name">
                   <span class="mnz-vrow__school-name">{{ s.name }}</span>
-                  <span class="mnz-vrow__school-meta">{{ s.province ? s.province + " · " : "" }}{{ s.is985 ? "985" : s.is211 ? "211" : s.isDoubleFirstClass ? "双一流" : s.province ? "" : "推荐投放" }}</span>
+                  <span class="mnz-vrow__school-meta">{{ s.province ? s.province + " · " : "" }}{{ s.is985 ? "985" : (s.is211 || s.isDoubleFirstClass) ? "双一流" : s.province ? "" : "推荐投放" }}</span>
                 </el-option>
               </el-select>
               <span class="mnz-vrow__empty">选择院校后可配置专业、服从调剂</span>

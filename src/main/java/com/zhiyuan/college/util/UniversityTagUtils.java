@@ -64,10 +64,8 @@ public final class UniversityTagUtils {
         if (Boolean.TRUE.equals(resolvedIs985)) {
             tags.add("985");
         }
-        if (Boolean.TRUE.equals(resolvedIs211)) {
-            tags.add("211");
-        }
-        if (Boolean.TRUE.equals(resolvedIsDoubleFirstClass)) {
+        // 双一流 ≡ 211：211 不再单独作为展示标签，按最高标准并入双一流（20260820 概念更新）
+        if (Boolean.TRUE.equals(resolvedIsDoubleFirstClass) || Boolean.TRUE.equals(resolvedIs211)) {
             tags.add("双一流");
         }
         return tags;

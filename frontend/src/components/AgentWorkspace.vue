@@ -9,7 +9,9 @@ import {
   formatDateTime,
   normalizeItem
 } from "../utils/recommendation";
+import { sheetToPlanItems } from "../utils/planSync";
 import { UI_TEXT, createHttpError, normalizeUserError } from "../utils/ui";
+import { readCurrentSheet } from "../utils/volunteerCore";
 import XiaoZhiAvatar from "./XiaoZhiAvatar.vue";
 
 const props = defineProps({
@@ -97,7 +99,11 @@ const conversationTitle = computed(() =>
   conversations.value.find((item) => item.id === activeConversationId.value)?.title || "新的志愿对话"
 );
 const activePlan = computed(() => plans.value.find((item) => String(item.id) === String(activePlanId.value)) || null);
-const canSend = computed(() => !!draft.value.trim() && !sending.value && !!activePlanId.value);
+const canSend = computed(() => !!draft.value.trim() && !sending.value);
+const planContextText = computed(() => {
+  if (activePlan.value) return `正在参考《${activePlan.value.planName}》（${activePlanItems.value.length} 条志愿）`;
+  return "可直接提问；需要读取或修改志愿表时，再选择或新建方案";
+});
 const userAvatarText = computed(() => String(props.user?.username || props.user?.phone || "用").slice(0, 1));
 
 const groups = computed(() => {
@@ -251,7 +257,9 @@ function buildPlanResult(items, base = {}) {
       strategyLabel: normalized.strategyLabel || null,
       riskScore: normalized.riskScore ?? null,
       matchReasons: Array.isArray(normalized.matchReasons) ? normalized.matchReasons : [],
-      explanation: normalized.explanation || null
+      explanation: normalized.explanation || null,
+      volunteerIndex: item?.volunteerIndex ?? normalized.volunteerIndex ?? null,
+      adjust: item?.adjust !== false
     });
   });
   return {
@@ -272,13 +280,51 @@ async function loadPlans(preferredId = activePlanId.value) {
     const records = await apiFetch("/api/plans", { headers: getAuthHeaders() });
     plans.value = Array.isArray(records) ? records : [];
     const matched = plans.value.find((item) => String(item.id) === String(preferredId));
-    const fallback = plans.value.find((item) => item.planName !== "当前方案草稿") || plans.value[0];
+    const fallback = plans.value.find((item) => item.planName === "当前方案草稿") || plans.value[0];
     activePlanId.value = matched ? String(matched.id) : fallback ? String(fallback.id) : "";
+    return true;
   } catch (ex) {
     ElMessage.error(resolveErrorMessage(ex, "加载志愿表失败"));
+    return false;
   } finally {
     plansLoading.value = false;
   }
+}
+
+/**
+ * 模拟填报器使用 localStorage 保存 45 个志愿位，AI 使用云端志愿表。
+ * 当本地已有志愿、云端还没有“当前方案草稿”时自动建立草稿，
+ * 避免用户已有本地志愿表，却因为只有旧的已保存方案而无法让 AI 识别当前内容。
+ */
+async function syncLocalSheetWhenNoCloudDraft() {
+  if (plans.value.some((item) => item.planName === "当前方案草稿")) return false;
+  const items = sheetToPlanItems(readCurrentSheet() || []);
+  if (!items.length) return false;
+  try {
+    const result = buildPlanResult(items, {});
+    const saved = await apiFetch("/api/plans/current", {
+      method: "PUT",
+      headers: getAuthHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({
+        planName: "当前方案草稿",
+        sourceType: "score",
+        sourceQuery: `本地填报器自动同步 ${items.length} 条志愿结果`,
+        resultJson: JSON.stringify(result),
+        aiSummary: result.summary
+      })
+    });
+    await loadPlans(saved?.id);
+    return true;
+  } catch (ex) {
+    console.warn("[syncLocalSheetWhenNoCloudDraft]", ex);
+    return false;
+  }
+}
+
+function requestPlanId() {
+  if (!activePlanId.value) return null;
+  const value = Number(activePlanId.value);
+  return Number.isSafeInteger(value) && value > 0 ? value : null;
 }
 
 async function loadActivePlan() {
@@ -416,10 +462,6 @@ function stopGeneration() {
 async function sendMessage(content = draft.value) {
   const text = String(content || "").trim();
   if (!text || sending.value) return;
-  if (!activePlanId.value) {
-    ElMessage.warning("请先选择或新建当前操作的志愿表");
-    return;
-  }
   if (!activeConversationId.value) {
     await createConversation(text.slice(0, 12));
     if (!activeConversationId.value) return;
@@ -468,7 +510,7 @@ async function runStreamTurn(text) {
     response = await fetch(`/api/agent/conversations/${activeConversationId.value}/stream`, {
       method: "POST",
       headers: getAuthHeaders({ "Content-Type": "application/json", Accept: "text/event-stream" }),
-      body: JSON.stringify({ content: text, planId: Number(activePlanId.value) }),
+      body: JSON.stringify({ content: text, planId: requestPlanId() }),
       signal: controller.signal
     });
   } catch (ex) {
@@ -576,7 +618,7 @@ async function runLegacyTurn(text) {
   const turn = await apiFetch(`/api/agent/conversations/${activeConversationId.value}/messages`, {
     method: "POST",
     headers: getAuthHeaders({ "Content-Type": "application/json" }),
-    body: JSON.stringify({ content: text, planId: Number(activePlanId.value) }),
+    body: JSON.stringify({ content: text, planId: requestPlanId() }),
     timeoutMs: 25000
   });
   const generated = Array.isArray(turn.generatedMessages) ? turn.generatedMessages : [];
@@ -731,7 +773,8 @@ async function confirmAddItem() {
 watch(activePlanId, loadActivePlan);
 watch(() => messages.value.length, () => scrollMessagesToBottom());
 onMounted(async () => {
-  await Promise.all([loadPlans(), loadConversations()]);
+  const [plansLoaded] = await Promise.all([loadPlans(), loadConversations()]);
+  if (plansLoaded) await syncLocalSheetWhenNoCloudDraft();
   if (!conversations.value.length) await createConversation();
   await loadActivePlan();
   const presetQuestion = Array.isArray(route.query.q) ? route.query.q[0] : route.query.q;
@@ -828,6 +871,14 @@ onMounted(async () => {
             </div>
           </div>
 
+          <div class="xz-plan-context" :class="{ 'is-unbound': !activePlan }">
+            <span class="xz-plan-context__dot" aria-hidden="true"></span>
+            <span>{{ planContextText }}</span>
+            <button type="button" @click="planDrawerVisible = true">
+              {{ activePlan ? "查看志愿表" : "选择或新建" }}
+            </button>
+          </div>
+
           <div class="xz-ask">
             <textarea
               v-model="draft"
@@ -904,7 +955,7 @@ onMounted(async () => {
           <div class="xz-topbar__title">
             <XiaoZhiAvatar size="sm" />
             <strong>{{ conversationTitle }}</strong>
-            <span class="xz-topbar__plan">{{ activePlan?.planName || "未选择志愿表" }}</span>
+            <span class="xz-topbar__plan">{{ activePlan?.planName || "未绑定方案 · 可直接咨询" }}</span>
           </div>
           <div class="xz-topbar__actions">
             <el-select v-model="activePlanId" class="xz-plan-select" placeholder="选择志愿表" size="small" :loading="plansLoading">

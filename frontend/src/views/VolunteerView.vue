@@ -4,7 +4,6 @@ import { useRoute, useRouter } from "vue-router";
 import GkHeader from "../components/GkHeader.vue";
 import GkSidePanel from "../components/GkSidePanel.vue";
 import VolunteerSheet from "../components/VolunteerSheet.vue";
-import { CITY_DESTINATIONS, VOLUNTEER_MAJOR_TOP, VOLUNTEER_SCHOOL_TOP, VOLUNTEER_STATS } from "../utils/exploreData";
 import { currentSheetCount } from "../utils/volunteerCore";
 import {
   BATCHES,
@@ -44,7 +43,6 @@ import {
 
 const router = useRouter();
 const route = useRoute();
-const cityTab = ref("本省");
 
 /* ===== 两阶段：① 填考生信息 → ② 45 个志愿位填报器 ===== */
 const stage = ref("form");
@@ -117,14 +115,6 @@ function goPlans() {
   router.push({ path: "/plans" });
 }
 
-/* ===== 大数据看板（保留，但不再放重复的功能入口） ===== */
-function rowsOf(list) {
-  const rows = [];
-  for (let i = 0; i < list.length; i += 3) rows.push(list.slice(i, i + 3));
-  return rows;
-}
-const schoolRows = VOLUNTEER_SCHOOL_TOP.slice(0, 9);
-const majorRows = VOLUNTEER_MAJOR_TOP.slice(0, 9);
 </script>
 
 <template>
@@ -289,64 +279,6 @@ const majorRows = VOLUNTEER_MAJOR_TOP.slice(0, 9);
               </div>
             </div>
 
-            <!-- 大数据看板：纯数据展示，不再夹重复入口 -->
-            <div class="gk-volunteer__hero gk-volunteer__hero--plain">
-              <div class="gk-volunteer__hero-text">
-                <h2 class="gk-volunteer__title">志愿填报大数据</h2>
-                <p class="gk-volunteer__desc">基于平台用户的模拟填报行为，实时呈现院校、专业与城市热度，为你的志愿决策提供参考</p>
-              </div>
-            </div>
-
-            <ul class="gk-vol-stats">
-              <li v-for="stat in VOLUNTEER_STATS" :key="stat.label" class="gk-vol-stat">
-                <p class="gk-vol-stat__value">{{ stat.value }}<i>{{ stat.unit }}</i></p>
-                <p class="gk-vol-stat__label">{{ stat.label }}</p>
-                <p class="gk-vol-stat__desc">{{ stat.desc }}</p>
-              </li>
-            </ul>
-
-            <section class="gk-vol-board">
-              <h3 class="gk-vol-board__title">填报院校 TOP<em>按模拟填报人次排序</em></h3>
-              <div v-for="(row, ri) in rowsOf(schoolRows)" :key="`s-${ri}`" class="gk-vol-board__row">
-                <div v-for="(item, ci) in row" :key="item.name" class="gk-vol-item">
-                  <i class="gk-vol-item__rank" :class="{ 'is-top': ri * 3 + ci < 3 }">{{ ri * 3 + ci + 1 }}</i>
-                  <span class="gk-vol-item__name">{{ item.name }}</span>
-                  <span class="gk-vol-item__count">{{ item.count.toLocaleString() }} 人次</span>
-                </div>
-              </div>
-            </section>
-
-            <section class="gk-vol-board">
-              <h3 class="gk-vol-board__title">填报专业 TOP<em>按模拟填报人次排序</em></h3>
-              <div v-for="(row, ri) in rowsOf(majorRows)" :key="`m-${ri}`" class="gk-vol-board__row">
-                <div v-for="(item, ci) in row" :key="item.name" class="gk-vol-item">
-                  <i class="gk-vol-item__rank" :class="{ 'is-top': ri * 3 + ci < 3 }">{{ ri * 3 + ci + 1 }}</i>
-                  <span class="gk-vol-item__name">{{ item.name }}</span>
-                  <span class="gk-vol-item__count">{{ item.count.toLocaleString() }} 人次</span>
-                </div>
-              </div>
-            </section>
-
-            <section class="gk-vol-board">
-              <h3 class="gk-vol-board__title">
-                城市去向排行
-                <span class="gk-vol-board__tabs">
-                  <button v-for="t in ['本省', '省外']" :key="t" type="button" :class="{ 'is-active': cityTab === t }" @click="cityTab = t">
-                    {{ t }}
-                  </button>
-                </span>
-              </h3>
-              <ul class="gk-vol-city">
-                <li v-for="(city, i) in CITY_DESTINATIONS[cityTab]" :key="city.name" class="gk-vol-city__row">
-                  <i class="gk-vol-item__rank" :class="{ 'is-top': i < 3 }">{{ i + 1 }}</i>
-                  <span class="gk-vol-item__name">{{ city.name }}</span>
-                  <span class="gk-vol-city__bar">
-                    <b :style="{ width: `${Math.round((city.count / CITY_DESTINATIONS[cityTab][0].count) * 100)}%` }" />
-                  </span>
-                  <span class="gk-vol-item__count">{{ city.count.toLocaleString() }} 人</span>
-                </li>
-              </ul>
-            </section>
           </template>
 
           <div v-else class="mnz-vfill">

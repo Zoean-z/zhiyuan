@@ -3809,12 +3809,16 @@ body {
 
 .gk-home__nav-inner {
   display: flex;
-  align-items: center;
+  align-items: stretch;
   gap: 8px;
   height: 48px;
 }
 
 .gk-home__nav-item {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   padding: 0 22px;
   height: 100%;
   border: none;
@@ -3822,6 +3826,7 @@ body {
   color: rgba(255, 255, 255, 0.92);
   font-size: 16px;
   font-weight: 600;
+  line-height: 1;
   cursor: pointer;
   position: relative;
 }
@@ -3837,12 +3842,13 @@ body {
 .gk-home__nav-item.is-active::after {
   content: "";
   position: absolute;
-  left: 22px;
-  right: 22px;
-  bottom: 6px;
+  left: 18px;
+  right: 18px;
+  bottom: 0;
   height: 3px;
-  border-radius: 2px;
+  border-radius: 3px 3px 0 0;
   background: #fff;
+  pointer-events: none;
 }
 
 /* 主内容 */
@@ -5813,6 +5819,12 @@ body {
   color: #e02020;
 }
 
+/* 无录取数据时使用中性状态，避免把“待测”误显示成低概率。 */
+.gk-choose__prob.is-unknown {
+  background: #f5f5f5;
+  color: #999;
+}
+
 .gk-choose__placeholder {
   padding: 40px 28px;
   border: 1px dashed #e6e7ea;
@@ -6292,6 +6304,57 @@ body {
 .xz-hero__title span {
   font-size: 14px;
   color: #8a8a8a;
+}
+
+.xz-plan-context {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  margin: 0 4px 10px;
+  padding: 8px 12px;
+  border: 1px solid #d8eadf;
+  border-radius: 12px;
+  background: #f5fbf7;
+  color: #4d6b58;
+  font-size: 13px;
+}
+
+.xz-plan-context.is-unbound {
+  border-color: #f1dfcf;
+  background: #fff9f4;
+  color: #8a674e;
+}
+
+.xz-plan-context__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #31b46c;
+  flex-shrink: 0;
+}
+
+.xz-plan-context.is-unbound .xz-plan-context__dot {
+  background: #ff9b4c;
+}
+
+.xz-plan-context > span:nth-child(2) {
+  min-width: 0;
+  flex: 1;
+}
+
+.xz-plan-context button {
+  flex-shrink: 0;
+  border: 0;
+  background: transparent;
+  color: #ff6600;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.xz-plan-context button:hover {
+  text-decoration: underline;
 }
 
 /* ---------- 输入卡（欢迎页与底部栏共用） ---------- */
@@ -6799,6 +6862,11 @@ body {
     padding-left: 0;
   }
 
+  .xz-plan-context {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
   .xz-tools__list {
     grid-template-columns: repeat(2, 1fr);
   }
@@ -7110,13 +7178,19 @@ body {
   align-items: center;
 }
 
+.gks-item__tags i.is-level {
+  background: #fff3e8;
+  color: #ff6600;
+  font-weight: 600;
+}
+
 .gks-prob {
   flex-shrink: 0;
-  width: 96px;
-  height: 52px;
+  width: 118px;
+  height: 60px;
   border: none;
-  border-radius: 8px;
-  background: #e6f5ff;
+  border-radius: 10px;
+  background: #eef4ff;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -7127,7 +7201,7 @@ body {
 }
 
 .gks-prob:hover {
-  box-shadow: 0 4px 12px rgba(24, 144, 255, 0.25);
+  box-shadow: 0 4px 14px rgba(24, 144, 255, 0.22);
 }
 
 .gks-prob:active {
@@ -7136,24 +7210,50 @@ body {
 
 .gks-prob span {
   font-size: 12px;
-  color: #666;
+  color: #64748b;
 }
 
 .gks-prob b {
-  font-size: 18px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 19px;
   font-weight: 700;
+  color: #2563eb;
 }
 
-.gks-prob b.is-冲 {
+.gks-prob__flame {
+  width: 15px;
+  height: 15px;
+}
+
+/* 按策略配色：保绿 / 稳蓝 / 冲橙 / 险红（对齐 gaokao.cn 易难徽章的区分度） */
+.gks-prob.is-guard {
+  background: #e8f7ef;
+}
+.gks-prob.is-guard b {
+  color: #16a34a;
+}
+.gks-prob.is-guard:hover {
+  box-shadow: 0 4px 14px rgba(22, 163, 102, 0.25);
+}
+.gks-prob.is-rush {
+  background: #fff3e8;
+}
+.gks-prob.is-rush b {
   color: #ff6600;
 }
-
-.gks-prob b.is-稳 {
-  color: #1890ff;
+.gks-prob.is-rush:hover {
+  box-shadow: 0 4px 14px rgba(255, 102, 0, 0.25);
 }
-
-.gks-prob b.is-保 {
-  color: #21a366;
+.gks-prob.is-risk {
+  background: #fdecec;
+}
+.gks-prob.is-risk b {
+  color: #e5484d;
+}
+.gks-prob.is-risk:hover {
+  box-shadow: 0 4px 14px rgba(229, 72, 77, 0.25);
 }
 
 .gks-empty {
@@ -7161,6 +7261,103 @@ body {
   text-align: center;
   font-size: 14px;
   color: #999;
+}
+
+/* 数据来源与测算说明（可折叠） */
+.gks-source {
+  margin-top: 18px;
+  border: 1px solid #e8edf5;
+  border-radius: 12px;
+  background: #fafbfd;
+  overflow: hidden;
+}
+.gks-source summary {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 14px 18px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  color: #1f2937;
+  list-style: none;
+  user-select: none;
+}
+.gks-source summary::-webkit-details-marker {
+  display: none;
+}
+.gks-source summary::before {
+  content: "B8";
+  color: #ff6600;
+  font-size: 12px;
+  transition: transform 0.15s;
+}
+.gks-source[open] summary::before {
+  transform: rotate(90deg);
+}
+.gks-source summary i {
+  font-style: normal;
+  font-weight: 400;
+  font-size: 12px;
+  color: #94a3b8;
+}
+.gks-source__body {
+  padding: 4px 18px 16px;
+  border-top: 1px dashed #e2e8f0;
+}
+.gks-source__block {
+  margin-top: 12px;
+}
+.gks-source__block h4 {
+  margin: 0 0 6px;
+  font-size: 13px;
+  color: #ff6600;
+}
+.gks-source__block p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 21px;
+  color: #475569;
+}
+.gks-source__block p b {
+  color: #1f2937;
+}
+.gks-source__block code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: #eef1f6;
+  font-size: 12px;
+  color: #475569;
+}
+.gks-source__block ul {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 22px;
+  color: #475569;
+}
+.gks-source__block li b {
+  color: #1f2937;
+}
+
+/* 近三年录取表：真实 / 估算标记 */
+.gkd-tag-real,
+.gkd-tag-est {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-style: normal;
+  vertical-align: 1px;
+}
+.gkd-tag-real {
+  background: #e8f7ef;
+  color: #16a34a;
+}
+.gkd-tag-est {
+  background: #f1f5f9;
+  color: #94a3b8;
 }
 
 @media (max-width: 900px) {
@@ -11265,25 +11462,14 @@ body {
   color: #e2551a;
 }
 /* scoreModel 新增的 risk / unknown 档位（低于 35% 与未填分数） */
-.gks-prob b.is-risk,
 .gkd-prob.is-risk strong {
   color: #dc2626;
 }
-.gks-prob b.is-unknown,
 .gkd-prob.is-unknown strong {
   color: #94a3b8;
 }
-.gks-prob b.is-rush {
-  color: #e2551a;
-}
-.gks-prob b.is-safe {
-  color: #2563eb;
-}
-.gks-prob b.is-guard {
-  color: #16a34a;
-}
 
-/* ⑧ 查大学：分数条 + 录取数据行 + 概率按钮 */
+/* ⑧ 查大学：考生档案条（只读展示 + 修改入口） + 概率徽章 */
 .gks-meta {
   display: flex;
   align-items: center;
@@ -11302,38 +11488,26 @@ body {
   font-size: 13px;
   color: #475569;
 }
-.gks-score input {
-  width: 96px;
-  height: 28px;
-  padding: 0 10px;
-  border: 1px solid #dbe3ee;
-  border-radius: 8px;
-  font-size: 13px;
-  outline: none;
-}
-.gks-score input:focus {
-  border-color: #ff9a5a;
-}
-.gks-score b {
+.gks-score__info b {
   color: #ff6600;
+  font-size: 14px;
 }
-.gks-score em {
-  font-style: normal;
+.gks-score.is-empty .gks-score__info {
   color: #94a3b8;
 }
-.gks-item__line {
-  margin: 6px 0 0;
-  font-size: 13px;
-  color: #64748b;
+.gks-score__edit {
+  height: 26px;
+  padding: 0 12px;
+  border: 1px solid #ff9a5a;
+  border-radius: 999px;
+  background: #fff;
+  color: #ff6600;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s;
 }
-.gks-item__line b {
-  color: #1f2937;
-  font-size: 15px;
-}
-.gks-item__line em {
-  margin-left: 12px;
-  font-style: normal;
-  color: #94a3b8;
+.gks-score__edit:hover {
+  background: #fff3e8;
 }
 .gks-prob__gap {
   display: block;
@@ -11342,9 +11516,15 @@ body {
   font-style: normal;
   color: #94a3b8;
 }
+.gks-prob--empty {
+  background: #f8fafc;
+}
 .gks-prob--empty b {
-  color: #ff6600;
+  color: #64748b;
   font-size: 14px;
+}
+.gks-prob--empty:hover {
+  box-shadow: 0 4px 14px rgba(148, 163, 184, 0.3);
 }
 
 /* ⑨ 院校详情页（新增） */
@@ -11391,6 +11571,7 @@ body {
   margin: 0 0 10px;
   font-size: 14px;
   color: #64748b;
+  line-height: 22px;
 }
 .gkd-hero__tags {
   display: flex;
@@ -11401,12 +11582,25 @@ body {
 .gkd-hero__tags i {
   padding: 3px 10px;
   border-radius: 6px;
-  background: #eef4ff;
-  color: #2563eb;
+  background: #f5f6f7;
+  color: #666;
   font-size: 12px;
   font-style: normal;
 }
-.gkd-prob {
+.gkd-hero__tags i.is-level {
+  background: #fff3e8;
+  color: #ff6600;
+  font-weight: 600;
+}
+/* 详情页概率大卡：必须限定在 .gkd-hero 内，
+   避免被上方列表页旧组件 .gkd-prob 的 width:107px/height:56px 写死尺寸，
+   否则卡片内容会整体溢出、垂直压住下方 KPI 数据条（20260820 字重叠修复） */
+.gkd-hero .gkd-prob {
+  display: block;
+  width: auto;
+  height: auto;
+  flex-shrink: initial;
+  cursor: default;
   padding: 16px;
   border-radius: 12px;
   background: #f8fafc;
@@ -11435,6 +11629,10 @@ body {
 .gkd-prob.is-guard strong {
   color: #16a34a;
 }
+.gkd-hero .gkd-prob.is-risk {
+  background: #fff7f7;
+  border-color: #f6c6c8;
+}
 .gkd-prob__seg {
   display: inline-block;
   margin: 8px 0 10px;
@@ -11457,20 +11655,19 @@ body {
 .gkd-prob__why b {
   color: #1f2937;
 }
-.gkd-prob__input {
-  width: 100%;
-  height: 36px;
-  padding: 0 12px;
-  border: 1px solid #dbe3ee;
-  border-radius: 8px;
-  outline: none;
-  font-size: 14px;
+.gkd-prob__placeholder {
+  display: block;
+  font-size: 30px;
+  font-weight: 700;
+  color: #cbd5e1;
+  line-height: 1.2;
 }
 .gkd-prob__hint {
   display: block;
   margin: 8px 0 12px;
   font-size: 12px;
   color: #94a3b8;
+  line-height: 18px;
 }
 .gkd-prob__cta {
   width: 100%;

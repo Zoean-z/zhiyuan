@@ -153,8 +153,8 @@ function handleDetail() {
         </div>
         <div class="mnz-rlrow__flags">
           <em v-if="model.is985">985</em>
-          <em v-else-if="model.is211">211</em>
-          <em v-if="model.isDoubleFirstClass">双一流</em>
+          <!-- 双一流 ≡ 211：211 徽章取消，统一显示双一流（20260820 概念归并） -->
+          <em v-if="model.is211 || model.isDoubleFirstClass">双一流</em>
         </div>
       </div>
 

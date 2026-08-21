@@ -5,7 +5,8 @@ import {
   scoreOfRank,
   strategyOf as strategyOfProbability,
   segKeyOfBackendStrategy,
-  backendStrategyOfSegKey
+  backendStrategyOfSegKey,
+  totalCandidates
 } from "./scoreModel";
 
 /**
@@ -78,14 +79,18 @@ function tierIndexOf(school) {
 
 /**
  * 院校（某省、某科类、某年份）录取数据——全站唯一口径
- * @returns {{minRank:number, score:number, year:number, source:"backend"|"model"}}
+ * 优先级：① 后端带回的真实录取线 → ② 内置真实投档线（浙江2026考试院）
+ *        → ③ 以浙江真实位次百分位为锚的推导 → ④ 合成院校兜底模型
+ * @returns {{minRank:number, score:number, year:number, source:"backend"|"real"|"derived"|"model", note?:string|null}}
  */
+const ZJ_TOTAL_CANDIDATES = 300000; // 浙江普通类考生规模（一分一段累计口径）
+
 export function schoolCutoff(schoolLike, { province = "", subjectType = "PHYSICS", yearsAgo = 0 } = {}) {
   const school = normalizeSchoolLike(schoolLike);
   if (!school) return null;
   const opts = { province, subjectType };
 
-  // 后端真实数据优先（只有当年数据，yearsAgo>0 时仍用模型向前推）
+  // ① 后端真实数据优先（推荐接口带回的当年录取线；yearsAgo>0 时用 ②③ 向前推）
   if (yearsAgo === 0) {
     const realScore = firstFinite(school.cutoffScore);
     const realRank = firstFinite(school.minRank);
@@ -99,6 +104,44 @@ export function schoolCutoff(schoolLike, { province = "", subjectType = "PHYSICS
     }
   }
 
+  // ② 内置真实投档线（浙江省教育考试院2026年普通类一段平行投档线，最低专业组）
+  const embedded = school.cutoffs?.[province];
+  if (embedded) {
+    const minRank = embedded.rank ?? rankOfScore(embedded.score, { province });
+    if (yearsAgo === 0) {
+      return { score: embedded.score, minRank, year: embedded.year, source: "real", note: embedded.note || null };
+    }
+    // 往年：在真实位次基础上按年均 6% 门槛位次后移估算（跨年趋势为估算值）
+    const estRank = Math.max(30, Math.round((minRank ?? 1) * (1 + yearsAgo * 0.06)));
+    return {
+      minRank: estRank,
+      score: scoreOfRank(estRank, opts),
+      year: embedded.year - yearsAgo,
+      source: "derived",
+      note: "往年线为趋势估算"
+    };
+  }
+
+  // ③ 锚定推导：以该校在浙江的真实最低位次百分位为锚，按目标省份科类考生规模换算
+  const anchor = school.cutoffs?.浙江;
+  if (anchor) {
+    const anchorRank = anchor.rank ?? rankOfScore(anchor.score, { province: "浙江" });
+    if (anchorRank != null) {
+      const yearFactor = 1 + yearsAgo * 0.06;
+      const minRank = province === "浙江"
+        ? Math.max(30, Math.round(anchorRank * yearFactor))
+        : Math.max(30, Math.round((anchorRank / ZJ_TOTAL_CANDIDATES) * totalCandidates(province, subjectType) * yearFactor));
+      return {
+        minRank,
+        score: scoreOfRank(minRank, opts),
+        year: anchor.year - yearsAgo,
+        source: "derived",
+        note: "外省线由浙江真实位次百分位按考生规模换算（估算）"
+      };
+    }
+  }
+
+  // ④ 合成院校兜底（推荐结果里后端未带录取线的极少数情况）
   const seed = school.synthetic ? nameHash(school.name) : school.id * 7;
   const baseRank = 200 * Math.pow(1.28, Math.max(0, tierIndexOf(school) - 1));
   const wobble = 1 + ((seed % 7) - 3) * 0.03; // ±9% 稳定拖动，同一院校永远一样

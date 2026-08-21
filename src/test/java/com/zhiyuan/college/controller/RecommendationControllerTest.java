@@ -150,8 +150,7 @@ class RecommendationControllerTest {
                 .andExpect(jsonPath("$.rush[0].is211").value(true))
                 .andExpect(jsonPath("$.rush[0].isDoubleFirstClass").value(true))
                 .andExpect(jsonPath("$.rush[0].schoolTags[0]").value("985"))
-                .andExpect(jsonPath("$.rush[0].schoolTags[1]").value("211"))
-                .andExpect(jsonPath("$.rush[0].schoolTags[2]").value("双一流"));
+                .andExpect(jsonPath("$.rush[0].schoolTags[1]").value("双一流"));
     }
 
     @Test
@@ -465,8 +464,7 @@ class RecommendationControllerTest {
                 .andExpect(jsonPath("$.recommendations[0].is985").value(false))
                 .andExpect(jsonPath("$.recommendations[0].is211").value(true))
                 .andExpect(jsonPath("$.recommendations[0].isDoubleFirstClass").value(true))
-                .andExpect(jsonPath("$.recommendations[0].schoolTags[0]").value("211"))
-                .andExpect(jsonPath("$.recommendations[0].schoolTags[1]").value("双一流"));
+                .andExpect(jsonPath("$.recommendations[0].schoolTags[0]").value("双一流"));
     }
 
     @Test
