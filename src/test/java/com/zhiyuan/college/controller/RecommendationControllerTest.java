@@ -71,7 +71,7 @@ class RecommendationControllerTest {
         JsonNode meta = fetchMeta();
         String requestJson = objectMapper.writeValueAsString(Map.of(
                 "score", 620,
-                "province", meta.get("provinces").get(0).asText(),
+                "province", "浙江",
                 "subjectType", "PHYSICS"
         ));
 
@@ -108,7 +108,7 @@ class RecommendationControllerTest {
         JsonNode meta = fetchMeta();
         String requestJson = objectMapper.writeValueAsString(Map.of(
                 "score", 620,
-                "province", meta.get("provinces").get(0).asText(),
+                "province", "浙江",
                 "subjectType", "HISTORY"
         ));
 
@@ -159,7 +159,7 @@ class RecommendationControllerTest {
         JsonNode meta = fetchMeta();
         String requestJson = objectMapper.writeValueAsString(Map.of(
                 "score", 620,
-                "province", meta.get("provinces").get(0).asText(),
+                "province", "浙江",
                 "subjectType", "PHYSICS",
                 "recommendationMode", "MAJOR_FIRST",
                 "majorKeyword", "计算机"
@@ -202,7 +202,7 @@ class RecommendationControllerTest {
         JsonNode meta = fetchMeta();
         String requestJson = objectMapper.writeValueAsString(Map.of(
                 "score", 620,
-                "province", meta.get("provinces").get(0).asText(),
+                "province", "浙江",
                 "subjectType", "HISTORY",
                 "recommendationMode", "MAJOR_FIRST",
                 "majorKeyword", "法学"

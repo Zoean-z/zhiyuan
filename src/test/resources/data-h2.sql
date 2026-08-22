@@ -16,7 +16,8 @@ INSERT INTO admission_cutoff (university_id, admission_year, province, subject_t
 (1, 2025, '浙江', '历史', 650, 4200),
 (2, 2025, '浙江', '历史', 618, 21000),
 (5, 2025, '浙江', '历史', 587, 28000),
-(6, 2025, '浙江', '历史', 600, 32000);
+(6, 2025, '浙江', '历史', 600, 32000),
+(5, 2025, '江苏', '物理', 612, 20000);
 
 INSERT INTO major_admission_cutoff (university_id, major_name, admission_year, province, subject_type, cutoff_score, min_rank) VALUES
 (1, '计算机科学与技术', 2025, '浙江', '物理', 660, 4500),
@@ -46,7 +47,8 @@ SET major_id = (
 INSERT INTO score_rank_mapping (mapping_year, province, subject_type, score, rank_value) VALUES
 (2025, '浙江', '物理', 620, 26000),
 (2025, '浙江', '物理', 630, 22000),
-(2025, '浙江', '物理', 610, 31000);
+(2025, '浙江', '物理', 610, 31000),
+(2025, '江苏', '物理', 620, 26000);
 
 INSERT INTO users (id, username, password, score, subject_type, exam_province, role) VALUES
 (1, 'testuser', '123456', NULL, NULL, NULL, 'USER');
