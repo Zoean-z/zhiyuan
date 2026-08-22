@@ -44,8 +44,16 @@ public class AgentDecisionService {
 
     public AgentDecision decide(String userMessage, List<AgentMessage> recentMessages, UserAccount user) {
         AgentDecision localDecision = decideLocally(userMessage, recentMessages);
-        if (!qwenEnabled) {
+        // Strong-intent keywords (recommend / profile / plan / delete / save / school
+        // detail) are resolved locally with high precision. Let them short-circuit so
+        // the tool actually runs instead of being bypassed by an LLM that prefers to
+        // reply directly. Only when the local planner has no match do we ask the LLM
+        // for semantic understanding of fuzzier requests.
+        if (localDecision != null) {
             return localDecision;
+        }
+        if (!qwenEnabled) {
+            return defaultReply();
         }
         try {
             String aiContent = aiChatClient.chat(
@@ -59,7 +67,7 @@ public class AgentDecisionService {
             String reply = root.path("reply").asText("").trim();
             Map<String, Object> toolArgs = readToolArgs(root.path("toolArgs"));
             if (AgentToolNames.REPLY.equals(action)) {
-                return new AgentDecision(AgentToolNames.REPLY, reply.isBlank() ? localDecision.getReply() : reply);
+                return new AgentDecision(AgentToolNames.REPLY, reply.isBlank() ? DEFAULT_REPLY_TEXT : reply);
             }
             if (agentToolRegistry.supports(action)) {
                 return new AgentDecision(action, reply, toolArgs);
@@ -67,7 +75,14 @@ public class AgentDecisionService {
         } catch (Exception ex) {
             log.warn("Agent AI decision failed, fallback to local planner: {}", ex.getMessage());
         }
-        return localDecision;
+        return defaultReply();
+    }
+
+    private static final String DEFAULT_REPLY_TEXT =
+            "当前 agent 支持查看画像、查看当前志愿方案、生成学校/专业推荐、查看学校详情，也可以把最近推荐里的某一项加入志愿单。删除操作需要你明确确认。";
+
+    private AgentDecision defaultReply() {
+        return new AgentDecision(AgentToolNames.REPLY, DEFAULT_REPLY_TEXT);
     }
 
     private AgentDecision decideLocally(String userMessage, List<AgentMessage> recentMessages) {
@@ -151,10 +166,7 @@ public class AgentDecisionService {
         if (containsAny(normalized, "志愿", "方案", "当前表", "当前单")) {
             return new AgentDecision(AgentToolNames.GET_CURRENT_PLAN, "我先帮你查看当前志愿方案。");
         }
-        return new AgentDecision(
-                AgentToolNames.REPLY,
-                "当前 agent 支持查看画像、查看当前志愿方案、生成学校/专业推荐、查看学校详情，也可以把最近推荐里的某一项加入志愿单。删除操作需要你明确确认。"
-        );
+        return null;
     }
 
     private boolean hasPendingDeleteConfirmation(List<AgentMessage> recentMessages, int selectionIndex) {

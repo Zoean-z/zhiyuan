@@ -37,17 +37,20 @@ public class AgentToolFacade {
     private final RecommendationService recommendationService;
     private final SchoolDetailService schoolDetailService;
     private final ObjectMapper objectMapper;
+    private final AgentFallbackAdviceService fallbackAdviceService;
 
     public AgentToolFacade(UserAccountMapper userAccountMapper,
                            ApplicationPlanService applicationPlanService,
                            RecommendationService recommendationService,
                            SchoolDetailService schoolDetailService,
-                           ObjectMapper objectMapper) {
+                           ObjectMapper objectMapper,
+                           AgentFallbackAdviceService fallbackAdviceService) {
         this.userAccountMapper = userAccountMapper;
         this.applicationPlanService = applicationPlanService;
         this.recommendationService = recommendationService;
         this.schoolDetailService = schoolDetailService;
         this.objectMapper = objectMapper;
+        this.fallbackAdviceService = fallbackAdviceService;
     }
 
     public AgentToolResult getUserProfile(Long userId) {
@@ -105,7 +108,7 @@ public class AgentToolFacade {
         UserAccount user = requireRecommendationProfile(userId);
         RecommendationRequest request = buildRequest(user, RecommendationMode.SCHOOL_FIRST, null);
         RecommendationResponse response = recommendationService.recommend(request);
-        return buildRecommendationResult(AgentToolNames.RECOMMEND_SCHOOLS, response);
+        return buildRecommendationResult(AgentToolNames.RECOMMEND_SCHOOLS, response, user, request);
     }
 
     public AgentToolResult recommendMajors(Long userId, Object majorKeywordValue) {
@@ -116,7 +119,7 @@ public class AgentToolFacade {
         UserAccount user = requireRecommendationProfile(userId);
         RecommendationRequest request = buildRequest(user, RecommendationMode.MAJOR_FIRST, majorKeyword);
         RecommendationResponse response = recommendationService.recommend(request);
-        return buildRecommendationResult(AgentToolNames.RECOMMEND_MAJORS, response);
+        return buildRecommendationResult(AgentToolNames.RECOMMEND_MAJORS, response, user, request);
     }
 
     public AgentToolResult getSchoolDetail(Long userId, Map<String, Object> toolArgs, List<AgentMessage> recentMessages) {
@@ -353,7 +356,8 @@ public class AgentToolFacade {
         return request;
     }
 
-    private AgentToolResult buildRecommendationResult(String toolName, RecommendationResponse response) {
+    private AgentToolResult buildRecommendationResult(String toolName, RecommendationResponse response,
+                                                      UserAccount user, RecommendationRequest request) {
         List<Map<String, Object>> topItems = new ArrayList<>();
         appendItems(topItems, "rush", response.getRush());
         appendItems(topItems, "safe", response.getSafe());
@@ -377,6 +381,20 @@ public class AgentToolFacade {
                     .reduce((left, right) -> left + "、" + right)
                     .orElse("当前结果");
         }
+
+        // LLM fallback: when no rows matched (a data gap in admission_cutoff for this
+        // province/subject), ask the model for directional advice instead of leaving the
+        // user with a bare "no results" message. The advice is explicitly marked as
+        // non-authoritative so it never substitutes for real admission data.
+        if (topItems.isEmpty()) {
+            String fallbackAdvice = fallbackAdviceService.generateAdvice(user, request, response);
+            if (fallbackAdvice != null && !fallbackAdvice.isBlank()) {
+                payload.put("fallback", true);
+                payload.put("fallbackAdvice", fallbackAdvice);
+                summary = fallbackAdvice;
+            }
+        }
+
         return new AgentToolResult(toolName, summary, toJson(payload));
     }
 
