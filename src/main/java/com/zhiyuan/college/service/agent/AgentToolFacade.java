@@ -105,13 +105,21 @@ public class AgentToolFacade {
     }
 
     public AgentToolResult recommendSchools(Long userId) {
+        return recommendSchools(userId, null);
+    }
+
+    public AgentToolResult recommendSchools(Long userId, java.util.function.Consumer<String> onChunk) {
         UserAccount user = requireRecommendationProfile(userId);
         RecommendationRequest request = buildRequest(user, RecommendationMode.SCHOOL_FIRST, null);
         RecommendationResponse response = recommendationService.recommend(request);
-        return buildRecommendationResult(AgentToolNames.RECOMMEND_SCHOOLS, response, user, request);
+        return buildRecommendationResult(AgentToolNames.RECOMMEND_SCHOOLS, response, user, request, onChunk);
     }
 
     public AgentToolResult recommendMajors(Long userId, Object majorKeywordValue) {
+        return recommendMajors(userId, majorKeywordValue, null);
+    }
+
+    public AgentToolResult recommendMajors(Long userId, Object majorKeywordValue, java.util.function.Consumer<String> onChunk) {
         String majorKeyword = majorKeywordValue == null ? "" : String.valueOf(majorKeywordValue).trim();
         if (majorKeyword.isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "majorKeyword is required for recommendMajors");
@@ -119,7 +127,7 @@ public class AgentToolFacade {
         UserAccount user = requireRecommendationProfile(userId);
         RecommendationRequest request = buildRequest(user, RecommendationMode.MAJOR_FIRST, majorKeyword);
         RecommendationResponse response = recommendationService.recommend(request);
-        return buildRecommendationResult(AgentToolNames.RECOMMEND_MAJORS, response, user, request);
+        return buildRecommendationResult(AgentToolNames.RECOMMEND_MAJORS, response, user, request, onChunk);
     }
 
     public AgentToolResult getSchoolDetail(Long userId, Map<String, Object> toolArgs, List<AgentMessage> recentMessages) {
@@ -357,7 +365,8 @@ public class AgentToolFacade {
     }
 
     private AgentToolResult buildRecommendationResult(String toolName, RecommendationResponse response,
-                                                      UserAccount user, RecommendationRequest request) {
+                                                      UserAccount user, RecommendationRequest request,
+                                                      java.util.function.Consumer<String> onChunk) {
         List<Map<String, Object>> topItems = new ArrayList<>();
         appendItems(topItems, "rush", response.getRush());
         appendItems(topItems, "safe", response.getSafe());
@@ -386,8 +395,9 @@ public class AgentToolFacade {
         // province/subject), ask the model for directional advice instead of leaving the
         // user with a bare "no results" message. The advice is explicitly marked as
         // non-authoritative so it never substitutes for real admission data.
+        // Streamed variant: in streaming mode (onChunk != null) deltas are pushed as they arrive.
         if (topItems.isEmpty()) {
-            String fallbackAdvice = fallbackAdviceService.generateAdvice(user, request, response);
+            String fallbackAdvice = fallbackAdviceService.generateAdviceStream(user, request, response, onChunk);
             if (fallbackAdvice != null && !fallbackAdvice.isBlank()) {
                 payload.put("fallback", true);
                 payload.put("fallbackAdvice", fallbackAdvice);

@@ -57,6 +57,29 @@ public class AgentController {
         return agentChatService.sendMessage(currentUserId(), id, request.getContent(), request.getPlanId(), currentUser());
     }
 
+    @PostMapping(value = "/{id}/messages/stream", produces = "text/event-stream")
+    public org.springframework.web.servlet.mvc.method.annotation.SseEmitter streamMessage(
+            @PathVariable("id") Long id,
+            @Valid @RequestBody AgentMessageCreateRequest request) {
+        UserAccount user = currentUser();
+        Long userId = user.getId();
+        org.springframework.web.servlet.mvc.method.annotation.SseEmitter emitter =
+                new org.springframework.web.servlet.mvc.method.annotation.SseEmitter(120_000L);
+        Thread thread = new Thread(() -> {
+            try {
+                agentChatService.streamMessage(userId, id, request.getContent(), request.getPlanId(), user, emitter);
+            } catch (Exception ex) {
+                try {
+                    emitter.completeWithError(ex);
+                } catch (Exception ignore) {
+                }
+            }
+        });
+        thread.setDaemon(true);
+        thread.start();
+        return emitter;
+    }
+
     private Long currentUserId() {
         UserAccount user = currentUser();
         return user.getId();

@@ -22,7 +22,7 @@ public class AgentToolExecutor {
     }
 
     public AgentToolResult execute(Long userId, String toolName, Map<String, Object> toolArgs, List<AgentMessage> recentMessages) {
-        return execute(userId, null, toolName, toolArgs, recentMessages);
+        return execute(userId, null, toolName, toolArgs, recentMessages, null);
     }
 
     public AgentToolResult execute(Long userId,
@@ -30,6 +30,15 @@ public class AgentToolExecutor {
                                    String toolName,
                                    Map<String, Object> toolArgs,
                                    List<AgentMessage> recentMessages) {
+        return execute(userId, targetPlanId, toolName, toolArgs, recentMessages, null);
+    }
+
+    public AgentToolResult execute(Long userId,
+                                   Long targetPlanId,
+                                   String toolName,
+                                   Map<String, Object> toolArgs,
+                                   List<AgentMessage> recentMessages,
+                                   java.util.function.Consumer<String> onChunk) {
         if (!agentToolRegistry.supports(toolName)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unsupported agent tool for execution: " + toolName);
         }
@@ -39,10 +48,11 @@ public class AgentToolExecutor {
             case AgentToolNames.GET_CURRENT_PLAN -> agentToolFacade.getCurrentPlan(userId, targetPlanId);
             case AgentToolNames.GET_SCHOOL_DETAIL -> agentToolFacade.getSchoolDetail(userId, toolArgs, recentMessages);
             case AgentToolNames.GET_SCHOOL_DETAIL_BY_NAME -> agentToolFacade.getSchoolDetailByName(userId, toolArgs);
-            case AgentToolNames.RECOMMEND_SCHOOLS -> agentToolFacade.recommendSchools(userId);
+            case AgentToolNames.RECOMMEND_SCHOOLS -> agentToolFacade.recommendSchools(userId, onChunk);
             case AgentToolNames.RECOMMEND_MAJORS -> agentToolFacade.recommendMajors(
                     userId,
-                    toolArgs == null ? null : toolArgs.get("majorKeyword")
+                    toolArgs == null ? null : toolArgs.get("majorKeyword"),
+                    onChunk
             );
             case AgentToolNames.ADD_PLAN_ITEM -> agentToolFacade.addPlanItem(userId, targetPlanId, toolArgs, recentMessages);
             case AgentToolNames.REMOVE_PLAN_ITEM -> agentToolFacade.removePlanItem(userId, targetPlanId, toolArgs);

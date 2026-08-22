@@ -1,8 +1,15 @@
 package com.zhiyuan.college.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Consumer;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
@@ -20,11 +27,16 @@ import org.springframework.web.server.ResponseStatusException;
 @Component
 public class AiChatClient {
 
+    private static final Logger log = LoggerFactory.getLogger(AiChatClient.class);
+
     private final RestClient restClient;
     private final String model;
     private final String provider;
     private final int retryMaxAttempts;
     private final long retryBackoffMillis;
+
+    @Autowired
+    private ObjectMapper objectMapper;
 
     /**
      * Test friendly constructor: it deliberately leaves the request factory of the supplied builder
@@ -99,6 +111,63 @@ public class AiChatClient {
 
     public String getModel() {
         return model;
+    }
+
+    /**
+     * Streams the chat completion (OpenAI-compatible SSE: lines prefixed with {@code data: },
+     * deltas under {@code choices[0].delta.content}). Each text delta is delivered to
+     * {@code onChunk}. Returns after the stream completes or fails.
+     */
+    public void chatStream(String systemPrompt,
+                           String userPrompt,
+                           double temperature,
+                           boolean jsonOutput,
+                           Consumer<String> onChunk) {
+        Map<String, Object> requestBody = Map.of(
+                "model", model,
+                "temperature", temperature,
+                "messages", List.of(
+                        Map.of("role", "system", "content", systemPrompt),
+                        Map.of("role", "user", "content", userPrompt)
+                ),
+                "response_format", jsonOutput ? Map.of("type", "json_object") : Map.of("type", "text"),
+                "stream", true
+        );
+        try {
+            restClient.post()
+                    .uri("/chat/completions")
+                    .body(requestBody)
+                    .exchange((request, response) -> {
+                        try (BufferedReader reader = new BufferedReader(
+                                new InputStreamReader(response.getBody(), StandardCharsets.UTF_8))) {
+                            String line;
+                            while ((line = reader.readLine()) != null) {
+                                if (!line.startsWith("data:")) {
+                                    continue;
+                                }
+                                String data = line.substring(5).trim();
+                                if ("[DONE]".equals(data)) {
+                                    break;
+                                }
+                                JsonNode node = objectMapper.readTree(data);
+                                JsonNode delta = node.path("choices").path(0).path("delta").path("content");
+                                if (!delta.isMissingNode() && !delta.isNull()) {
+                                    String text = delta.asText();
+                                    if (!text.isBlank()) {
+                                        onChunk.accept(text);
+                                    }
+                                }
+                            }
+                        }
+                        return null;
+                    });
+        } catch (Exception ex) {
+            log.warn("AI chat stream failed: {}", ex.getMessage());
+            if (ex instanceof RuntimeException runtimeException) {
+                throw runtimeException;
+            }
+            throw new IllegalStateException("AI chat stream failed", ex);
+        }
     }
 
     public String getProvider() {

@@ -45,44 +45,8 @@ public class AgentFallbackAdviceService {
             return null;
         }
         try {
-            String systemPrompt = """
-                    你是资深高考志愿填报顾问。当前推荐系统因数据库缺少该省份/科类的录取线数据，未能给出精确院校推荐，需要你基于通用高考常识给出结构化方向性建议。
-
-                    输出格式（纯 markdown，不要代码块包裹）：
-
-                    ## 一、分数段研判
-                    结合该省近年物理类/历史类特殊类型控制线、一本线/本科线，分析该分数所处位置与竞争态势（约 80 字）。
-
-                    ## 二、可关注院校方向
-                    按"省外（冲/稳）"和"省内（保）"两组，每组点名 2-3 所该分数段典型可关注院校。每所院校格式：
-                    - **院校名（参考，需核实）**：推荐专业方向、近年参考约 XXX-XXX 分（以官方为准）、核心优势一句话
-
-                    ## 三、高就业专业推荐
-                    结合考生科类，推荐 2-3 类就业导向专业方向，每类说明适配理由与就业去向。
-
-                    ## 四、院校+专业匹配
-                    点出 2-3 个"院校+专业"典型组合，说明匹配逻辑。
-
-                    ## 五、填报策略
-                    按"冲一冲/稳一稳/保一保"三档给框架，每档标注参考分数区间与侧重点。
-
-                    ## 六、风险提醒
-                    列 2-3 条（选科隐性要求、学费差异、调剂退档等）。
-
-                    ## 七、总结
-                    一段话总结核心建议。
-
-                    硬性要求：
-                    - 所有院校名后必须标"（参考，需核实）"
-                    - 所有分数区间用"近年参考约 XXX-XXX 分（以官方为准）"，不要给精确到个位的录取线
-                    - 所有表格必须用标准 markdown 语法：表头行 + 分隔行 |---|---| + 数据行（否则前端无法渲染）
-                    - "填报策略"章节必须包含一个 markdown 表格（表头：梯度 | 参考分数区间 | 侧重点；3 行数据：冲一冲/稳一稳/保一保），**必须包含表格**，不得用列表或纯文字替代
-                    - 不要编造绝对不存在的院校
-                    - 直接输出 markdown 正文，不要寒暄
-                    - 总字数 500-700 字
-                    """;
             String userPrompt = buildUserPrompt(user, request);
-            String advice = aiChatClient.chat(systemPrompt, userPrompt, 0.3, false);
+            String advice = aiChatClient.chat(buildSystemPrompt(), userPrompt, 0.3, false);
             if (advice == null || advice.isBlank()) {
                 return null;
             }
@@ -91,6 +55,76 @@ public class AgentFallbackAdviceService {
             log.warn("Agent fallback advice generation failed: {}", ex.getMessage());
             return null;
         }
+    }
+
+    /**
+     * Streamed variant of {@link #generateAdvice}: deltas are delivered to {@code onChunk} as they
+     * arrive, and the full advice text (with disclaimer) is returned once the stream completes.
+     *
+     * @return full advice text, or {@code null} if the stream fails or produces no content
+     */
+    public String generateAdviceStream(UserAccount user, RecommendationRequest request,
+                                       RecommendationResponse response,
+                                       java.util.function.Consumer<String> onChunk) {
+        if (user == null || request == null) {
+            return null;
+        }
+        String userPrompt = buildUserPrompt(user, request);
+        StringBuilder full = new StringBuilder();
+        try {
+            aiChatClient.chatStream(buildSystemPrompt(), userPrompt, 0.3, false, chunk -> {
+                if (onChunk != null) {
+                    onChunk.accept(chunk);
+                }
+                full.append(chunk);
+            });
+        } catch (Exception ex) {
+            log.warn("Agent fallback advice stream failed: {}", ex.getMessage());
+            return null;
+        }
+        if (full.length() == 0) {
+            return null;
+        }
+        return DISCLAIMER + full.toString().trim();
+    }
+
+    private String buildSystemPrompt() {
+        return """
+                你是资深高考志愿填报顾问。当前推荐系统因数据库缺少该省份/科类的录取线数据，未能给出精确院校推荐，需要你基于通用高考常识给出结构化方向性建议。
+
+                输出格式（纯 markdown，不要代码块包裹）：
+
+                ## 一、分数段研判
+                结合该省近年物理类/历史类特殊类型控制线、一本线/本科线，分析该分数所处位置与竞争态势（约 80 字）。
+
+                ## 二、可关注院校方向
+                按"省外（冲/稳）"和"省内（保）"两组，每组点名 2-3 所该分数段典型可关注院校。每所院校格式：
+                - **院校名（参考，需核实）**：推荐专业方向、近年参考约 XXX-XXX 分（以官方为准）、核心优势一句话
+
+                ## 三、高就业专业推荐
+                结合考生科类，推荐 2-3 类就业导向专业方向，每类说明适配理由与就业去向。
+
+                ## 四、院校+专业匹配
+                点出 2-3 个"院校+专业"典型组合，说明匹配逻辑。
+
+                ## 五、填报策略
+                按"冲一冲/稳一稳/保一保"三档给框架，每档标注参考分数区间与侧重点。
+
+                ## 六、风险提醒
+                列 2-3 条（选科隐性要求、学费差异、调剂退档等）。
+
+                ## 七、总结
+                一段话总结核心建议。
+
+                硬性要求：
+                - 所有院校名后必须标"（参考，需核实）"
+                - 所有分数区间用"近年参考约 XXX-XXX 分（以官方为准）"，不要给精确到个位的录取线
+                - 所有表格必须用标准 markdown 语法：表头行 + 分隔行 |---|---| + 数据行（否则前端无法渲染）
+                - "填报策略"章节必须包含一个 markdown 表格（表头：梯度 | 参考分数区间 | 侧重点；3 行数据：冲一冲/稳一稳/保一保），**必须包含表格**，不得用列表或纯文字替代
+                - 不要编造绝对不存在的院校
+                - 直接输出 markdown 正文，不要寒暄
+                - 总字数 500-700 字
+                """;
     }
 
     private String buildUserPrompt(UserAccount user, RecommendationRequest request) {

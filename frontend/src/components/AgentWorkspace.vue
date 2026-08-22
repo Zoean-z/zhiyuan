@@ -534,7 +534,7 @@ async function runStreamTurn(text) {
   abortRef.value = controller;
   let response;
   try {
-    response = await fetch(`/api/agent/conversations/${activeConversationId.value}/stream`, {
+    response = await fetch(`/api/agent/conversations/${activeConversationId.value}/messages/stream`, {
       method: "POST",
       headers: getAuthHeaders({ "Content-Type": "application/json", Accept: "text/event-stream" }),
       body: JSON.stringify({ content: text, planId: requestPlanId() }),

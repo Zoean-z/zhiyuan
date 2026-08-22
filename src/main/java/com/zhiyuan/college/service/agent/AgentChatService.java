@@ -1,5 +1,6 @@
 package com.zhiyuan.college.service.agent;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.zhiyuan.college.model.dto.AgentChatTurnResponse;
 import com.zhiyuan.college.model.dto.AgentMessageResponse;
@@ -10,8 +11,10 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 @Service
 public class AgentChatService {
@@ -126,6 +129,108 @@ public class AgentChatService {
         }
 
         return new AgentChatTurnResponse(conversationId, generated);
+    }
+
+    /**
+     * SSE streaming variant of {@link #sendMessage}. The final reply is streamed chunk-by-chunk:
+     * <ul>
+     *   <li>tool_call progress → {@code {"type":"tool","data":{...}}}</li>
+     *   <li>LLM fallback advice (empty data) → repeated {@code {"type":"chunk","data":"..."}}</li>
+     *   <li>template markdown (real data) → single {@code {"type":"text","data":"..."}}</li>
+     *   <li>end → {@code {"type":"done","data":null}}</li>
+     * </ul>
+     */
+    public void streamMessage(Long userId,
+                              Long conversationId,
+                              String content,
+                              Long targetPlanId,
+                              UserAccount currentUser,
+                              SseEmitter emitter) {
+        try {
+            agentConversationService.appendMessage(
+                    userId, conversationId, AgentRoles.USER, AgentMessageTypes.TEXT, content.trim(), null, null);
+            List<AgentMessage> recentMessages =
+                    agentConversationService.listRecentMessages(conversationId, RECENT_MESSAGE_LIMIT);
+            AgentDecision decision = agentDecisionService.decide(content, recentMessages, currentUser);
+
+            if (AgentToolNames.REPLY.equals(decision.getAction())) {
+                String reply = decision.getReply() == null || decision.getReply().isBlank()
+                        ? "好的，请继续告诉我你的需求。" : decision.getReply();
+                agentConversationService.appendMessage(
+                        userId, conversationId, AgentRoles.ASSISTANT, AgentMessageTypes.TEXT, reply, null, null);
+                sendEvent(emitter, "message",
+                        Map.of("message", Map.of("role", "assistant", "messageType", "text", "content", reply)));
+                sendDone(emitter);
+                return;
+            }
+
+            // Tool path
+            Map<String, Object> toolMeta = new LinkedHashMap<>();
+            toolMeta.put("toolName", decision.getAction());
+            toolMeta.put("content", decision.getReply());
+            sendEvent(emitter, "tool_call", toolMeta);
+            agentConversationService.appendMessage(
+                    userId, conversationId, AgentRoles.ASSISTANT, AgentMessageTypes.TOOL_CALL,
+                    decision.getReply() == null || decision.getReply().isBlank() ? "正在调用工具。" : decision.getReply(),
+                    decision.getAction(),
+                    toJson(decision.getToolArgs()));
+
+            AgentToolResult toolResult;
+            try {
+                toolResult = agentToolExecutor.execute(
+                        userId, targetPlanId, decision.getAction(), decision.getToolArgs(), recentMessages,
+                        chunk -> sendEvent(emitter, "delta", Map.of("text", chunk)));
+            } catch (Exception ex) {
+                toolResult = buildFailureResult(decision.getAction(), ex);
+            }
+            agentConversationService.appendMessage(
+                    userId, conversationId, AgentRoles.TOOL, AgentMessageTypes.TOOL_RESULT,
+                    toolResult.getSummary(), toolResult.getToolName(), toolResult.getPayloadJson());
+
+            String finalText = replyFormatter.format(toolResult, currentUser);
+            boolean fallback = isFallbackResult(toolResult);
+            if (!fallback) {
+                // Real data → template markdown arrives at once
+                sendEvent(emitter, "message",
+                        Map.of("message", Map.of("role", "assistant", "messageType", "text", "content", finalText)));
+            }
+            agentConversationService.appendMessage(
+                    userId, conversationId, AgentRoles.ASSISTANT, AgentMessageTypes.TEXT, finalText, null, null);
+            sendDone(emitter);
+        } catch (Exception ex) {
+            try {
+                emitter.completeWithError(ex);
+            } catch (Exception ignore) {
+            }
+        }
+    }
+
+    private boolean isFallbackResult(AgentToolResult toolResult) {
+        if (toolResult == null || toolResult.getPayloadJson() == null || toolResult.getPayloadJson().isBlank()) {
+            return false;
+        }
+        try {
+            JsonNode payload = objectMapper.readTree(toolResult.getPayloadJson());
+            return payload.path("fallback").asBoolean(false);
+        } catch (Exception ex) {
+            return false;
+        }
+    }
+
+    private void sendEvent(SseEmitter emitter, String eventName, Object data) {
+        try {
+            String payload = data == null ? "null" : objectMapper.writeValueAsString(data);
+            emitter.send(SseEmitter.event().name(eventName).data(payload, MediaType.APPLICATION_JSON));
+        } catch (Exception ignore) {
+        }
+    }
+
+    private void sendDone(SseEmitter emitter) {
+        try {
+            sendEvent(emitter, "done", null);
+            emitter.complete();
+        } catch (Exception ignore) {
+        }
     }
 
     private String toJson(Map<String, Object> payload) {
