@@ -12,6 +12,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.slf4j.Logger;
@@ -24,7 +25,18 @@ public class AiRequirementParserService {
 
     private static final Logger log = LoggerFactory.getLogger(AiRequirementParserService.class);
 
-    private static final Pattern SCORE_PATTERN = Pattern.compile("([3-7]\\d{2})");
+    /** “630分”、“630 分”：最可靠的分数语境。 */
+    private static final Pattern SCORE_WITH_UNIT_PATTERN =
+            Pattern.compile("(?<![0-9])([3-7]\\d{2})\\s*分(?!钟|之|数线)");
+    /** “考了630”、“成绩是630”、“总分630”。 */
+    private static final Pattern SCORE_WITH_PREFIX_PATTERN =
+            Pattern.compile("(?:考了|考出|考到|成绩|分数|总分|得分|高考)[^0-9]{0,4}([3-7]\\d{2})(?![0-9])");
+    /** 最后的回退：独立三位数，且不能是其他量词（600人、600公里、600元 …）。 */
+    private static final Pattern SCORE_STANDALONE_PATTERN = Pattern.compile(
+            "(?<![0-9])([3-7]\\d{2})(?![0-9])"
+                    + "(?!\\s*(?:分钟|公里|千米|米|人|名|位|元|万|块|年|届|所|个|条|页|号|km|KM))");
+    private static final int MIN_VALID_SCORE = 300;
+    private static final int MAX_VALID_SCORE = 750;
     private static final Pattern MAJOR_PATTERN = Pattern.compile("([\\u4e00-\\u9fa5A-Za-z]{2,12})(?:专业|方向)");
     private static final Pattern DISTANCE_PREFERENCE_PATTERN = Pattern.compile("(离[^，。；,;\\s]{1,8}近)");
     private static final List<String> PROVINCES = Arrays.asList(
@@ -87,15 +99,18 @@ public class AiRequirementParserService {
 
         ParseResult result;
         if (enabled) {
+            // Request scoped holder: this service is a singleton, so the raw AI answer must never be
+            // kept in a mutable field (concurrent requests would overwrite each other's trace).
+            AtomicReference<String> rawAiResponse = new AtomicReference<>();
             try {
-                ParsedRequirement aiParsed = parseByAi(text);
+                ParsedRequirement aiParsed = parseByAi(text, rawAiResponse);
                 if (aiParsed != null) {
                     result = new ParseResult(aiParsed, new ParseTrace(
                             aiChatClient.getProvider(),
                             aiChatClient.getModel(),
                             "AI",
                             true,
-                            lastAiResponse,
+                            rawAiResponse.get(),
                             null
                     ));
                     recommendationCacheService.cacheParsedRequirement(text, result);
@@ -109,7 +124,7 @@ public class AiRequirementParserService {
                         aiChatClient.getModel(),
                         "RULE_FALLBACK",
                         false,
-                        lastAiResponse,
+                        rawAiResponse.get(),
                         ex.getMessage()
                 ));
                 recommendationCacheService.cacheParsedRequirement(text, result);
@@ -129,9 +144,7 @@ public class AiRequirementParserService {
         return result;
     }
 
-    private String lastAiResponse;
-
-    private ParsedRequirement parseByAi(String text) throws Exception {
+    private ParsedRequirement parseByAi(String text, AtomicReference<String> rawResponseHolder) throws Exception {
         String normalizedText = text == null ? "" : text.trim();
         String systemPrompt = """
                 你是高考志愿需求解析器。请从用户文本中提取字段，并且只输出 JSON 对象，不要输出任何额外说明。
@@ -153,7 +166,7 @@ public class AiRequirementParserService {
         String userPrompt = "请解析以下文本：" + normalizedText;
 
         String aiContent = aiChatClient.chat(systemPrompt, userPrompt, 0.1, true);
-        this.lastAiResponse = aiContent;
+        rawResponseHolder.set(aiContent);
         JsonNode root = objectMapper.readTree(aiContent);
 
         ParsedRequirement parsed = new ParsedRequirement();
@@ -187,9 +200,9 @@ public class AiRequirementParserService {
         Set<String> normalizedMajors = new LinkedHashSet<>();
         Set<String> unrecognizedPreferences = new LinkedHashSet<>();
 
-        Matcher scoreMatcher = SCORE_PATTERN.matcher(normalized);
-        if (scoreMatcher.find()) {
-            parsed.setScore(Integer.parseInt(scoreMatcher.group(1)));
+        Integer parsedScore = extractScore(normalized);
+        if (parsedScore != null) {
+            parsed.setScore(parsedScore);
         }
 
         List<String> matchedProvinces = new ArrayList<>();
@@ -271,6 +284,36 @@ public class AiRequirementParserService {
         completeDerivedFields(parsed, normalized);
 
         return parsed;
+    }
+
+    /**
+     * 从自由文本中提取高考分数。优先要求显式语境（“630分”、“考了630”、“成绩630”），
+     * 最后才回退到独立三位数；且回退时会排除 600人、600公里、600元 这类非分数量词。
+     * 这避开了原来 ([3-7]\\d{2}) 裸正则把任意三位数当成分数的误判。
+     */
+    private Integer extractScore(String text) {
+        if (text == null || text.isBlank()) {
+            return null;
+        }
+        Integer score = firstScoreIn(SCORE_WITH_UNIT_PATTERN, text);
+        if (score == null) {
+            score = firstScoreIn(SCORE_WITH_PREFIX_PATTERN, text);
+        }
+        if (score == null) {
+            score = firstScoreIn(SCORE_STANDALONE_PATTERN, text);
+        }
+        return score;
+    }
+
+    private Integer firstScoreIn(Pattern pattern, String text) {
+        Matcher matcher = pattern.matcher(text);
+        while (matcher.find()) {
+            int value = Integer.parseInt(matcher.group(1));
+            if (value >= MIN_VALID_SCORE && value <= MAX_VALID_SCORE) {
+                return value;
+            }
+        }
+        return null;
     }
 
     private String readNullableText(JsonNode root, String key) {
