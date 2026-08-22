@@ -51,9 +51,8 @@ router.beforeEach((to) => {
   if (to.meta.requiresAdmin && !isAdmin) {
     return { name: "recommend" };
   }
-  if (hasAuth && isAdmin && to.name !== "admin" && !to.meta.guestOnly) {
-    return { name: "admin" };
-  }
+  // Admins are only redirected to the console after login (guestOnly routes below).
+  // They can still browse every public and authenticated page like any other user.
   if (hasAuth && !isAdmin && !profileComplete && !to.meta.profileSetup) {
     const redirect = to.meta.guestOnly ? undefined : to.fullPath;
     return { name: "profile-setup", query: redirect ? { redirect } : {} };

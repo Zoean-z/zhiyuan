@@ -30,10 +30,23 @@ ai:
     retry:
       max-attempts: ${QWEN_RETRY_MAX_ATTEMPTS:3}
       backoff-millis: ${QWEN_RETRY_BACKOFF_MILLIS:150}
+    # Hard timeouts for the upstream LLM call. Without them a hung provider would
+    # pin request threads until the container is restarted.
+    timeout:
+      connect-millis: ${QWEN_TIMEOUT_CONNECT_MILLIS:5000}
+      read-millis: ${QWEN_TIMEOUT_READ_MILLIS:30000}
 auth:
   token-ttl-seconds: ${AUTH_TOKEN_TTL_SECONDS:86400}
+  # Local development fallback only. Production MUST provide AUTH_JWT_SECRET
+  # (>= 32 bytes of key material, e.g. `openssl rand -base64 48`).
   jwt-secret: ${AUTH_JWT_SECRET:emhpeXVhbi1kZXYtc2VjcmV0LXpoaXl1YW4tZGV2LXNlY3JldC0yMDI2LWtleQ==}
   jwt-issuer: ${AUTH_JWT_ISSUER:zhiyuan}
+  # Allows logging in against demo accounts whose password is still stored in clear
+  # text (sql/data.sql seed data). Disabled by default; enable only for local demos.
+  allow-legacy-plaintext-login: ${AUTH_ALLOW_LEGACY_PLAINTEXT_LOGIN:false}
+security:
+  # OpenAPI/Swagger routes are blocked by the security filter chain unless this is true.
+  expose-api-docs: ${SECURITY_EXPOSE_API_DOCS:false}
 recommendation:
   scoring:
     minimum-probability: ${RECOMMENDATION_MINIMUM_PROBABILITY:35}
@@ -50,6 +63,8 @@ recommendation:
       max: ${RECOMMENDATION_GUARANTEE_MAX:100}
 cache:
   redis:
+    # Default off so a bare `mvn spring-boot:run` works without Redis.
+    # Docker Compose and the prod profile turn this on.
     enabled: ${CACHE_REDIS_ENABLED:false}
     recommendation-ttl: ${CACHE_RECOMMENDATION_TTL:10m}
     meta-ttl: ${CACHE_META_TTL:30m}
@@ -63,8 +78,10 @@ messaging:
     running-timeout: ${ROCKETMQ_RUNNING_TIMEOUT:5m}
 springdoc:
   api-docs:
+    enabled: ${SPRINGDOC_API_DOCS_ENABLED:false}
     path: ${SPRINGDOC_API_DOCS_PATH:/v3/api-docs}
   swagger-ui:
+    enabled: ${SPRINGDOC_SWAGGER_UI_ENABLED:false}
     path: ${SPRINGDOC_SWAGGER_UI_PATH:/swagger-ui.html}
     try-it-out-enabled: true
     operations-sorter: alpha

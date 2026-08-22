@@ -13,6 +13,11 @@ ai:
 
 auth:
   jwt-secret: ${AUTH_JWT_SECRET}
+  # Never accept clear-text passwords in production.
+  allow-legacy-plaintext-login: false
+
+security:
+  expose-api-docs: ${SECURITY_EXPOSE_API_DOCS:false}
 
 cache:
   redis:
@@ -35,6 +40,10 @@ logging:
     root: INFO
     com.zhiyuan.college: INFO
 
+# The OpenAPI document enumerates every admin endpoint, so it stays off unless an
+# operator explicitly opts in (and also opens security.expose-api-docs).
 springdoc:
+  api-docs:
+    enabled: ${SPRINGDOC_API_DOCS_ENABLED:false}
   swagger-ui:
-    enabled: true
+    enabled: ${SPRINGDOC_SWAGGER_UI_ENABLED:false}
