@@ -129,7 +129,7 @@ services:
       ROCKETMQ_PRODUCER_RETRY_TIMES: ${ROCKETMQ_PRODUCER_RETRY_TIMES:-2}
       ROCKETMQ_RUNNING_TIMEOUT: ${ROCKETMQ_RUNNING_TIMEOUT:-5m}
       # Required: no fallback secret is shipped any more. Generate one with `openssl rand -base64 48`.
-      AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:?AUTH_JWT_SECRET is required. Generate one with: openssl rand -base64 48}
+      AUTH_JWT_SECRET: "${AUTH_JWT_SECRET:?AUTH_JWT_SECRET is required. Generate one with: openssl rand -base64 48}"
       AUTH_JWT_ISSUER: ${AUTH_JWT_ISSUER:-zhiyuan}
       AUTH_TOKEN_TTL_SECONDS: ${AUTH_TOKEN_TTL_SECONDS:-86400}
       AUTH_ALLOW_LEGACY_PLAINTEXT_LOGIN: ${AUTH_ALLOW_LEGACY_PLAINTEXT_LOGIN:-false}
