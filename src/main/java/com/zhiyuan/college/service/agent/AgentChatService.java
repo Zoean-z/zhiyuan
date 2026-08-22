@@ -23,15 +23,18 @@ public class AgentChatService {
     private final AgentDecisionService agentDecisionService;
     private final AgentToolExecutor agentToolExecutor;
     private final ObjectMapper objectMapper;
+    private final AgentReplyFormatter replyFormatter;
 
     public AgentChatService(AgentConversationService agentConversationService,
                             AgentDecisionService agentDecisionService,
                             AgentToolExecutor agentToolExecutor,
-                            ObjectMapper objectMapper) {
+                            ObjectMapper objectMapper,
+                            AgentReplyFormatter replyFormatter) {
         this.agentConversationService = agentConversationService;
         this.agentDecisionService = agentDecisionService;
         this.agentToolExecutor = agentToolExecutor;
         this.objectMapper = objectMapper;
+        this.replyFormatter = replyFormatter;
     }
 
     public AgentChatTurnResponse sendMessage(Long userId,
@@ -104,7 +107,7 @@ public class AgentChatService {
                     conversationId,
                     AgentRoles.ASSISTANT,
                     AgentMessageTypes.TEXT,
-                    toolResult.getSummary(),
+                    replyFormatter.format(toolResult, currentUser),
                     null,
                     null
             );
