@@ -15,6 +15,10 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 public class AdminUserService {
 
+    /** Hard ceiling: a crafted size parameter must not be able to dump the whole table. */
+    private static final int MAX_PAGE_SIZE = 200;
+    private static final int DEFAULT_PAGE_SIZE = 200;
+
     private final UserAccountMapper userAccountMapper;
 
     public AdminUserService(UserAccountMapper userAccountMapper) {
@@ -22,9 +26,30 @@ public class AdminUserService {
     }
 
     public List<AdminUserResponse> list(String keyword, UserRole role, Boolean enabled) {
-        String normalizedKeyword = keyword == null ? null : keyword.trim();
+        return list(keyword, role, enabled, 1, DEFAULT_PAGE_SIZE);
+    }
+
+    public List<AdminUserResponse> list(String keyword,
+                                        UserRole role,
+                                        Boolean enabled,
+                                        Integer page,
+                                        Integer size) {
+        int pageSize = size == null ? DEFAULT_PAGE_SIZE : Math.min(Math.max(size, 1), MAX_PAGE_SIZE);
+        int pageNumber = page == null ? 1 : Math.max(page, 1);
+        int offset = (pageNumber - 1) * pageSize;
         return userAccountMapper.findAdminUsers(
-                normalizedKeyword,
+                normalizeKeyword(keyword),
+                role == null ? null : role.name(),
+                enabled,
+                pageSize,
+                offset
+        );
+    }
+
+    /** Total number of rows matching the same filters, so the console can page properly. */
+    public long count(String keyword, UserRole role, Boolean enabled) {
+        return userAccountMapper.countAdminUsers(
+                normalizeKeyword(keyword),
                 role == null ? null : role.name(),
                 enabled
         );
@@ -58,5 +83,9 @@ public class AdminUserService {
         existing.setEnabled(request.getEnabled());
         userAccountMapper.updateById(existing);
         return detail(id);
+    }
+
+    private String normalizeKeyword(String keyword) {
+        return keyword == null ? null : keyword.trim();
     }
 }

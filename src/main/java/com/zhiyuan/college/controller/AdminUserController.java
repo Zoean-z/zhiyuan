@@ -7,6 +7,7 @@ import com.zhiyuan.college.model.enums.UserRole;
 import com.zhiyuan.college.service.AdminUserService;
 import jakarta.validation.Valid;
 import java.util.List;
+import java.util.Map;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -25,11 +26,24 @@ public class AdminUserController {
         this.adminUserService = adminUserService;
     }
 
+    /**
+     * Page through users. {@code page}/{@code size} are optional; omitting them keeps the previous
+     * behaviour (first page, at most 200 rows).
+     */
     @GetMapping
     public List<AdminUserResponse> list(@RequestParam(value = "keyword", required = false) String keyword,
                                         @RequestParam(value = "role", required = false) UserRole role,
-                                        @RequestParam(value = "enabled", required = false) Boolean enabled) {
-        return adminUserService.list(keyword, role, enabled);
+                                        @RequestParam(value = "enabled", required = false) Boolean enabled,
+                                        @RequestParam(value = "page", required = false) Integer page,
+                                        @RequestParam(value = "size", required = false) Integer size) {
+        return adminUserService.list(keyword, role, enabled, page, size);
+    }
+
+    @GetMapping("/count")
+    public Map<String, Object> count(@RequestParam(value = "keyword", required = false) String keyword,
+                                     @RequestParam(value = "role", required = false) UserRole role,
+                                     @RequestParam(value = "enabled", required = false) Boolean enabled) {
+        return Map.of("total", adminUserService.count(keyword, role, enabled));
     }
 
     @GetMapping("/overview")

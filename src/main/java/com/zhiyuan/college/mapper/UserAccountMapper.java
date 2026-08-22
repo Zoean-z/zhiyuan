@@ -45,12 +45,34 @@ public interface UserAccountMapper extends BaseMapper<UserAccount> {
               AND u.enabled = #{enabled}
             </if>
             ORDER BY u.created_at DESC, u.id DESC
-            LIMIT 200
+            LIMIT #{limit} OFFSET #{offset}
             </script>
             """)
     List<AdminUserResponse> findAdminUsers(@Param("keyword") String keyword,
                                            @Param("role") String role,
-                                           @Param("enabled") Boolean enabled);
+                                           @Param("enabled") Boolean enabled,
+                                           @Param("limit") int limit,
+                                           @Param("offset") int offset);
+
+    @Select("""
+            <script>
+            SELECT COUNT(*)
+            FROM users u
+            WHERE 1 = 1
+            <if test="keyword != null and keyword != ''">
+              AND LOWER(u.username) LIKE CONCAT('%', LOWER(#{keyword}), '%')
+            </if>
+            <if test="role != null and role != ''">
+              AND u.role = #{role}
+            </if>
+            <if test="enabled != null">
+              AND u.enabled = #{enabled}
+            </if>
+            </script>
+            """)
+    long countAdminUsers(@Param("keyword") String keyword,
+                         @Param("role") String role,
+                         @Param("enabled") Boolean enabled);
 
     @Select("""
             SELECT u.id,
