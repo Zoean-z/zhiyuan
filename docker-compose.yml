@@ -4,6 +4,7 @@ services:
     container_name: zhiyuan-mysql
     restart: unless-stopped
     environment:
+      # Local sample credentials. Override them in .env for anything but a laptop.
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-zhiyuan_root_2026}
       MYSQL_DATABASE: ${DB_NAME:-college_recommendation}
       MYSQL_USER: ${DB_USER:-zhiyuan}
@@ -17,6 +18,7 @@ services:
       - mysql-data:/var/lib/mysql
       - ./sql/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
       - ./sql/data.sql:/docker-entrypoint-initdb.d/02-data.sql:ro
+      - ./sql/upgrade-20260822-unique-keys.sql:/docker-entrypoint-initdb.d/03-upgrade-unique-keys.sql:ro
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-p${MYSQL_ROOT_PASSWORD:-zhiyuan_root_2026}"]
       interval: 10s
@@ -126,19 +128,29 @@ services:
       ROCKETMQ_SEND_TIMEOUT_MS: ${ROCKETMQ_SEND_TIMEOUT_MS:-3000}
       ROCKETMQ_PRODUCER_RETRY_TIMES: ${ROCKETMQ_PRODUCER_RETRY_TIMES:-2}
       ROCKETMQ_RUNNING_TIMEOUT: ${ROCKETMQ_RUNNING_TIMEOUT:-5m}
-      AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:-emhpeXVhbi1wcm9kLXNlY3JldC16aGl5dWFuLXByb2Qtc2VjcmV0LTIwMjYta2V5}
+      # Required: no fallback secret is shipped any more. Generate one with `openssl rand -base64 48`.
+      AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:?AUTH_JWT_SECRET is required. Generate one with: openssl rand -base64 48}
       AUTH_JWT_ISSUER: ${AUTH_JWT_ISSUER:-zhiyuan}
       AUTH_TOKEN_TTL_SECONDS: ${AUTH_TOKEN_TTL_SECONDS:-86400}
+      AUTH_ALLOW_LEGACY_PLAINTEXT_LOGIN: ${AUTH_ALLOW_LEGACY_PLAINTEXT_LOGIN:-false}
       QWEN_ENABLED: ${QWEN_ENABLED:-false}
       QWEN_BASE_URL: ${QWEN_BASE_URL:-https://api.deepseek.com}
       QWEN_MODEL: ${QWEN_MODEL:-deepseek-v4-flash}
       QWEN_API_KEY: ${QWEN_API_KEY:-}
+      QWEN_RETRY_MAX_ATTEMPTS: ${QWEN_RETRY_MAX_ATTEMPTS:-3}
+      QWEN_RETRY_BACKOFF_MILLIS: ${QWEN_RETRY_BACKOFF_MILLIS:-150}
+      QWEN_TIMEOUT_CONNECT_MILLIS: ${QWEN_TIMEOUT_CONNECT_MILLIS:-5000}
+      QWEN_TIMEOUT_READ_MILLIS: ${QWEN_TIMEOUT_READ_MILLIS:-30000}
+      SECURITY_EXPOSE_API_DOCS: ${SECURITY_EXPOSE_API_DOCS:-false}
+      SPRINGDOC_API_DOCS_ENABLED: ${SPRINGDOC_API_DOCS_ENABLED:-false}
+      SPRINGDOC_SWAGGER_UI_ENABLED: ${SPRINGDOC_SWAGGER_UI_ENABLED:-false}
       SPRINGDOC_SWAGGER_UI_PATH: ${SPRINGDOC_SWAGGER_UI_PATH:-/swagger-ui.html}
       SPRINGDOC_API_DOCS_PATH: ${SPRINGDOC_API_DOCS_PATH:-/v3/api-docs}
     ports:
       - "${SERVER_HOST_PORT:-8080}:8080"
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8080/v3/api-docs >/dev/null 2>&1"]
+      # /v3/api-docs is disabled by default now, so probe a real public endpoint instead.
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8080/api/meta/options >/dev/null 2>&1"]
       interval: 15s
       timeout: 5s
       retries: 20

@@ -3,10 +3,13 @@ package com.zhiyuan.college.service;
 import com.fasterxml.jackson.databind.JsonNode;
 import java.util.List;
 import java.util.Map;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
+import org.springframework.http.client.ClientHttpRequestFactory;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
@@ -23,17 +26,38 @@ public class AiChatClient {
     private final int retryMaxAttempts;
     private final long retryBackoffMillis;
 
+    /**
+     * Test friendly constructor: it deliberately leaves the request factory of the supplied builder
+     * untouched so that mock servers can keep their own transport.
+     */
+    public AiChatClient(RestClient.Builder builder,
+                        String baseUrl,
+                        String apiKey,
+                        String model,
+                        int retryMaxAttempts,
+                        long retryBackoffMillis) {
+        this(builder, baseUrl, apiKey, model, retryMaxAttempts, retryBackoffMillis, null, null);
+    }
+
+    @Autowired
     public AiChatClient(RestClient.Builder builder,
                         @Value("${ai.qwen.base-url}") String baseUrl,
                         @Value("${ai.qwen.api-key}") String apiKey,
                         @Value("${ai.qwen.model}") String model,
                         @Value("${ai.qwen.retry.max-attempts:3}") int retryMaxAttempts,
-                        @Value("${ai.qwen.retry.backoff-millis:150}") long retryBackoffMillis) {
-        this.restClient = builder
+                        @Value("${ai.qwen.retry.backoff-millis:150}") long retryBackoffMillis,
+                        @Value("${ai.qwen.timeout.connect-millis:5000}") Integer connectTimeoutMillis,
+                        @Value("${ai.qwen.timeout.read-millis:30000}") Integer readTimeoutMillis) {
+        RestClient.Builder configuredBuilder = builder
                 .baseUrl(baseUrl)
                 .defaultHeader("Authorization", "Bearer " + apiKey)
-                .defaultHeader("Content-Type", MediaType.APPLICATION_JSON_VALUE)
-                .build();
+                .defaultHeader("Content-Type", MediaType.APPLICATION_JSON_VALUE);
+        if (connectTimeoutMillis != null && readTimeoutMillis != null) {
+            // Without explicit timeouts a hung provider keeps request threads busy forever.
+            configuredBuilder = configuredBuilder
+                    .requestFactory(buildRequestFactory(connectTimeoutMillis, readTimeoutMillis));
+        }
+        this.restClient = configuredBuilder.build();
         this.model = model;
         this.provider = "openai-compatible";
         this.retryMaxAttempts = Math.max(1, retryMaxAttempts);
@@ -79,6 +103,13 @@ public class AiChatClient {
 
     public String getProvider() {
         return provider;
+    }
+
+    private static ClientHttpRequestFactory buildRequestFactory(int connectTimeoutMillis, int readTimeoutMillis) {
+        SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
+        requestFactory.setConnectTimeout(Math.max(0, connectTimeoutMillis));
+        requestFactory.setReadTimeout(Math.max(0, readTimeoutMillis));
+        return requestFactory;
     }
 
     private String performChat(Map<String, Object> requestBody) {
