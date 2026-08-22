@@ -56,8 +56,11 @@ public class AgentToolExecutor {
             case AgentToolNames.GET_USER_PROFILE, AgentToolNames.GET_CURRENT_PLAN, AgentToolNames.RECOMMEND_SCHOOLS -> {
                 return;
             }
-            case AgentToolNames.GET_SCHOOL_DETAIL, AgentToolNames.ADD_PLAN_ITEM, AgentToolNames.REMOVE_PLAN_ITEM ->
-                    validateSelectionIndex(toolArgs);
+            // Reading a school detail or appending the top recommendation may default to the first
+            // item, but a deletion must never guess which row the user meant.
+            case AgentToolNames.GET_SCHOOL_DETAIL, AgentToolNames.ADD_PLAN_ITEM ->
+                    validateSelectionIndex(toolArgs, false);
+            case AgentToolNames.REMOVE_PLAN_ITEM -> validateSelectionIndex(toolArgs, true);
             case AgentToolNames.GET_SCHOOL_DETAIL_BY_NAME -> validateUniversityName(toolArgs);
             case AgentToolNames.RECOMMEND_MAJORS -> validateMajorKeyword(toolArgs);
             case AgentToolNames.SAVE_PLAN -> validatePlanName(toolArgs);
@@ -65,8 +68,16 @@ public class AgentToolExecutor {
         }
     }
 
-    private void validateSelectionIndex(Map<String, Object> toolArgs) {
-        if (toolArgs == null || !toolArgs.containsKey("selectionIndex")) {
+    /**
+     * @param required when {@code true} the caller must provide {@code selectionIndex}; otherwise a
+     *                 missing value keeps the historical "use the first item" behaviour.
+     */
+    private void validateSelectionIndex(Map<String, Object> toolArgs, boolean required) {
+        if (toolArgs == null || toolArgs.get("selectionIndex") == null) {
+            if (required) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "selectionIndex is required for removePlanItem");
+            }
             return;
         }
         int selectionIndex = parseInteger(toolArgs.get("selectionIndex"), "selectionIndex");

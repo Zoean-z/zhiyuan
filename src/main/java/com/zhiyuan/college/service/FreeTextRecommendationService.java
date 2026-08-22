@@ -80,7 +80,10 @@ public class FreeTextRecommendationService {
             if (currentUser.getSubjectType() != null && parsed.getSubjectType() == null) {
                 parsed.setSubjectType(currentUser.getSubjectType());
             }
-            if (currentUser.getExamProvince() != null && !currentUser.getExamProvince().isBlank()) {
+            // Backfill only: an explicit province in the request text ("我是山东考生") must win over the
+            // province stored on the profile, otherwise the whole request is scored for the wrong province.
+            if (currentUser.getExamProvince() != null && !currentUser.getExamProvince().isBlank()
+                    && (parsed.getCandidateProvince() == null || parsed.getCandidateProvince().isBlank())) {
                 parsed.setCandidateProvince(currentUser.getExamProvince());
             }
         }
