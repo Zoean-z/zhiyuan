@@ -6,6 +6,7 @@ import java.util.HashMap;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;
@@ -50,6 +51,18 @@ public class GlobalExceptionHandler {
                 ex.getReason() == null ? ex.getMessage() : ex.getReason(),
                 request);
         return ResponseEntity.status(ex.getStatusCode()).body(response);
+    }
+
+    /**
+     * Unique constraint violations (duplicate username, duplicate cutoff row, ...) are client
+     * errors, not server faults, so they must not fall through to the generic 500 handler.
+     */
+    @ExceptionHandler(DuplicateKeyException.class)
+    public ResponseEntity<Map<String, Object>> handleDuplicateKey(DuplicateKeyException ex,
+                                                                 HttpServletRequest request) {
+        log.warn("Duplicate key rejected: {}", ex.getMostSpecificCause().getMessage());
+        Map<String, Object> response = baseResponse("DUPLICATE_KEY", "记录已存在，请勿重复提交", request);
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(response);
     }
 
     @ExceptionHandler({

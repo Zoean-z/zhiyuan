@@ -13,7 +13,10 @@ import io.jsonwebtoken.JwtException;
 import java.time.Duration;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -23,6 +26,8 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 public class AuthService {
 
+    private static final Logger log = LoggerFactory.getLogger(AuthService.class);
+
     private static final String BLACKLIST_PREFIX = "auth:blacklist:";
 
     private final UserAccountMapper userAccountMapper;
@@ -30,18 +35,21 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final StringRedisTemplate stringRedisTemplate;
     private final boolean redisCacheEnabled;
+    private final boolean allowLegacyPlaintextLogin;
     private final Map<String, Long> localBlacklist = new ConcurrentHashMap<>();
 
     public AuthService(UserAccountMapper userAccountMapper,
                        JwtTokenService jwtTokenService,
                        PasswordEncoder passwordEncoder,
                        StringRedisTemplate stringRedisTemplate,
-                       @Value("${cache.redis.enabled:false}") boolean redisCacheEnabled) {
+                       @Value("${cache.redis.enabled:false}") boolean redisCacheEnabled,
+                       @Value("${auth.allow-legacy-plaintext-login:false}") boolean allowLegacyPlaintextLogin) {
         this.userAccountMapper = userAccountMapper;
         this.jwtTokenService = jwtTokenService;
         this.passwordEncoder = passwordEncoder;
         this.stringRedisTemplate = stringRedisTemplate;
         this.redisCacheEnabled = redisCacheEnabled;
+        this.allowLegacyPlaintextLogin = allowLegacyPlaintextLogin;
     }
 
     public LoginResponse login(LoginRequest request) {
@@ -51,6 +59,8 @@ public class AuthService {
         }
         user.setRole(UserRole.fromValue(userAccountMapper.findRoleByUsername(request.getUsername())));
 
+        // The login form doubles as the "exam profile" form in the SPA, so an explicitly
+        // submitted score/subject/province is persisted here on purpose.
         boolean profileChanged = false;
         if (request.getScore() != null && !request.getScore().equals(user.getScore())) {
             user.setScore(request.getScore());
@@ -74,6 +84,9 @@ public class AuthService {
 
     public LoginResponse register(RegisterRequest request) {
         String username = normalizeUsername(request.getUsername());
+        if (username.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "用户名不能为空");
+        }
         if (userAccountMapper.findByUsername(username) != null) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "用户名已存在");
         }
@@ -85,7 +98,13 @@ public class AuthService {
         user.setExamProvince(isBlank(request.getExamProvince()) ? null : request.getExamProvince().trim());
         user.setRole(UserRole.USER);
         user.setEnabled(true);
-        userAccountMapper.insert(user);
+        try {
+            userAccountMapper.insert(user);
+        } catch (DuplicateKeyException ex) {
+            // Two concurrent registrations can both pass the check above; the unique index is the
+            // authoritative guard, so translate it into the same 409 instead of a 500.
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "用户名已存在");
+        }
 
         String token = jwtTokenService.generateToken(user.getId(), user.getUsername(), user.getRole().name());
         return new LoginResponse(token, user.getUsername(), user.getScore(), user.getSubjectType(), user.getExamProvince(), user.getRole());
@@ -98,7 +117,7 @@ public class AuthService {
         }
         user.setScore(request.getScore());
         user.setSubjectType(request.getSubjectType());
-        user.setExamProvince(request.getExamProvince().trim());
+        user.setExamProvince(isBlank(request.getExamProvince()) ? null : request.getExamProvince().trim());
         userAccountMapper.updateById(user);
         return new LoginResponse(
                 token,
@@ -154,23 +173,43 @@ public class AuthService {
         return username == null ? "" : username.trim();
     }
 
+    /**
+     * Verifies the submitted password against the stored credential.
+     *
+     * <p>Only BCrypt hashes are accepted by default. Clear-text comparison exists purely for the
+     * demo accounts seeded by {@code sql/data.sql} and must be enabled explicitly through
+     * {@code auth.allow-legacy-plaintext-login}; when enabled, a successful match immediately
+     * rewrites the stored value as a BCrypt hash.
+     */
     private boolean passwordMatches(String rawPassword, UserAccount user) {
         String storedPassword = user.getPassword();
-        if (storedPassword == null) {
+        if (storedPassword == null || storedPassword.isBlank()) {
             return false;
         }
-        if (storedPassword.startsWith("$2a$") || storedPassword.startsWith("$2b$") || storedPassword.startsWith("$2y$")) {
+        if (isBcryptHash(storedPassword)) {
             return passwordEncoder.matches(rawPassword, storedPassword);
+        }
+        if (!allowLegacyPlaintextLogin) {
+            log.warn("Rejected login for user '{}': the stored password is not hashed and "
+                    + "auth.allow-legacy-plaintext-login is disabled.", user.getUsername());
+            return false;
         }
         if (!storedPassword.equals(rawPassword)) {
             return false;
         }
+        log.warn("Upgrading the clear-text password of user '{}' to BCrypt.", user.getUsername());
         UserAccount update = new UserAccount();
         update.setId(user.getId());
         update.setPassword(passwordEncoder.encode(rawPassword));
         userAccountMapper.updateById(update);
         user.setPassword(update.getPassword());
         return true;
+    }
+
+    private boolean isBcryptHash(String storedPassword) {
+        return storedPassword.startsWith("$2a$")
+                || storedPassword.startsWith("$2b$")
+                || storedPassword.startsWith("$2y$");
     }
 
     private boolean isBlacklisted(String token) {

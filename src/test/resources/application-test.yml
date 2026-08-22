@@ -26,10 +26,15 @@ ai:
     retry:
       max-attempts: 3
       backoff-millis: 0
+    timeout:
+      connect-millis: 1000
+      read-millis: 2000
 auth:
   token-ttl-seconds: 86400
   jwt-secret: dGVzdC16aGl5dWFuLXNlY3JldC10ZXN0LXpoaXl1YW4tc2VjcmV0LTIwMjYta2V5
   jwt-issuer: zhiyuan-test
+  # data-h2.sql seeds clear-text demo passwords, so the legacy login path stays on for tests.
+  allow-legacy-plaintext-login: true
 recommendation:
   scoring:
     minimum-probability: 35
