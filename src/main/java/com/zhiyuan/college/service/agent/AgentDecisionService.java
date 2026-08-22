@@ -27,6 +27,19 @@ public class AgentDecisionService {
     private static final Pattern SAVE_NAME_PATTERN = Pattern.compile("保存(?:为|成)?[《\u201c\\\"]?([^》\u201d\\n]{2,30})[》\u201d\\\"]?(?:方案)?");
     private static final Pattern SCHOOL_NAME_DETAIL_PATTERN = Pattern.compile("([\\p{IsHan}A-Za-z0-9]{2,20}(?:大学|学院|学校))");
 
+    /** 常见专业关键词：精确子串匹配优先于正则，避免"推荐好的计算机专业"捕获到"好的计算机"。 */
+    private static final List<String> MAJOR_KEYWORDS = List.of(
+            "计算机", "软件", "网络", "信息安全", "法学", "护理",
+            "人工智能", "AI", "机器学习", "数据科学", "大数据",
+            "师范", "教育学", "汉语言", "数学", "物理",
+            "电子信息", "电气工程", "自动化", "通信",
+            "临床医学", "口腔医学", "中医学", "药学",
+            "金融", "会计", "经济学", "工商管理",
+            "机械", "土木", "建筑", "材料",
+            "新能源", "集成电路", "芯片", "半导体",
+            "医学"
+    );
+
     private final AiChatClient aiChatClient;
     private final ObjectMapper objectMapper;
     private final AgentToolRegistry agentToolRegistry;
@@ -187,9 +200,10 @@ public class AgentDecisionService {
         // --- P0 #9: getUserProfile 路由收紧 ---
         // 去掉 "分数/省份/科类" 等高频泛词，改为明确问询短语
         // 避免 "我620分想去北京" "我是浙江考生" 等自然语言请求误命中
-        if (containsAny(normalized, "我的画像", "查看画像", "我的信息", "查看我的信息",
+        if (containsAny(normalized, "我的画像", "查看画像", "查看我的信息", "我的信息是什么", "我的信息有哪些",
                 "我是什么科类", "我的科类", "我的分数是多少", "我的分数",
-                "我是哪个省份", "我的省份", "我的考生信息")) {
+                "我是哪个省份", "我的省份", "我的考生信息")
+                && !containsAny(normalized, "修改", "更新", "编辑", "完善", "设置")) {
             return new AgentDecision(AgentToolNames.GET_USER_PROFILE, "我先帮你读取当前画像信息。");
         }
 
@@ -317,30 +331,43 @@ public class AgentDecisionService {
         if (text == null || text.isBlank()) {
             return null;
         }
-        Matcher afterMatcher = RECOMMEND_MAJOR_AFTER_PATTERN.matcher(text);
-        if (afterMatcher.find()) {
-            return afterMatcher.group(1);
-        }
-        Matcher beforeMatcher = RECOMMEND_MAJOR_BEFORE_PATTERN.matcher(text);
-        if (beforeMatcher.find()) {
-            return beforeMatcher.group(1);
-        }
-        // P1: 扩展 fallback 关键词列表至 30+ 常见专业
-        for (String keyword : List.of(
-                "计算机", "软件", "网络", "信息安全", "法学", "护理", "医学",
-                "人工智能", "AI", "机器学习", "数据科学", "大数据",
-                "师范", "教育学", "汉语言", "数学", "物理",
-                "电子信息", "电气工程", "自动化", "通信",
-                "临床医学", "口腔医学", "中医学", "药学",
-                "金融", "会计", "经济学", "工商管理",
-                "机械", "土木", "建筑", "材料",
-                "新能源", "集成电路", "芯片", "半导体"
-        )) {
+        // 先精确匹配常见专业关键词：避免"推荐好的计算机专业"被正则捕获成"好的计算机"
+        for (String keyword : MAJOR_KEYWORDS) {
             if (text.contains(keyword)) {
                 return keyword;
             }
         }
+        // 再走正则提取列表未覆盖的专业名，并清洗形容词等修饰词
+        Matcher afterMatcher = RECOMMEND_MAJOR_AFTER_PATTERN.matcher(text);
+        if (afterMatcher.find()) {
+            String major = cleanMajorKeyword(afterMatcher.group(1));
+            if (major != null) {
+                return major;
+            }
+        }
+        Matcher beforeMatcher = RECOMMEND_MAJOR_BEFORE_PATTERN.matcher(text);
+        if (beforeMatcher.find()) {
+            String major = cleanMajorKeyword(beforeMatcher.group(1));
+            if (major != null) {
+                return major;
+            }
+        }
         return null;
+    }
+
+    /** 去掉专业名前的形容词/修饰词，如"推荐好的计算机专业"→"计算机"。 */
+    private String cleanMajorKeyword(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        String cleaned = value.trim();
+        for (String prefix : List.of("好的", "一些", "几个", "合适的", "优秀的", "较好的", "不错的", "好点的")) {
+            if (cleaned.startsWith(prefix) && cleaned.length() > prefix.length()) {
+                cleaned = cleaned.substring(prefix.length()).trim();
+                break;
+            }
+        }
+        return cleaned.isBlank() ? null : cleaned;
     }
 
     private int extractSelectionIndex(String text) {

@@ -104,4 +104,25 @@ class AgentDecisionServiceTest {
         AgentDecision d = service.decide("请生成45志愿位冲稳保方案", List.of(), null);
         assertEquals(AgentToolNames.RECOMMEND_SCHOOLS, d.getAction());
     }
+
+    // --- 审查补充：医学精确匹配 + 形容词清洗 + 修改画像排除 ---
+    @Test
+    void shouldExtractPreciseClinicalMedicineKeyword() {
+        AgentDecision d = service.decide("推荐临床医学专业", List.of(), null);
+        assertEquals(AgentToolNames.RECOMMEND_MAJORS, d.getAction());
+        assertEquals("临床医学", d.getToolArgs().get("majorKeyword"));
+    }
+
+    @Test
+    void shouldCleanAdjectiveFromMajorKeyword() {
+        AgentDecision d = service.decide("推荐好的计算机专业", List.of(), null);
+        assertEquals(AgentToolNames.RECOMMEND_MAJORS, d.getAction());
+        assertEquals("计算机", d.getToolArgs().get("majorKeyword"));
+    }
+
+    @Test
+    void shouldNotTriggerGetUserProfile_whenUserWantsToEdit() {
+        AgentDecision d = service.decide("修改我的信息", List.of(), null);
+        assertNotEquals(AgentToolNames.GET_USER_PROFILE, d.getAction());
+    }
 }
