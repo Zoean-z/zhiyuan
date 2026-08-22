@@ -157,13 +157,16 @@ public class AgentDecisionService {
                     Map.of("majorKeyword", majorKeyword)
             );
         }
-        if (containsAny(normalized, "推荐学校", "学校推荐", "推荐院校", "院校推荐", "学校怎么报")) {
+        if (containsAny(normalized, "推荐学校", "学校推荐", "推荐院校", "院校推荐", "学校怎么报") ||
+                (containsAny(normalized, "冲稳保") && containsAny(normalized, "志愿", "方案", "推荐", "浓度", "梯度"))) {
             return new AgentDecision(AgentToolNames.RECOMMEND_SCHOOLS, "我先基于你当前画像给你生成学校推荐。");
         }
         if (containsAny(normalized, "分数", "画像", "我的信息", "科类", "省份")) {
             return new AgentDecision(AgentToolNames.GET_USER_PROFILE, "我先帮你读取当前画像信息。");
         }
-        if (containsAny(normalized, "志愿", "方案", "当前表", "当前单")) {
+        // getCurrentPlan 路由：必须含明确"查看/现有"语境，避免被"生成方案""冲稳保方案"等含"志愿/方案"的请求误触发
+        if (containsAny(normalized, "当前表", "当前单", "当前志愿", "当前方案", "我的志愿", "我的方案", "已有志愿", "已有方案", "看看志愿", "看看方案", "之前生成", "刚才生成") ||
+                (containsAny(normalized, "当前") && containsAny(normalized, "志愿", "方案"))) {
             return new AgentDecision(AgentToolNames.GET_CURRENT_PLAN, "我先帮你查看当前志愿方案。");
         }
         return null;
