@@ -75,9 +75,10 @@ public class AgentFallbackAdviceService {
                     硬性要求：
                     - 所有院校名后必须标"（参考，需核实）"
                     - 所有分数区间用"近年参考约 XXX-XXX 分（以官方为准）"，不要给精确到个位的录取线
+                    - 所有表格必须用标准 markdown 语法：表头行 + 分隔行 |---|---| + 数据行（否则前端无法渲染）
                     - 不要编造绝对不存在的院校
                     - 直接输出 markdown 正文，不要寒暄
-                    - 总字数 400-600 字
+                    - 总字数 500-700 字
                     """;
             String userPrompt = buildUserPrompt(user, request);
             String advice = aiChatClient.chat(systemPrompt, userPrompt, 0.3, false);

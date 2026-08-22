@@ -134,6 +134,27 @@ function escapeHtml(text) {
 
 function renderMarkdown(text) {
   if (!text) return "";
+  // 预处理 markdown 表格：| header | + |---| 分隔 + | data |，转成 <table> 占位符
+  const tableHtmls = [];
+  text = text.replace(/((?:\|[^\n]*\|\r?\n)+)(\|[\s:|-]+\|\r?\n)((?:\|[^\n]*\|\r?\n?)*)/g, (match) => {
+    const lines = match.trim().split(/\r?\n/);
+    if (lines.length < 2) return match;
+    const headers = lines[0].split("|").slice(1, -1).map((s) => s.trim());
+    const bodyLines = lines.slice(2);
+    let t = '<table class="gk-md-table"><thead><tr>';
+    headers.forEach((h) => {
+      t += "<th>" + escapeHtml(h) + "</th>";
+    });
+    t += "</tr></thead><tbody>";
+    bodyLines.forEach((line) => {
+      const cells = line.split("|").slice(1, -1).map((c) => c.trim());
+      t += "<tr>" + cells.map((c) => "<td>" + escapeHtml(c) + "</td>").join("") + "</tr>";
+    });
+    t += "</tbody></table>";
+    const ph = "__TABLE_" + tableHtmls.length + "__";
+    tableHtmls.push(t);
+    return ph;
+  });
   const lines = escapeHtml(text).split(/\r?\n/);
   let html = "";
   let listTag = "";
@@ -145,7 +166,10 @@ function renderMarkdown(text) {
   };
   lines.forEach((line) => {
     const trimmed = line.trim();
-    if (/^#{1,3}\s+/.test(trimmed)) {
+    if (/^__TABLE_\d+__$/.test(trimmed)) {
+      closeList();
+      html += trimmed;
+    } else if (/^#{1,3}\s+/.test(trimmed)) {
       closeList();
       html += `<div class="gk-md-h">${trimmed.replace(/^#{1,3}\s+/, "")}</div>`;
     } else if (/^[-•*]\s+/.test(trimmed)) {
@@ -170,6 +194,9 @@ function renderMarkdown(text) {
     }
   });
   closeList();
+  tableHtmls.forEach((t, i) => {
+    html = html.replace("__TABLE_" + i + "__", t);
+  });
   return html
     .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
     .replace(/\*([^*]+)\*/g, "<em>$1</em>")
