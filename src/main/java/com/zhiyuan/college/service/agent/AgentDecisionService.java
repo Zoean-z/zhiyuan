@@ -24,7 +24,7 @@ public class AgentDecisionService {
     private static final Pattern RECOMMEND_MAJOR_AFTER_PATTERN = Pattern.compile("推荐(?:一下|几个|一些)?([\\p{IsHan}A-Za-z0-9]{2,12})(?:专业|方向)");
     private static final Pattern RECOMMEND_MAJOR_BEFORE_PATTERN = Pattern.compile("([\\p{IsHan}A-Za-z0-9]{2,12})(?:专业|方向).{0,8}推荐");
     private static final Pattern DIGIT_SELECTION_PATTERN = Pattern.compile("第\\s*([1-6])\\s*(?:个|所|条)");
-    private static final Pattern SAVE_NAME_PATTERN = Pattern.compile("保存(?:为|成)?[《“\"]?([^》”\"\\n]{2,30})[》”\"]?(?:方案)?");
+    private static final Pattern SAVE_NAME_PATTERN = Pattern.compile("保存(?:为|成)?[《\u201c\\\"]?([^》\u201d\\n]{2,30})[》\u201d\\\"]?(?:方案)?");
     private static final Pattern SCHOOL_NAME_DETAIL_PATTERN = Pattern.compile("([\\p{IsHan}A-Za-z0-9]{2,20}(?:大学|学院|学校))");
 
     private final AiChatClient aiChatClient;
@@ -88,6 +88,7 @@ public class AgentDecisionService {
     private AgentDecision decideLocally(String userMessage, List<AgentMessage> recentMessages) {
         String normalized = userMessage == null ? "" : userMessage.trim();
 
+        // --- #1: removePlanItem 确认删除 (unchanged) ---
         if (containsAny(normalized, "确认删除", "确定删除")) {
             int selectionIndex = extractSelectionIndex(normalized);
             if (hasPendingDeleteConfirmation(recentMessages, selectionIndex)) {
@@ -100,18 +101,26 @@ public class AgentDecisionService {
             return new AgentDecision(AgentToolNames.REPLY, "我没有检测到最近一条待确认的删除请求，请先明确告诉我要删除哪一项，再按提示确认。");
         }
 
-        if (containsAny(normalized, "删除", "移除") && containsAny(normalized, "志愿", "方案")) {
+        // --- P1 #2: 删除提示路由收紧 ---
+        // 要求 "删除/移除" + "志愿/方案" + ("当前" 或 序号引用)
+        // 排除过去时陈述，避免"我刚把第3条志愿删除了"误触发
+        if (containsAny(normalized, "删除", "移除")
+                && containsAny(normalized, "志愿", "方案")
+                && (containsOrdinalReference(normalized) || containsAny(normalized, "当前"))
+                && !containsAny(normalized, "刚删除", "刚移除", "已经删除", "已经移除",
+                                "删掉了", "移除了", "刚把", "已经把")) {
             int selectionIndex = extractSelectionIndex(normalized);
             return new AgentDecision(
                     AgentToolNames.REPLY,
-                    "删除是敏感操作。若确认删除当前志愿单中的第 %s 个结果，请回复“确认删除第%s个”。".formatted(selectionIndex, selectionIndex)
+                    "删除是敏感操作。若确认删除当前志愿单中的第 %s 个结果，请回复\u201c确认删除第%s个\u201d。".formatted(selectionIndex, selectionIndex)
             );
         }
 
+        // --- #3: savePlan (unchanged) ---
         if (containsAny(normalized, "保存方案", "保存当前方案", "命名保存", "改名保存", "保存为", "另存为")) {
             String planName = extractPlanName(normalized);
             if (planName == null || planName.isBlank()) {
-                return new AgentDecision(AgentToolNames.REPLY, "请直接告诉我方案名，例如：保存为“冲稳保方案”。");
+                return new AgentDecision(AgentToolNames.REPLY, "请直接告诉我方案名，例如：保存为\u201c冲稳保方案\u201d。");
             }
             return new AgentDecision(
                     AgentToolNames.SAVE_PLAN,
@@ -120,6 +129,7 @@ public class AgentDecisionService {
             );
         }
 
+        // --- #4: addPlanItem (unchanged) ---
         if (containsAny(normalized, "加入志愿单", "加入当前方案", "加入方案", "加到志愿单", "加进志愿单")) {
             int selectionIndex = extractSelectionIndex(normalized);
             return new AgentDecision(
@@ -129,18 +139,27 @@ public class AgentDecisionService {
             );
         }
 
+        // --- P0 #5: getSchoolDetailByName 收紧 ---
+        // 要求 "查看/看看" + 校名 + "详情/信息/专业" 三者同时出现
+        // 避免"看看能不能上浙大"（推荐意图）误命中
         String schoolName = extractSchoolName(normalized);
         if (!containsOrdinalReference(normalized)
                 && schoolName != null
-                && containsAny(normalized, "学校详情", "院校详情", "学校信息", "学校专业", "有哪些专业", "什么专业", "查看", "看看")) {
+                && containsAny(normalized, "查看", "看看")
+                && containsAny(normalized, "详情", "信息", "专业")) {
             return new AgentDecision(
                     AgentToolNames.GET_SCHOOL_DETAIL_BY_NAME,
-                    "我先按学校名帮你查询“%s”的详情和可参考专业。".formatted(schoolName),
+                    "我先按学校名帮你查询\u201c%s\u201d的详情和可参考专业。".formatted(schoolName),
                     Map.of("universityName", schoolName)
             );
         }
 
-        if (containsAny(normalized, "学校详情", "院校详情", "学校信息", "学校专业", "有哪些专业", "什么专业")) {
+        // --- P0 #6: getSchoolDetail 收紧 ---
+        // 要求 序号引用(第N个) + "详情/信息/专业" 组合，去掉泛词单独触发
+        // 避免"什么专业好就业"误命中 selectionIndex 默认1 导致答非所问
+        if (containsOrdinalReference(normalized)
+                && containsAny(normalized, "学校详情", "院校详情", "学校信息", "学校专业",
+                               "有哪些专业", "什么专业", "详情", "信息", "专业")) {
             int selectionIndex = extractSelectionIndex(normalized);
             return new AgentDecision(
                     AgentToolNames.GET_SCHOOL_DETAIL,
@@ -149,23 +168,35 @@ public class AgentDecisionService {
             );
         }
 
+        // --- P1 #7: recommendMajors（关键词扩展见 extractMajorKeyword） ---
         String majorKeyword = extractMajorKeyword(normalized);
         if (containsAny(normalized, "推荐") && majorKeyword != null) {
             return new AgentDecision(
                     AgentToolNames.RECOMMEND_MAJORS,
-                    "我先基于你的画像和“%s”的兴趣给你生成专业推荐。".formatted(majorKeyword),
+                    "我先基于你的画像和\u201c%s\u201d的兴趣给你生成专业推荐。".formatted(majorKeyword),
                     Map.of("majorKeyword", majorKeyword)
             );
         }
+
+        // --- #8: recommendSchools (unchanged) ---
         if (containsAny(normalized, "推荐学校", "学校推荐", "推荐院校", "院校推荐", "学校怎么报") ||
                 (containsAny(normalized, "冲稳保") && containsAny(normalized, "志愿", "方案", "推荐", "浓度", "梯度"))) {
             return new AgentDecision(AgentToolNames.RECOMMEND_SCHOOLS, "我先基于你当前画像给你生成学校推荐。");
         }
-        if (containsAny(normalized, "分数", "画像", "我的信息", "科类", "省份")) {
+
+        // --- P0 #9: getUserProfile 路由收紧 ---
+        // 去掉 "分数/省份/科类" 等高频泛词，改为明确问询短语
+        // 避免 "我620分想去北京" "我是浙江考生" 等自然语言请求误命中
+        if (containsAny(normalized, "我的画像", "查看画像", "我的信息", "查看我的信息",
+                "我是什么科类", "我的科类", "我的分数是多少", "我的分数",
+                "我是哪个省份", "我的省份", "我的考生信息")) {
             return new AgentDecision(AgentToolNames.GET_USER_PROFILE, "我先帮你读取当前画像信息。");
         }
-        // getCurrentPlan 路由：必须含明确"查看/现有"语境，避免被"生成方案""冲稳保方案"等含"志愿/方案"的请求误触发
-        if (containsAny(normalized, "当前表", "当前单", "当前志愿", "当前方案", "我的志愿", "我的方案", "已有志愿", "已有方案", "看看志愿", "看看方案", "之前生成", "刚才生成") ||
+
+        // --- #10: getCurrentPlan (unchanged) ---
+        // 必须含明确"查看/现有"语境，避免被"生成方案""冲稳保方案"等含"志愿/方案"的请求误触发
+        if (containsAny(normalized, "当前表", "当前单", "当前志愿", "当前方案", "我的志愿", "我的方案",
+                        "已有志愿", "已有方案", "看看志愿", "看看方案", "之前生成", "刚才生成") ||
                 (containsAny(normalized, "当前") && containsAny(normalized, "志愿", "方案"))) {
             return new AgentDecision(AgentToolNames.GET_CURRENT_PLAN, "我先帮你查看当前志愿方案。");
         }
@@ -231,6 +262,13 @@ public class AgentDecisionService {
                 }
 
                 对删除类操作，如果用户没有明确确认，不要调用 removePlanItem，只返回 reply 让用户确认。
+
+                关键路由约束（必须严格遵守）：
+                1. 推荐请求必须走工具：用户说"推荐学校""推荐专业""我想报XX""我想学XX"时，必须返回 recommendSchools 或 recommendMajors，不能直接 reply 道歉。
+                2. 区分"生成方案"vs"查看方案"："生成/做/来个方案"→ recommendSchools；"查看/看看当前方案"→ getCurrentPlan。
+                3. 用户描述自己分数/省份/科类时不应触发 getUserProfile：除非用户明确问"我的画像是什么""我的分数记录"。
+                4. "看看XX大学"在没明确详情请求时不应该调 getSchoolDetailByName："看看能不能上XX"是推荐意图，应走 recommendSchools。
+
                 不要输出任何额外文本。
                 可用工具：
                 %s
@@ -287,7 +325,17 @@ public class AgentDecisionService {
         if (beforeMatcher.find()) {
             return beforeMatcher.group(1);
         }
-        for (String keyword : List.of("计算机", "软件", "网络", "信息安全", "法学", "护理", "医学")) {
+        // P1: 扩展 fallback 关键词列表至 30+ 常见专业
+        for (String keyword : List.of(
+                "计算机", "软件", "网络", "信息安全", "法学", "护理", "医学",
+                "人工智能", "AI", "机器学习", "数据科学", "大数据",
+                "师范", "教育学", "汉语言", "数学", "物理",
+                "电子信息", "电气工程", "自动化", "通信",
+                "临床医学", "口腔医学", "中医学", "药学",
+                "金融", "会计", "经济学", "工商管理",
+                "机械", "土木", "建筑", "材料",
+                "新能源", "集成电路", "芯片", "半导体"
+        )) {
             if (text.contains(keyword)) {
                 return keyword;
             }
