@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
@@ -80,15 +81,22 @@ public class AiChatClient {
                        String userPrompt,
                        double temperature,
                        boolean jsonOutput) {
-        Map<String, Object> requestBody = Map.of(
-                "model", model,
-                "temperature", temperature,
-                "messages", List.of(
-                        Map.of("role", "system", "content", systemPrompt),
-                        Map.of("role", "user", "content", userPrompt)
-                ),
-                "response_format", jsonOutput ? Map.of("type", "json_object") : Map.of("type", "text")
-        );
+        return chat(systemPrompt, userPrompt, temperature, jsonOutput, null, null);
+    }
+
+    /**
+     * Chat with optional {@code max_tokens} and {@code thinking} controls. Passing {@code null}
+     * for either keeps the provider default, which lets the fallback advice path cap output
+     * length and disable reasoning for fast, short answers.
+     */
+    public String chat(String systemPrompt,
+                       String userPrompt,
+                       double temperature,
+                       boolean jsonOutput,
+                       Integer maxTokens,
+                       Boolean thinking) {
+        Map<String, Object> requestBody = buildRequestBody(
+                systemPrompt, userPrompt, temperature, jsonOutput, false, maxTokens, thinking);
 
         Exception lastFailure = null;
         for (int attempt = 1; attempt <= retryMaxAttempts; attempt++) {
@@ -123,21 +131,34 @@ public class AiChatClient {
                            double temperature,
                            boolean jsonOutput,
                            Consumer<String> onChunk) {
-        Map<String, Object> requestBody = Map.of(
-                "model", model,
-                "temperature", temperature,
-                "messages", List.of(
-                        Map.of("role", "system", "content", systemPrompt),
-                        Map.of("role", "user", "content", userPrompt)
-                ),
-                "response_format", jsonOutput ? Map.of("type", "json_object") : Map.of("type", "text"),
-                "stream", true
-        );
+        chatStream(systemPrompt, userPrompt, temperature, jsonOutput, null, null, onChunk);
+    }
+
+    /**
+     * Streaming variant with optional {@code max_tokens} and {@code thinking} controls.
+     * A non-2xx upstream status (e.g. 401 bad API key, 500 server error) is surfaced as an
+     * {@link IllegalStateException} so callers can fall back locally instead of showing a
+     * silently empty stream.
+     */
+    public void chatStream(String systemPrompt,
+                           String userPrompt,
+                           double temperature,
+                           boolean jsonOutput,
+                           Integer maxTokens,
+                           Boolean thinking,
+                           Consumer<String> onChunk) {
+        Map<String, Object> requestBody = buildRequestBody(
+                systemPrompt, userPrompt, temperature, jsonOutput, true, maxTokens, thinking);
         try {
             restClient.post()
                     .uri("/chat/completions")
                     .body(requestBody)
                     .exchange((request, response) -> {
+                        if (!response.getStatusCode().is2xxSuccessful()) {
+                            throw new IllegalStateException(
+                                    "AI stream failed with status " + response.getStatusCode()
+                            );
+                        }
                         try (BufferedReader reader = new BufferedReader(
                                 new InputStreamReader(response.getBody(), StandardCharsets.UTF_8))) {
                             String line;
@@ -153,7 +174,9 @@ public class AiChatClient {
                                 JsonNode delta = node.path("choices").path(0).path("delta").path("content");
                                 if (!delta.isMissingNode() && !delta.isNull()) {
                                     String text = delta.asText();
-                                    if (!text.isBlank()) {
+                                    // Keep pure whitespace/newline chunks: dropping them with
+                                    // isBlank() would glue markdown headings, lists and tables.
+                                    if (!text.isEmpty()) {
                                         onChunk.accept(text);
                                     }
                                 }
@@ -172,6 +195,33 @@ public class AiChatClient {
 
     public String getProvider() {
         return provider;
+    }
+
+    private Map<String, Object> buildRequestBody(String systemPrompt,
+                                                 String userPrompt,
+                                                 double temperature,
+                                                 boolean jsonOutput,
+                                                 boolean stream,
+                                                 Integer maxTokens,
+                                                 Boolean thinking) {
+        Map<String, Object> requestBody = new LinkedHashMap<>();
+        requestBody.put("model", model);
+        requestBody.put("temperature", temperature);
+        requestBody.put("messages", List.of(
+                Map.of("role", "system", "content", systemPrompt),
+                Map.of("role", "user", "content", userPrompt)
+        ));
+        requestBody.put("response_format", jsonOutput ? Map.of("type", "json_object") : Map.of("type", "text"));
+        if (stream) {
+            requestBody.put("stream", true);
+        }
+        if (maxTokens != null) {
+            requestBody.put("max_tokens", maxTokens);
+        }
+        if (thinking != null) {
+            requestBody.put("thinking", thinking);
+        }
+        return requestBody;
     }
 
     private static ClientHttpRequestFactory buildRequestFactory(int connectTimeoutMillis, int readTimeoutMillis) {

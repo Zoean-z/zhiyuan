@@ -27,6 +27,9 @@ public class AgentFallbackAdviceService {
 
     private static final String DISCLAIMER = "以下为方向性参考，非精确录取数据，具体以官方招生章程为准。";
 
+    /** Fallback advice is intentionally short (300-450 chars); cap tokens so the model does not ramble. */
+    private static final int FALLBACK_MAX_TOKENS = 800;
+
     private final AiChatClient aiChatClient;
 
     public AgentFallbackAdviceService(AiChatClient aiChatClient) {
@@ -46,7 +49,7 @@ public class AgentFallbackAdviceService {
         }
         try {
             String userPrompt = buildUserPrompt(user, request);
-            String advice = aiChatClient.chat(buildSystemPrompt(), userPrompt, 0.3, false);
+            String advice = aiChatClient.chat(buildSystemPrompt(), userPrompt, 0.3, false, FALLBACK_MAX_TOKENS, false);
             if (advice == null || advice.isBlank()) {
                 return null;
             }
@@ -58,8 +61,11 @@ public class AgentFallbackAdviceService {
     }
 
     /**
-     * Streamed variant of {@link #generateAdvice}: deltas are delivered to {@code onChunk} as they
-     * arrive, and the full advice text (with disclaimer) is returned once the stream completes.
+     * Streamed variant of {@link #generateAdvice}: the disclaimer is delivered as the
+     * very first chunk so the user immediately knows this is not a precise
+     * database-backed recommendation, then model deltas are delivered to {@code onChunk}
+     * as they arrive. The full advice text (with disclaimer) is returned once the
+     * stream completes.
      *
      * @return full advice text, or {@code null} if the stream fails or produces no content
      */
@@ -70,36 +76,36 @@ public class AgentFallbackAdviceService {
             return null;
         }
         String userPrompt = buildUserPrompt(user, request);
-        StringBuilder full = new StringBuilder();
+        StringBuilder full = new StringBuilder(DISCLAIMER);
+        if (onChunk != null) {
+            onChunk.accept(DISCLAIMER + "\n\n");
+        }
         try {
-            aiChatClient.chatStream(buildSystemPrompt(), userPrompt, 0.3, false, chunk -> {
+            aiChatClient.chatStream(buildSystemPrompt(), userPrompt, 0.3, false, FALLBACK_MAX_TOKENS, false, chunk -> {
+                full.append(chunk);
                 if (onChunk != null) {
                     onChunk.accept(chunk);
                 }
-                full.append(chunk);
             });
         } catch (Exception ex) {
             log.warn("Agent fallback advice stream failed: {}", ex.getMessage());
             return null;
         }
-        if (full.length() == 0) {
-            return null;
-        }
-        return DISCLAIMER + full.toString().trim();
+        return full.toString().trim();
     }
 
     private String buildSystemPrompt() {
         return """
-                你是资深高考志愿填报顾问。当前推荐系统因数据库缺少该省份/科类的录取线数据，未能给出精确院校推荐，需要你基于通用高考常识给出结构化方向性建议。
+                你是资深高考志愿填报顾问。当前推荐系统没有返回精确匹配结果，可能是数据覆盖不足或筛选条件较严格，需要你基于通用高考常识给出结构化方向性建议。
 
                 输出格式（纯 markdown，不要代码块包裹）：
 
                 ## 一、分数段研判
-                结合该省近年物理类/历史类特殊类型控制线、一本线/本科线，分析该分数所处位置与竞争态势（约 80 字）。
+                结合该省近年物理类/历史类特殊类型控制线、一本线/本科线，分析该分数所处位置与竞争态势（约 60 字）。
 
                 ## 二、可关注院校方向
                 按"省外（冲/稳）"和"省内（保）"两组，每组点名 2-3 所该分数段典型可关注院校。每所院校格式：
-                - **院校名（参考，需核实）**：推荐专业方向、近年参考约 XXX-XXX 分（以官方为准）、核心优势一句话
+                - **院校名（仅作检索方向，不代表当前分数可录取）**：推荐专业方向、核心优势一句话
 
                 ## 三、高就业专业推荐
                 结合考生科类，推荐 2-3 类就业导向专业方向，每类说明适配理由与就业去向。
@@ -108,7 +114,7 @@ public class AgentFallbackAdviceService {
                 点出 2-3 个"院校+专业"典型组合，说明匹配逻辑。
 
                 ## 五、填报策略
-                按"冲一冲/稳一稳/保一保"三档给框架，每档标注参考分数区间与侧重点。
+                按"冲一冲/稳一稳/保一保"三档给框架，每档标注侧重点。
 
                 ## 六、风险提醒
                 列 2-3 条（选科隐性要求、学费差异、调剂退档等）。
@@ -117,13 +123,13 @@ public class AgentFallbackAdviceService {
                 一段话总结核心建议。
 
                 硬性要求：
-                - 所有院校名后必须标"（参考，需核实）"
-                - 所有分数区间用"近年参考约 XXX-XXX 分（以官方为准）"，不要给精确到个位的录取线
+                - 所有院校名后必须标"（仅作检索方向，不代表当前分数可录取）"
+                - 不得生成录取分数、位次、录取概率和招生计划数字
                 - 所有表格必须用标准 markdown 语法：表头行 + 分隔行 |---|---| + 数据行（否则前端无法渲染）
-                - "填报策略"章节必须包含一个 markdown 表格（表头：梯度 | 参考分数区间 | 侧重点；3 行数据：冲一冲/稳一稳/保一保），**必须包含表格**，不得用列表或纯文字替代
+                - "填报策略"章节必须包含一个 markdown 表格（表头：梯度 | 侧重点；3 行数据：冲一冲/稳一稳/保一保），**必须包含表格**，不得用列表或纯文字替代
                 - 不要编造绝对不存在的院校
                 - 直接输出 markdown 正文，不要寒暄
-                - 总字数 500-700 字
+                - 总字数 300-450 字
                 """;
     }
 
@@ -139,7 +145,7 @@ public class AgentFallbackAdviceService {
             sb.append("，专业关键词=").append(request.getMajorKeyword());
         }
         sb.append("。\n");
-        sb.append("系统状态：数据库未命中该省份/科类的精确录取线，请给方向性建议。");
+        sb.append("系统状态：当前推荐系统没有返回精确匹配结果，可能是数据覆盖不足或筛选条件较严格，请给方向性建议。");
         return sb.toString();
     }
 }

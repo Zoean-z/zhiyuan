@@ -21,6 +21,8 @@ public class AgentChatService {
 
     private static final int RECENT_MESSAGE_LIMIT = 12;
     private static final int MAX_TOOL_CALLS_PER_TURN = 1;
+    private static final int TEMPLATE_STREAM_CHUNK_SIZE = 20;
+    private static final long TEMPLATE_STREAM_CHUNK_DELAY_MILLIS = 20L;
 
     private final AgentConversationService agentConversationService;
     private final AgentDecisionService agentDecisionService;
@@ -135,8 +137,9 @@ public class AgentChatService {
      * SSE streaming variant of {@link #sendMessage}. The final reply is streamed chunk-by-chunk:
      * <ul>
      *   <li>tool_call progress → {@code {"type":"tool","data":{...}}}</li>
-     *   <li>LLM fallback advice (empty data) → repeated {@code {"type":"chunk","data":"..."}}</li>
-     *   <li>template markdown (real data) → single {@code {"type":"text","data":"..."}}</li>
+     *   <li>real data → template markdown sliced into repeated {@code {"type":"delta","data":"..."}}</li>
+     *   <li>LLM fallback advice (empty data) → disclaimer first, then model deltas</li>
+     *   <li>complete final message → {@code {"type":"message","data":{...}}} on every path</li>
      *   <li>end → {@code {"type":"done","data":null}}</li>
      * </ul>
      */
@@ -190,10 +193,15 @@ public class AgentChatService {
             String finalText = replyFormatter.format(toolResult, currentUser);
             boolean fallback = isFallbackResult(toolResult);
             if (!fallback) {
-                // Real data → template markdown arrives at once
-                sendEvent(emitter, "message",
-                        Map.of("message", Map.of("role", "assistant", "messageType", "text", "content", finalText)));
+                // Real data → slice the template markdown into deltas so the demo always
+                // shows a streaming effect (fake streaming of an instantly generated template).
+                streamTemplateText(emitter, finalText);
             }
+            // Always send the complete final message on every path: it guarantees the
+            // disclaimer is present, corrects whitespace/newlines lost during streaming,
+            // and provides a stable final text when the model fails mid-stream.
+            sendEvent(emitter, "message",
+                    Map.of("message", Map.of("role", "assistant", "messageType", "text", "content", finalText)));
             agentConversationService.appendMessage(
                     userId, conversationId, AgentRoles.ASSISTANT, AgentMessageTypes.TEXT, finalText, null, null);
             sendDone(emitter);
@@ -201,6 +209,29 @@ public class AgentChatService {
             try {
                 emitter.completeWithError(ex);
             } catch (Exception ignore) {
+            }
+        }
+    }
+
+    /**
+     * Fake streaming for template-generated text: splits the final markdown into small
+     * chunks emitted as {@code delta} events with a short pause so the demo always shows
+     * a streaming effect even when the answer was produced instantly.
+     */
+    private void streamTemplateText(SseEmitter emitter, String text) {
+        if (text == null || text.isEmpty()) {
+            return;
+        }
+        for (int i = 0; i < text.length(); i += TEMPLATE_STREAM_CHUNK_SIZE) {
+            String chunk = text.substring(i, Math.min(i + TEMPLATE_STREAM_CHUNK_SIZE, text.length()));
+            sendEvent(emitter, "delta", Map.of("text", chunk));
+            if (i + TEMPLATE_STREAM_CHUNK_SIZE < text.length()) {
+                try {
+                    Thread.sleep(TEMPLATE_STREAM_CHUNK_DELAY_MILLIS);
+                } catch (InterruptedException interruptedException) {
+                    Thread.currentThread().interrupt();
+                    return;
+                }
             }
         }
     }
