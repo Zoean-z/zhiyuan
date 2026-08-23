@@ -36,7 +36,10 @@ function normalizeProbability(prob) {
 }
 function probabilityText(prob) {
   const value = normalizeProbability(prob);
-  return value == null ? "待测" : `${value}%`;
+  if (value == null) return "待测";
+  if (value <= 0) return "<1%";
+  if (value >= 96) return "96%+";
+  return `${value}%`;
 }
 function compareProbability(a, b) {
   const pa = normalizeProbability(a);
@@ -729,7 +732,7 @@ defineExpose({ smartFill });
               </button>
 
               <span class="mnz-vrow__prob" :class="strategyOf(slots[seg.range[0] + n - 1].prob).key">
-                <em>{{ strategyOf(slots[seg.range[0] + n - 1].prob).label }}</em>
+                <em>{{ strategyOf(slots[seg.range[0] + n - 1].prob).full }}</em>
                 {{ probabilityText(slots[seg.range[0] + n - 1].prob) }}
               </span>
 
