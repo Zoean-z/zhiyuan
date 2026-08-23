@@ -1,6 +1,7 @@
 package com.zhiyuan.college.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -9,6 +10,8 @@ import static org.mockito.Mockito.when;
 
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
+import com.zhiyuan.college.model.dto.AiConnectionTestResponse;
+import com.zhiyuan.college.model.dto.AiRuntimeConfigRequest;
 import com.zhiyuan.college.service.agent.AgentToolExecutor;
 import com.zhiyuan.college.service.agent.AgentToolFacade;
 import com.zhiyuan.college.service.agent.AgentToolNames;
@@ -19,6 +22,7 @@ import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -97,6 +101,88 @@ class AiChatClientTest {
 
         assertThrows(Exception.class, () -> client.chat("system", "user", 0.1, true));
         assertEquals(1, requestCount.get());
+    }
+
+    @Test
+    void chat_shouldResolveLatestRuntimeConfigForEachNewRequest() throws Exception {
+        List<String> requestBodies = new CopyOnWriteArrayList<>();
+        List<String> authorizationHeaders = new CopyOnWriteArrayList<>();
+        server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/chat/completions", exchange -> {
+            requestBodies.add(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+            authorizationHeaders.add(exchange.getRequestHeaders().getFirst("Authorization"));
+            writeJson(exchange, 200, "{\"choices\":[{\"message\":{\"content\":\"ok\"}}]}");
+        });
+        server.start();
+
+        String baseUrl = "http://localhost:" + server.getAddress().getPort();
+        AiRuntimeConfigService configService = mock(AiRuntimeConfigService.class);
+        when(configService.resolve()).thenReturn(
+                new AiRuntimeConfigService.ResolvedAiConfig("provider-a", baseUrl, "model-a", "key-a"),
+                new AiRuntimeConfigService.ResolvedAiConfig("provider-b", baseUrl, "model-b", "key-b"));
+        AiChatClient client = new AiChatClient(RestClient.builder(), configService, 1, 0, null, null);
+
+        assertEquals("ok", client.chat("system", "first", 0.1, false));
+        assertEquals("ok", client.chat("system", "second", 0.1, false));
+
+        assertTrue(requestBodies.get(0).contains("\"model\":\"model-a\""));
+        assertTrue(requestBodies.get(1).contains("\"model\":\"model-b\""));
+        assertEquals(List.of("Bearer key-a", "Bearer key-b"), authorizationHeaders);
+    }
+
+    @Test
+    void testConnection_shouldUseUnsavedFormConfigWithoutExposingProviderBody() throws Exception {
+        List<String> requestBodies = new CopyOnWriteArrayList<>();
+        server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/chat/completions", exchange -> {
+            requestBodies.add(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+            writeJson(exchange, 200, "{\"choices\":[{\"message\":{\"content\":\"OK\"}}]}");
+        });
+        server.start();
+
+        AiRuntimeConfigRequest request = runtimeConfigRequest();
+        AiRuntimeConfigService configService = mock(AiRuntimeConfigService.class);
+        when(configService.resolveForTest(request)).thenReturn(new AiRuntimeConfigService.ResolvedAiConfig(
+                "test-provider", "http://localhost:" + server.getAddress().getPort(), "test-model", "test-key"));
+        AiChatClient client = new AiChatClient(RestClient.builder(), configService, 1, 0, null, null);
+
+        AiConnectionTestResponse response = client.testConnection(request);
+
+        assertTrue(response.available());
+        assertEquals("test-provider", response.provider());
+        assertEquals("test-model", response.model());
+        assertTrue(requestBodies.get(0).contains("\"model\":\"test-model\""));
+        assertFalse(requestBodies.get(0).contains("thinking"));
+        assertFalse(requestBodies.get(0).contains("response_format"));
+    }
+
+    @Test
+    void testConnection_shouldReturnSafeFailureForUpstreamRejection() throws Exception {
+        server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/chat/completions", exchange ->
+                writeJson(exchange, 401, "{\"error\":\"secret upstream diagnostic\"}"));
+        server.start();
+
+        AiRuntimeConfigRequest request = runtimeConfigRequest();
+        AiRuntimeConfigService configService = mock(AiRuntimeConfigService.class);
+        when(configService.resolveForTest(request)).thenReturn(new AiRuntimeConfigService.ResolvedAiConfig(
+                "test-provider", "http://localhost:" + server.getAddress().getPort(), "test-model", "bad-key"));
+        AiChatClient client = new AiChatClient(RestClient.builder(), configService, 1, 0, null, null);
+
+        AiConnectionTestResponse response = client.testConnection(request);
+
+        assertFalse(response.available());
+        assertTrue(response.message().contains("认证失败（HTTP 401）"));
+        assertFalse(response.message().contains("secret upstream diagnostic"));
+    }
+
+    private AiRuntimeConfigRequest runtimeConfigRequest() {
+        AiRuntimeConfigRequest request = new AiRuntimeConfigRequest();
+        request.setProvider("test-provider");
+        request.setBaseUrl("https://unused.example.test");
+        request.setModel("test-model");
+        request.setApiKey("test-key");
+        return request;
     }
 
     private void writeJson(HttpExchange exchange, int status, String body) throws IOException {

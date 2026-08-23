@@ -1,80 +1,50 @@
 <script setup>
-import {
-  CircleCloseFilled,
-  Collection,
-  DataAnalysis,
-  EditPen,
-  Lock,
-  Plus,
-  Reading,
-  Refresh,
-  School,
-  Search,
-  SwitchButton,
-  TrendCharts,
-  User,
-  UserFilled
-} from "@element-plus/icons-vue";
 import { ElMessage } from "element-plus";
+import { ChatDotRound, CircleCloseFilled, Collection, DataAnalysis, Lock, OfficeBuilding, SwitchButton, User, UserFilled } from "@element-plus/icons-vue";
 import { computed, inject, onMounted, reactive, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import BrandLockup from "../components/BrandLockup.vue";
 import sidebarArt from "../assets/admission-journey.png";
-import { clearStoredAuth, readStoredAuth } from "../utils/recommendation";
 
 defineOptions({ name: "AdminView" });
 
 const route = useRoute();
 const router = useRouter();
-const workspace = inject("workspace", null);
+const workspace = inject("workspace");
 
-const SECTION_META = {
-  dashboard: { title: "管理工作台", subtitle: "查看平台运行与数据准备情况", icon: DataAnalysis },
-  users: { title: "用户管理", subtitle: "维护账号角色、状态与报考资料", icon: User },
-  universities: { title: "院校管理", subtitle: "维护推荐与查询使用的院校主数据", icon: School },
-  majors: { title: "专业管理", subtitle: "维护专业分类、选科要求与说明", icon: Reading },
-  cutoffs: { title: "院校录取线", subtitle: "维护分省、分科类、分年份院校录取数据", icon: TrendCharts },
-  majorCutoffs: { title: "专业录取线", subtitle: "维护院校专业维度的录取事实数据", icon: Collection }
+const SECTION_TITLES = {
+  users: "用户管理",
+  universities: "院校管理",
+  majors: "专业管理",
+  cutoffs: "院校录取线",
+  majorCutoffs: "专业录取线",
+  ai: "AI 管理"
 };
-
-const NAV_GROUPS = [
-  { label: "业务总览", items: [{ section: "dashboard", ...SECTION_META.dashboard }] },
-  {
-    label: "账号与内容",
-    items: [
-      { section: "users", ...SECTION_META.users },
-      { section: "universities", ...SECTION_META.universities },
-      { section: "majors", ...SECTION_META.majors }
-    ]
-  },
-  {
-    label: "招生数据",
-    items: [
-      { section: "cutoffs", ...SECTION_META.cutoffs },
-      { section: "majorCutoffs", ...SECTION_META.majorCutoffs }
-    ]
-  }
-];
-
-const rawSection = computed(() => String(route.query.section || "dashboard"));
-const section = computed(() => (SECTION_META[rawSection.value] ? rawSection.value : "dashboard"));
-const sectionMeta = computed(() => SECTION_META[section.value]);
-const storedAuth = computed(() => workspace?.auth?.value || readStoredAuth());
-const token = computed(() => storedAuth.value?.token || "");
-const currentUsername = computed(() => storedAuth.value?.user?.username || "管理员");
-const currentUserInitial = computed(() => currentUsername.value.slice(0, 1).toUpperCase());
-
+const section = computed(() => SECTION_TITLES[String(route.query.section || "users")] ? String(route.query.section || "users") : "users");
+const pageTitle = computed(() => SECTION_TITLES[section.value]);
+const token = computed(() => workspace?.auth?.value?.token || "");
+const currentUsername = computed(() => workspace?.auth?.value?.user?.username || "管理员");
 const loading = ref(false);
-const lastSyncedAt = ref("");
-const pageSize = 10;
-const overview = reactive({ totalCount: 0, userCount: 0, adminCount: 0, disabledCount: 0 });
-const platformSnapshot = reactive({ latestYear: null, provinceCount: 0 });
-const dashboardUsers = ref([]);
+const aiSaving = ref(false);
+const aiTesting = ref(false);
+const aiTestResult = ref(null);
+const aiConfig = reactive({
+  provider: "openai-compatible",
+  baseUrl: "",
+  model: "",
+  apiKey: "",
+  apiKeyConfigured: false,
+  apiKeyMasked: "",
+  apiKeySource: "none"
+});
 
+const overview = reactive({ totalCount: 0, userCount: 0, adminCount: 0, disabledCount: 0 });
 const users = ref([]);
 const userFilters = reactive({ keyword: "", role: "", enabled: "" });
 const userPage = ref(1);
-const pagedUsers = computed(() => users.value.slice((userPage.value - 1) * pageSize, userPage.value * pageSize));
+const pageSize = 10;
+const usersTotal = ref(0);
+const pagedUsers = computed(() => users.value);
 
 const universities = ref([]);
 const universityKeyword = ref("");
@@ -84,8 +54,8 @@ const universityTiers = computed(() => [...new Set(universities.value.map((item)
 const filteredUniversities = computed(() => {
   const keyword = universityKeyword.value.trim().toLowerCase();
   return universities.value.filter((item) => {
-    const searchText = `${item.name || ""}${item.province || ""}${item.tier || ""}`.toLowerCase();
-    return (!keyword || searchText.includes(keyword)) && (!universityTier.value || item.tier === universityTier.value);
+    const matchesKeyword = !keyword || `${item.name}${item.province}${item.tier || ""}`.toLowerCase().includes(keyword);
+    return matchesKeyword && (!universityTier.value || item.tier === universityTier.value);
   });
 });
 const pagedUniversities = computed(() => filteredUniversities.value.slice((universityPage.value - 1) * pageSize, universityPage.value * pageSize));
@@ -100,8 +70,8 @@ const majorDegreeTypes = computed(() => [...new Set(majors.value.map((item) => i
 const filteredMajors = computed(() => {
   const keyword = majorKeyword.value.trim().toLowerCase();
   return majors.value.filter((item) => {
-    const searchText = `${item.name || ""}${item.category || ""}`.toLowerCase();
-    return (!keyword || searchText.includes(keyword))
+    const matchesKeyword = !keyword || `${item.name}${item.category || ""}`.toLowerCase().includes(keyword);
+    return matchesKeyword
       && (!majorCategory.value || item.category === majorCategory.value)
       && (!majorDegreeType.value || item.degreeType === majorDegreeType.value);
   });
@@ -112,120 +82,10 @@ const cutoffs = ref([]);
 const cutoffFilters = reactive({ universityId: "", admissionYear: "", province: "", subjectType: "" });
 const cutoffPage = ref(1);
 const pagedCutoffs = computed(() => cutoffs.value.slice((cutoffPage.value - 1) * pageSize, cutoffPage.value * pageSize));
-
 const majorCutoffs = ref([]);
 const majorCutoffFilters = reactive({ universityId: "", admissionYear: "", province: "", subjectType: "", majorKeyword: "" });
 const majorCutoffPage = ref(1);
 const pagedMajorCutoffs = computed(() => majorCutoffs.value.slice((majorCutoffPage.value - 1) * pageSize, majorCutoffPage.value * pageSize));
-
-const businessTotals = computed(() => dashboardUsers.value.reduce((totals, user) => ({
-  recommendations: totals.recommendations + Number(user.recommendationCount || 0),
-  plans: totals.plans + Number(user.planCount || 0),
-  conversations: totals.conversations + Number(user.conversationCount || 0)
-}), { recommendations: 0, plans: 0, conversations: 0 }));
-
-const dataHealth = computed(() => {
-  const universityIds = new Set(universities.value.map((item) => Number(item.id)).filter(Number.isFinite));
-  const universitiesWithCutoff = new Set(
-    [...cutoffs.value, ...majorCutoffs.value]
-      .map((item) => Number(item.universityId))
-      .filter((id) => universityIds.has(id))
-  );
-  const majorIds = new Set(majors.value.map((item) => Number(item.id)).filter(Number.isFinite));
-  const coveredMajorIds = new Set(
-    majorCutoffs.value.map((item) => Number(item.majorId)).filter((id) => majorIds.has(id))
-  );
-  const coveredMajorNames = new Set(majorCutoffs.value.map((item) => String(item.majorName || "").trim()).filter(Boolean));
-  const coveredMajors = majors.value.filter((item) => coveredMajorIds.has(Number(item.id)) || coveredMajorNames.has(String(item.name || "").trim())).length;
-  const candidateUsers = dashboardUsers.value.filter((user) => user.role !== "ADMIN");
-  const completedProfiles = candidateUsers.filter((user) => user.examProvince && user.subjectType && user.score != null).length;
-  const allYears = [...cutoffs.value, ...majorCutoffs.value]
-    .map((item) => Number(item.admissionYear))
-    .filter(Number.isFinite);
-  const provinces = new Set([...cutoffs.value, ...majorCutoffs.value].map((item) => item.province).filter(Boolean));
-  const percent = (value, total) => (total ? Math.round((value / total) * 100) : 0);
-  return {
-    universityCoverage: percent(universitiesWithCutoff.size, universities.value.length),
-    majorCoverage: percent(coveredMajors, majors.value.length),
-    profileCompletion: percent(completedProfiles, candidateUsers.length),
-    universitiesWithoutCutoff: Math.max(0, universities.value.length - universitiesWithCutoff.size),
-    majorsWithoutCutoff: Math.max(0, majors.value.length - coveredMajors),
-    incompleteProfiles: Math.max(0, candidateUsers.length - completedProfiles),
-    candidateCount: candidateUsers.length,
-    latestYear: allYears.length ? Math.max(...allYears) : null,
-    provinceCount: provinces.size
-  };
-});
-
-const recentCutoffs = computed(() => [...cutoffs.value]
-  .sort((a, b) => Number(b.admissionYear || 0) - Number(a.admissionYear || 0) || Number(b.id || 0) - Number(a.id || 0))
-  .slice(0, 5));
-
-const attentionItems = computed(() => {
-  const universityItem = universities.value.length
-    ? {
-        label: "院校录取数据覆盖",
-        detail: dataHealth.value.universitiesWithoutCutoff
-          ? `${dataHealth.value.universitiesWithoutCutoff} 所院校尚无院校/专业录取数据`
-          : "当前院校均已关联录取数据",
-        value: `${dataHealth.value.universityCoverage}%`,
-        section: "cutoffs",
-        tone: dataHealth.value.universitiesWithoutCutoff ? "warning" : "success"
-      }
-    : {
-        label: "院校主数据",
-        detail: "暂无院校主数据，需先建立推荐与录取线关联基础",
-        value: "待录入",
-        section: "universities",
-        tone: "info"
-      };
-  const majorItem = majors.value.length
-    ? {
-        label: "专业录取数据覆盖",
-        detail: dataHealth.value.majorsWithoutCutoff
-          ? `${dataHealth.value.majorsWithoutCutoff} 个专业尚无专业录取数据`
-          : "当前专业均已关联录取数据",
-        value: `${dataHealth.value.majorCoverage}%`,
-        section: "majorCutoffs",
-        tone: dataHealth.value.majorsWithoutCutoff ? "warning" : "success"
-      }
-    : {
-        label: "专业主数据",
-        detail: "暂无专业主数据，需先建立专业与录取线关联基础",
-        value: "待录入",
-        section: "majors",
-        tone: "info"
-      };
-  const profileItem = dataHealth.value.candidateCount
-    ? {
-        label: "考生档案完整度",
-        detail: dataHealth.value.incompleteProfiles
-          ? `${dataHealth.value.incompleteProfiles} 个普通用户尚未完善省份、科类或分数`
-          : "所有普通用户均已完善报考资料",
-        value: `${dataHealth.value.profileCompletion}%`,
-        section: "users",
-        tone: dataHealth.value.incompleteProfiles ? "info" : "success"
-      }
-    : {
-        label: "考生档案完整度",
-        detail: "暂无普通用户，当前没有可计算的考生档案",
-        value: "待产生",
-        section: "users",
-        tone: "info"
-      };
-  return [
-    universityItem,
-    majorItem,
-    profileItem,
-    {
-      label: "停用账号",
-      detail: overview.disabledCount ? `${overview.disabledCount} 个账号当前不可登录` : "暂无停用账号",
-      value: String(overview.disabledCount || 0),
-      section: "users",
-      tone: overview.disabledCount ? "danger" : "success"
-    }
-  ];
-});
 
 const settingsVisible = ref(false);
 const settingsSubmitting = ref(false);
@@ -238,7 +98,7 @@ const editingId = ref(null);
 const recordForm = reactive({
   name: "", province: "", tier: "", is985: false, is211: false, isDoubleFirstClass: false, tags: "",
   category: "", degreeType: "", subjectRequirement: "", description: "",
-  universityId: "", majorId: "", majorName: "", admissionYear: new Date().getFullYear(), subjectType: "PHYSICS", cutoffScore: "", minRank: ""
+  universityId: "", majorId: "", majorName: "", admissionYear: 2025, subjectType: "PHYSICS", cutoffScore: "", minRank: ""
 });
 
 const recordDialogTitle = computed(() => {
@@ -246,49 +106,18 @@ const recordDialogTitle = computed(() => {
   return `${editingId.value ? "编辑" : "新增"}${labels[section.value] || "数据"}`;
 });
 
-function goSection(nextSection) {
-  router.push({ name: "admin", query: nextSection === "dashboard" ? {} : { section: nextSection } });
-}
-
-async function logout() {
-  if (typeof workspace?.logout === "function") {
-    await workspace.logout();
-    return;
-  }
-  clearStoredAuth();
-  if (workspace?.auth) workspace.auth.value = null;
-  await router.replace({ name: "login" });
-}
-
 async function api(url, options = {}) {
-  const controller = new AbortController();
-  const timeoutId = window.setTimeout(() => controller.abort(), 15000);
-  try {
-    const response = await fetch(url, {
-      ...options,
-      signal: options.signal || controller.signal,
-      headers: {
-        Authorization: `Bearer ${token.value}`,
-        ...(options.body ? { "Content-Type": "application/json" } : {}),
-        ...(options.headers || {})
-      }
-    });
-    const data = response.headers.get("content-type")?.includes("application/json") ? await response.json() : null;
-    if (!response.ok) {
-      if (response.status === 401) {
-        clearStoredAuth();
-        if (workspace?.auth) workspace.auth.value = null;
-        router.replace({ name: "login" });
-      }
-      throw new Error(data?.message || data?.error || "操作失败，请稍后重试");
+  const response = await fetch(url, {
+    ...options,
+    headers: {
+      Authorization: `Bearer ${token.value}`,
+      ...(options.body ? { "Content-Type": "application/json" } : {}),
+      ...(options.headers || {})
     }
-    return data;
-  } catch (error) {
-    if (error?.name === "AbortError") throw new Error("请求超时，请稍后重试");
-    throw error;
-  } finally {
-    window.clearTimeout(timeoutId);
-  }
+  });
+  const data = response.headers.get("content-type")?.includes("application/json") ? await response.json() : null;
+  if (!response.ok) throw new Error(data?.message || "操作失败，请稍后重试");
+  return data;
 }
 
 function formatDate(value) {
@@ -296,116 +125,41 @@ function formatDate(value) {
   return String(value).replace("T", " ").slice(0, 19);
 }
 
-function formatNumber(value) {
-  const number = Number(value);
-  return Number.isFinite(number) ? number.toLocaleString("zh-CN") : "—";
-}
-
 function subjectLabel(value) {
   if (value === "PHYSICS" || value === "物理") return "物理类";
   if (value === "HISTORY" || value === "历史") return "历史类";
-  return value || "—";
+  return value || "";
 }
 
 function profileLabel(user) {
   if (!user?.examProvince || !user?.subjectType || user?.score == null) return "未完善";
-  return `${user.examProvince} · ${subjectLabel(user.subjectType)} · ${user.score} 分`;
+  return `${user.examProvince} · ${subjectLabel(user.subjectType)} · ${user.score}`;
 }
 
 function universityName(id) {
   return universities.value.find((item) => Number(item.id) === Number(id))?.name || `院校 #${id}`;
 }
 
-function updateSyncTime() {
-  lastSyncedAt.value = new Intl.DateTimeFormat("zh-CN", {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false
-  }).format(new Date());
-}
-
-async function loadDashboard() {
-  const [summary, userList, universityList, majorList, cutoffList, majorCutoffList] = await Promise.all([
-    api("/api/admin/users/overview"),
-    api("/api/admin/users"),
-    api("/api/admin/universities"),
-    api("/api/admin/majors"),
-    api("/api/admin/admission-cutoffs"),
-    api("/api/admin/major-admission-cutoffs")
-  ]);
-  Object.assign(overview, summary || {});
-  dashboardUsers.value = Array.isArray(userList) ? userList : [];
-  universities.value = Array.isArray(universityList) ? universityList : [];
-  majors.value = Array.isArray(majorList) ? majorList : [];
-  cutoffs.value = Array.isArray(cutoffList) ? cutoffList : [];
-  majorCutoffs.value = Array.isArray(majorCutoffList) ? majorCutoffList : [];
-  platformSnapshot.latestYear = dataHealth.value.latestYear;
-  platformSnapshot.provinceCount = dataHealth.value.provinceCount;
-}
-
 async function loadUsers() {
-  const params = new URLSearchParams();
-  if (userFilters.keyword.trim()) params.set("keyword", userFilters.keyword.trim());
-  if (userFilters.role) params.set("role", userFilters.role);
-  if (userFilters.enabled !== "") params.set("enabled", userFilters.enabled);
-  const [list, summary] = await Promise.all([
-    api(`/api/admin/users${params.size ? `?${params}` : ""}`),
-    api("/api/admin/users/overview")
-  ]);
-  users.value = Array.isArray(list) ? list : [];
-  Object.assign(overview, summary || {});
-  userPage.value = 1;
-}
-
-async function loadUniversities() {
-  const list = await api("/api/admin/universities");
-  universities.value = Array.isArray(list) ? list : [];
-  universityPage.value = 1;
-}
-
-async function loadMajors() {
-  const list = await api("/api/admin/majors");
-  majors.value = Array.isArray(list) ? list : [];
-  majorPage.value = 1;
-}
-
-function appendQuery(params, key, value) {
-  if (value !== "" && value != null) params.set(key, value);
-}
-
-async function ensureUniversities() {
-  if (!universities.value.length) await loadUniversities();
-}
-
-async function loadCutoffs() {
-  await ensureUniversities();
-  const params = new URLSearchParams();
-  Object.entries(cutoffFilters).forEach(([key, value]) => appendQuery(params, key, value));
-  const list = await api(`/api/admin/admission-cutoffs${params.size ? `?${params}` : ""}`);
-  cutoffs.value = Array.isArray(list) ? list : [];
-  cutoffPage.value = 1;
-}
-
-async function loadMajorCutoffs() {
-  await ensureUniversities();
-  const params = new URLSearchParams();
-  Object.entries(majorCutoffFilters).forEach(([key, value]) => appendQuery(params, key, value));
-  const list = await api(`/api/admin/major-admission-cutoffs${params.size ? `?${params}` : ""}`);
-  majorCutoffs.value = Array.isArray(list) ? list : [];
-  majorCutoffPage.value = 1;
-}
-
-async function loadSection() {
   loading.value = true;
   try {
-    if (section.value === "dashboard") await loadDashboard();
-    else if (section.value === "users") await loadUsers();
-    else if (section.value === "universities") await loadUniversities();
-    else if (section.value === "majors") await loadMajors();
-    else if (section.value === "cutoffs") await loadCutoffs();
-    else if (section.value === "majorCutoffs") await loadMajorCutoffs();
-    updateSyncTime();
+    const params = new URLSearchParams();
+    if (userFilters.keyword.trim()) params.set("keyword", userFilters.keyword.trim());
+    if (userFilters.role) params.set("role", userFilters.role);
+    if (userFilters.enabled !== "") params.set("enabled", userFilters.enabled);
+    params.set("page", String(userPage.value));
+    params.set("size", String(pageSize));
+    const countParams = new URLSearchParams(params);
+    countParams.delete("page");
+    countParams.delete("size");
+    const [list, count, summary] = await Promise.all([
+      api(`/api/admin/users?${params}`),
+      api(`/api/admin/users/count${countParams.size ? `?${countParams}` : ""}`),
+      api("/api/admin/users/overview")
+    ]);
+    users.value = Array.isArray(list) ? list : [];
+    usersTotal.value = Number(count?.total || 0);
+    Object.assign(overview, summary || {});
   } catch (error) {
     ElMessage.error(error.message);
   } finally {
@@ -415,30 +169,8 @@ async function loadSection() {
 
 function resetUserFilters() {
   Object.assign(userFilters, { keyword: "", role: "", enabled: "" });
-  loadSection();
-}
-
-function resetUniversityFilters() {
-  universityKeyword.value = "";
-  universityTier.value = "";
-  universityPage.value = 1;
-}
-
-function resetMajorFilters() {
-  majorKeyword.value = "";
-  majorCategory.value = "";
-  majorDegreeType.value = "";
-  majorPage.value = 1;
-}
-
-function resetCutoffFilters() {
-  Object.assign(cutoffFilters, { universityId: "", admissionYear: "", province: "", subjectType: "" });
-  loadSection();
-}
-
-function resetMajorCutoffFilters() {
-  Object.assign(majorCutoffFilters, { universityId: "", admissionYear: "", province: "", subjectType: "", majorKeyword: "" });
-  loadSection();
+  userPage.value = 1;
+  loadUsers();
 }
 
 function openUserSettings(user) {
@@ -458,7 +190,7 @@ async function saveUserSettings() {
     });
     settingsVisible.value = false;
     ElMessage.success("用户设置已保存");
-    await loadSection();
+    await loadUsers();
   } catch (error) {
     ElMessage.error(error.message);
   } finally {
@@ -466,25 +198,146 @@ async function saveUserSettings() {
   }
 }
 
+async function loadUniversities() {
+  universities.value = await api("/api/admin/universities");
+  universityPage.value = 1;
+}
+
+async function loadMajors() {
+  majors.value = await api("/api/admin/majors");
+  majorPage.value = 1;
+}
+
+async function loadAiConfig() {
+  const data = await api("/api/admin/ai-config");
+  Object.assign(aiConfig, data || {}, { apiKey: "" });
+}
+
+function aiConfigPayload() {
+  return {
+    provider: aiConfig.provider.trim(),
+    baseUrl: aiConfig.baseUrl.trim(),
+    model: aiConfig.model.trim(),
+    apiKey: aiConfig.apiKey,
+    clearApiKey: false
+  };
+}
+
+function validateAiConfigForm() {
+  if (!aiConfig.provider.trim() || !aiConfig.baseUrl.trim() || !aiConfig.model.trim()) {
+    ElMessage.warning("请完整填写提供方、接口地址和模型名称");
+    return false;
+  }
+  return true;
+}
+
+async function testAiConfig() {
+  if (!validateAiConfigForm()) return;
+  aiTesting.value = true;
+  aiTestResult.value = null;
+  try {
+    const data = await api("/api/admin/ai-config/test", {
+      method: "POST",
+      body: JSON.stringify(aiConfigPayload())
+    });
+    aiTestResult.value = data;
+    if (data?.available) ElMessage.success("AI 接口检测通过");
+    else ElMessage.warning(data?.message || "AI 接口当前不可用");
+  } catch (error) {
+    ElMessage.error(error.message);
+  } finally {
+    aiTesting.value = false;
+  }
+}
+
+async function saveAiConfig() {
+  if (!validateAiConfigForm()) return;
+  aiSaving.value = true;
+  try {
+    const data = await api("/api/admin/ai-config", {
+      method: "PUT",
+      body: JSON.stringify(aiConfigPayload())
+    });
+    Object.assign(aiConfig, data || {}, { apiKey: "" });
+    ElMessage.success("AI 配置已保存，后续请求将直接使用新配置");
+  } catch (error) {
+    ElMessage.error(error.message);
+  } finally {
+    aiSaving.value = false;
+  }
+}
+
+function resetUniversityFilters() {
+  universityKeyword.value = "";
+  universityTier.value = "";
+  universityPage.value = 1;
+}
+
+function resetMajorFilters() {
+  majorKeyword.value = "";
+  majorCategory.value = "";
+  majorDegreeType.value = "";
+  majorPage.value = 1;
+}
+
+function appendQuery(params, key, value) {
+  if (value !== "" && value != null) params.set(key, value);
+}
+
+async function loadCutoffs() {
+  loading.value = true;
+  try {
+    if (!universities.value.length) await loadUniversities();
+    const params = new URLSearchParams();
+    Object.entries(cutoffFilters).forEach(([key, value]) => appendQuery(params, key, value));
+    cutoffs.value = await api(`/api/admin/admission-cutoffs${params.size ? `?${params}` : ""}`);
+    cutoffPage.value = 1;
+  } catch (error) {
+    ElMessage.error(error.message);
+  } finally {
+    loading.value = false;
+  }
+}
+
+async function loadMajorCutoffs() {
+  loading.value = true;
+  try {
+    if (!universities.value.length) await loadUniversities();
+    const params = new URLSearchParams();
+    Object.entries(majorCutoffFilters).forEach(([key, value]) => appendQuery(params, key, value));
+    majorCutoffs.value = await api(`/api/admin/major-admission-cutoffs${params.size ? `?${params}` : ""}`);
+    majorCutoffPage.value = 1;
+  } catch (error) {
+    ElMessage.error(error.message);
+  } finally {
+    loading.value = false;
+  }
+}
+
+function resetCutoffFilters() {
+  Object.assign(cutoffFilters, { universityId: "", admissionYear: "", province: "", subjectType: "" });
+  loadCutoffs();
+}
+
+function resetMajorCutoffFilters() {
+  Object.assign(majorCutoffFilters, { universityId: "", admissionYear: "", province: "", subjectType: "", majorKeyword: "" });
+  loadMajorCutoffs();
+}
+
 function resetRecordForm() {
   Object.assign(recordForm, {
     name: "", province: "", tier: "", is985: false, is211: false, isDoubleFirstClass: false, tags: "",
     category: "", degreeType: "", subjectRequirement: "", description: "",
-    universityId: "", majorId: "", majorName: "", admissionYear: new Date().getFullYear(), subjectType: "PHYSICS", cutoffScore: "", minRank: ""
+    universityId: "", majorId: "", majorName: "", admissionYear: 2025, subjectType: "PHYSICS", cutoffScore: "", minRank: ""
   });
 }
 
 function openRecordDialog(record = null) {
   resetRecordForm();
   editingId.value = record?.id || null;
-  if (record) {
-    Object.keys(recordForm).forEach((key) => {
-      if (record[key] != null) recordForm[key] = record[key];
-    });
-    if (section.value === "universities") {
-      recordForm.isDoubleFirstClass = record.isDoubleFirstClass === true || record.is211 === true;
-    }
-  }
+  if (record) Object.keys(recordForm).forEach((key) => {
+    if (record[key] != null) recordForm[key] = record[key];
+  });
   recordDialogVisible.value = true;
 }
 
@@ -495,38 +348,20 @@ function nullableNumber(value) {
 function buildRecordRequest() {
   if (section.value === "universities") {
     if (!recordForm.name.trim() || !recordForm.province.trim()) throw new Error("请填写院校名称和省份");
-    return {
-      name: recordForm.name.trim(),
-      province: recordForm.province.trim(),
-      tier: recordForm.tier || null,
-      is985: recordForm.is985,
-      is211: recordForm.isDoubleFirstClass || recordForm.is211,
-      isDoubleFirstClass: recordForm.isDoubleFirstClass,
-      tags: recordForm.tags || null
-    };
+    return { name: recordForm.name.trim(), province: recordForm.province.trim(), tier: recordForm.tier || null,
+      is985: recordForm.is985, is211: recordForm.is211, isDoubleFirstClass: recordForm.isDoubleFirstClass, tags: recordForm.tags || null };
   }
   if (section.value === "majors") {
     if (!recordForm.name.trim()) throw new Error("请填写专业名称");
-    return {
-      name: recordForm.name.trim(),
-      category: recordForm.category || null,
-      degreeType: recordForm.degreeType || null,
-      tags: recordForm.tags || null,
-      subjectRequirement: recordForm.subjectRequirement || null,
-      description: recordForm.description || null
-    };
+    return { name: recordForm.name.trim(), category: recordForm.category || null, degreeType: recordForm.degreeType || null,
+      tags: recordForm.tags || null, subjectRequirement: recordForm.subjectRequirement || null, description: recordForm.description || null };
   }
   if (!recordForm.universityId || !recordForm.admissionYear || !recordForm.province.trim() || !recordForm.subjectType) {
     throw new Error("请完整填写院校、年份、省份和科类");
   }
-  const base = {
-    universityId: Number(recordForm.universityId),
-    admissionYear: Number(recordForm.admissionYear),
-    province: recordForm.province.trim(),
-    subjectType: recordForm.subjectType,
-    cutoffScore: nullableNumber(recordForm.cutoffScore),
-    minRank: nullableNumber(recordForm.minRank)
-  };
+  const base = { universityId: Number(recordForm.universityId), admissionYear: Number(recordForm.admissionYear),
+    province: recordForm.province.trim(), subjectType: recordForm.subjectType,
+    cutoffScore: nullableNumber(recordForm.cutoffScore), minRank: nullableNumber(recordForm.minRank) };
   if (section.value === "majorCutoffs") {
     if (!recordForm.majorName.trim()) throw new Error("请填写专业名称");
     return { ...base, majorId: nullableNumber(recordForm.majorId), majorName: recordForm.majorName.trim() };
@@ -545,10 +380,7 @@ async function saveRecord() {
     };
     const base = paths[section.value];
     const url = editingId.value ? `${base}/${editingId.value}` : base;
-    await api(url, {
-      method: editingId.value ? "PUT" : "POST",
-      body: JSON.stringify(buildRecordRequest())
-    });
+    await api(url, { method: editingId.value ? "PUT" : "POST", body: JSON.stringify(buildRecordRequest()) });
     recordDialogVisible.value = false;
     ElMessage.success(editingId.value ? "数据已更新" : "数据已新增");
     await loadSection();
@@ -559,503 +391,787 @@ async function saveRecord() {
   }
 }
 
+async function loadSection() {
+  loading.value = true;
+  try {
+    if (section.value === "users") return await loadUsers();
+    if (section.value === "universities") return await loadUniversities();
+    if (section.value === "majors") return await loadMajors();
+    if (section.value === "cutoffs") return await loadCutoffs();
+    if (section.value === "majorCutoffs") return await loadMajorCutoffs();
+    if (section.value === "ai") return await loadAiConfig();
+  } catch (error) {
+    ElMessage.error(error.message);
+  } finally {
+    loading.value = false;
+  }
+}
+
+function navigateAdminSection(nextSection) {
+  if (nextSection === section.value) return;
+  router.push({ name: "admin", query: { section: nextSection } });
+}
+
+async function logout() {
+  if (typeof workspace?.logout === "function") {
+    await workspace.logout();
+    return;
+  }
+  await router.replace({ name: "login" });
+}
+
 watch(section, loadSection);
+watch(
+  () => [aiConfig.provider, aiConfig.baseUrl, aiConfig.model, aiConfig.apiKey],
+  () => { aiTestResult.value = null; }
+);
 onMounted(loadSection);
 </script>
 
 <template>
-  <div class="admin-console">
-    <aside class="admin-console__sidebar">
-      <div class="admin-console__brand">
-        <BrandLockup admin />
-      </div>
-
-      <nav class="admin-console__nav" aria-label="管理员导航">
-        <section v-for="group in NAV_GROUPS" :key="group.label" class="admin-console__nav-group">
-          <p>{{ group.label }}</p>
-          <button
-            v-for="item in group.items"
-            :key="item.section"
-            type="button"
-            class="admin-console__nav-item"
-            :class="{ 'is-active': section === item.section }"
-            :aria-current="section === item.section ? 'page' : undefined"
-            @click="goSection(item.section)"
-          >
-            <el-icon><component :is="item.icon" /></el-icon>
-            <span>{{ item.title }}</span>
-          </button>
-        </section>
+  <div class="app-layout app-layout--admin">
+    <aside class="app-sidebar">
+      <div class="app-brand"><BrandLockup :admin="true" /></div>
+      <nav class="app-nav" aria-label="管理导航">
+        <button class="app-nav__item" :class="{ 'is-active': section === 'users' }" type="button" @click="navigateAdminSection('users')"><el-icon><UserFilled /></el-icon><span>用户管理</span></button>
+        <button class="app-nav__item" :class="{ 'is-active': section === 'universities' }" type="button" @click="navigateAdminSection('universities')"><el-icon><OfficeBuilding /></el-icon><span>院校管理</span></button>
+        <button class="app-nav__item" :class="{ 'is-active': section === 'majors' }" type="button" @click="navigateAdminSection('majors')"><el-icon><Collection /></el-icon><span>专业管理</span></button>
+        <button class="app-nav__item" :class="{ 'is-active': section === 'cutoffs' }" type="button" @click="navigateAdminSection('cutoffs')"><el-icon><DataAnalysis /></el-icon><span>院校录取线</span></button>
+        <button class="app-nav__item" :class="{ 'is-active': section === 'majorCutoffs' }" type="button" @click="navigateAdminSection('majorCutoffs')"><el-icon><DataAnalysis /></el-icon><span>专业录取线</span></button>
+        <button class="app-nav__item" :class="{ 'is-active': section === 'ai' }" type="button" @click="navigateAdminSection('ai')"><el-icon><ChatDotRound /></el-icon><span>AI 管理</span></button>
       </nav>
-
-      <div class="admin-console__connection">
-        <span class="admin-console__connection-dot"></span>
-        <div>
-          <strong>业务数据已连接</strong>
-          <small>
-            <template v-if="platformSnapshot.latestYear">最新录取年份 {{ platformSnapshot.latestYear }}</template>
-            <template v-else>进入工作台查看数据状态</template>
-          </small>
-        </div>
-      </div>
-      <img class="admin-console__art" :src="sidebarArt" alt="" />
+      <div class="app-sidebar__art" aria-hidden="true"><img :src="sidebarArt" alt="" /></div>
     </aside>
+    <section class="app-content">
+      <header class="app-header"><div class="app-header__content"><h1>{{ pageTitle }}</h1><div class="app-user"><span class="app-user__avatar"><el-icon><UserFilled /></el-icon></span><strong>{{ currentUsername }}</strong><span class="app-user__divider" /><button class="app-user__logout" type="button" @click="logout"><el-icon><SwitchButton /></el-icon><span>退出</span></button></div></div></header>
+      <main class="admin-view">
+    <template v-if="section === 'users'">
+      <section class="admin-overview" aria-label="用户概览">
+        <div><el-icon class="admin-overview__icon"><User /></el-icon><span>用户总数<strong>{{ overview.totalCount || 0 }}</strong></span></div>
+        <div><el-icon class="admin-overview__icon"><UserFilled /></el-icon><span>普通用户<strong>{{ overview.userCount || 0 }}</strong></span></div>
+        <div><el-icon class="admin-overview__icon"><Lock /></el-icon><span>管理员<strong>{{ overview.adminCount || 0 }}</strong></span></div>
+        <div><el-icon class="admin-overview__icon"><CircleCloseFilled /></el-icon><span>已停用<strong>{{ overview.disabledCount || 0 }}</strong></span></div>
+      </section>
 
-    <section class="admin-console__workspace">
-      <header class="admin-console__header">
-        <div class="admin-console__heading">
-          <span>管理后台 / {{ sectionMeta.title }}</span>
-          <h1>{{ sectionMeta.title }}</h1>
-          <p>{{ sectionMeta.subtitle }}</p>
-        </div>
-        <div class="admin-console__header-actions">
-          <button class="admin-console__icon-button" type="button" title="刷新当前数据" aria-label="刷新当前数据" :disabled="loading" @click="loadSection">
-            <el-icon :class="{ 'is-spinning': loading }"><Refresh /></el-icon>
-          </button>
-          <div class="admin-console__identity">
-            <span class="admin-console__avatar">{{ currentUserInitial }}</span>
-            <div><strong>{{ currentUsername }}</strong><small>系统管理员</small></div>
+      <section class="admin-filter-bar">
+        <label><span>用户名</span><el-input v-model.trim="userFilters.keyword" clearable placeholder="请输入用户名" @keyup.enter="userPage = 1; loadUsers()" /></label>
+        <label><span>角色</span><el-select v-model="userFilters.role"><el-option label="全部" value="" /><el-option label="普通用户" value="USER" /><el-option label="管理员" value="ADMIN" /></el-select></label>
+        <label><span>账号状态</span><el-select v-model="userFilters.enabled"><el-option label="全部" value="" /><el-option label="正常" value="true" /><el-option label="已停用" value="false" /></el-select></label>
+        <div class="admin-filter-actions"><el-button type="primary" @click="userPage = 1; loadUsers()">查询</el-button><el-button @click="resetUserFilters">重置</el-button></div>
+      </section>
+
+      <section class="admin-table-panel">
+        <el-table v-loading="loading" :data="pagedUsers" height="100%">
+          <el-table-column prop="username" label="用户名" min-width="130" />
+          <el-table-column label="报考资料" min-width="200"><template #default="{ row }">{{ profileLabel(row) }}</template></el-table-column>
+          <el-table-column label="角色" width="110"><template #default="{ row }"><el-tag effect="plain" :type="row.role === 'ADMIN' ? 'primary' : 'info'">{{ row.role === 'ADMIN' ? '管理员' : '普通用户' }}</el-tag></template></el-table-column>
+          <el-table-column prop="recommendationCount" label="推荐记录" width="100" align="center" />
+          <el-table-column prop="planCount" label="志愿方案" width="100" align="center" />
+          <el-table-column prop="conversationCount" label="AI会话" width="90" align="center" />
+          <el-table-column label="注册时间" min-width="170"><template #default="{ row }">{{ formatDate(row.createdAt) }}</template></el-table-column>
+          <el-table-column label="状态" width="95"><template #default="{ row }"><el-tag :type="row.enabled === false ? 'warning' : 'success'" effect="light">{{ row.enabled === false ? '已停用' : '正常' }}</el-tag></template></el-table-column>
+          <el-table-column label="操作" width="90"><template #default="{ row }"><el-button link type="primary" @click="openUserSettings(row)">管理</el-button></template></el-table-column>
+        </el-table>
+        <el-pagination v-model:current-page="userPage" :page-size="pageSize" :total="usersTotal" layout="total, prev, pager, next" @current-change="loadUsers" />
+      </section>
+    </template>
+
+    <template v-else-if="section === 'universities'">
+      <section class="admin-filter-bar admin-filter-bar--entity">
+        <label><span>院校名称/省份</span><el-input v-model.trim="universityKeyword" clearable placeholder="请输入院校名称或省份" @keyup.enter="universityPage = 1" /></label>
+        <label><span>院校层次</span><el-select v-model="universityTier" clearable placeholder="全部"><el-option v-for="tier in universityTiers" :key="tier" :label="tier" :value="tier" /></el-select></label>
+        <div class="admin-filter-actions"><el-button type="primary" @click="universityPage = 1">查询</el-button><el-button @click="resetUniversityFilters">重置</el-button></div>
+        <el-button class="admin-create-button" type="primary" @click="openRecordDialog()">新增院校</el-button>
+      </section>
+      <section class="admin-table-panel">
+        <el-table v-loading="loading" :data="pagedUniversities" height="100%">
+          <el-table-column prop="name" label="院校名称" min-width="200" />
+          <el-table-column prop="province" label="省份" width="110" />
+          <el-table-column prop="tier" label="院校层次" width="120" />
+          <el-table-column label="985" width="80" align="center"><template #default="{ row }"><el-tag :type="row.is985 ? 'success' : 'info'" effect="light">{{ row.is985 ? '是' : '否' }}</el-tag></template></el-table-column>
+          <el-table-column label="211" width="80" align="center"><template #default="{ row }"><el-tag :type="row.is211 ? 'success' : 'info'" effect="light">{{ row.is211 ? '是' : '否' }}</el-tag></template></el-table-column>
+          <el-table-column label="双一流" width="90" align="center"><template #default="{ row }"><el-tag :type="row.isDoubleFirstClass ? 'success' : 'info'" effect="light">{{ row.isDoubleFirstClass ? '是' : '否' }}</el-tag></template></el-table-column>
+          <el-table-column prop="tags" label="标签" min-width="220" show-overflow-tooltip />
+          <el-table-column label="操作" width="90"><template #default="{ row }"><el-button link type="primary" @click="openRecordDialog(row)">编辑</el-button></template></el-table-column>
+        </el-table>
+        <el-pagination v-model:current-page="universityPage" :page-size="pageSize" :total="filteredUniversities.length" layout="total, prev, pager, next" />
+      </section>
+    </template>
+
+    <template v-else-if="section === 'majors'">
+      <section class="admin-filter-bar admin-filter-bar--entity admin-filter-bar--major">
+        <label><span>专业名称/类别</span><el-input v-model.trim="majorKeyword" clearable placeholder="请输入专业名称或类别" @keyup.enter="majorPage = 1" /></label>
+        <label><span>专业类别</span><el-select v-model="majorCategory" clearable placeholder="全部"><el-option v-for="category in majorCategories" :key="category" :label="category" :value="category" /></el-select></label>
+        <label><span>学位类型</span><el-select v-model="majorDegreeType" clearable placeholder="全部"><el-option v-for="degree in majorDegreeTypes" :key="degree" :label="degree" :value="degree" /></el-select></label>
+        <div class="admin-filter-actions"><el-button type="primary" @click="majorPage = 1">查询</el-button><el-button @click="resetMajorFilters">重置</el-button></div>
+        <el-button class="admin-create-button" type="primary" @click="openRecordDialog()">新增专业</el-button>
+      </section>
+      <section class="admin-table-panel">
+        <el-table v-loading="loading" :data="pagedMajors" height="100%">
+          <el-table-column prop="name" label="专业名称" min-width="190" />
+          <el-table-column prop="category" label="专业类别" width="130" />
+          <el-table-column prop="degreeType" label="学位类型" width="130" />
+          <el-table-column prop="subjectRequirement" label="选科要求" min-width="160" show-overflow-tooltip />
+          <el-table-column prop="tags" label="标签" min-width="150" show-overflow-tooltip />
+          <el-table-column prop="description" label="专业说明" min-width="240" show-overflow-tooltip />
+          <el-table-column label="操作" width="90"><template #default="{ row }"><el-button link type="primary" @click="openRecordDialog(row)">编辑</el-button></template></el-table-column>
+        </el-table>
+        <el-pagination v-model:current-page="majorPage" :page-size="pageSize" :total="filteredMajors.length" layout="total, prev, pager, next" />
+      </section>
+    </template>
+
+    <template v-else-if="section === 'cutoffs'">
+      <section class="admin-filter-bar admin-filter-bar--records"><label><span>院校</span><el-select v-model="cutoffFilters.universityId" filterable clearable placeholder="请选择院校"><el-option v-for="item in universities" :key="item.id" :label="item.name" :value="item.id" /></el-select></label><label><span>年份</span><el-input v-model="cutoffFilters.admissionYear" clearable placeholder="请输入年份" /></label><label><span>省份</span><el-input v-model.trim="cutoffFilters.province" clearable placeholder="请输入省份" /></label><label><span>科类</span><el-select v-model="cutoffFilters.subjectType" clearable placeholder="全部"><el-option label="物理类" value="PHYSICS" /><el-option label="历史类" value="HISTORY" /></el-select></label><div class="admin-filter-actions"><el-button type="primary" @click="loadCutoffs">查询</el-button><el-button @click="resetCutoffFilters">重置</el-button></div><el-button class="admin-create-button" type="primary" @click="openRecordDialog()">新增录取线</el-button></section>
+      <section class="admin-table-panel"><el-table v-loading="loading" :data="pagedCutoffs" height="100%"><el-table-column label="院校" min-width="220"><template #default="{ row }">{{ universityName(row.universityId) }}</template></el-table-column><el-table-column prop="admissionYear" label="年份" width="100" /><el-table-column prop="province" label="招生省份" width="130" /><el-table-column label="科类" width="120"><template #default="{ row }">{{ subjectLabel(row.subjectType) }}</template></el-table-column><el-table-column prop="cutoffScore" label="最低分" width="110" /><el-table-column prop="minRank" label="最低位次" width="130" /><el-table-column label="操作" width="90"><template #default="{ row }"><el-button link type="primary" @click="openRecordDialog(row)">编辑</el-button></template></el-table-column></el-table><el-pagination v-model:current-page="cutoffPage" :page-size="pageSize" :total="cutoffs.length" layout="total, prev, pager, next" /></section>
+    </template>
+
+    <template v-else-if="section === 'majorCutoffs'">
+      <section class="admin-filter-bar admin-filter-bar--records admin-filter-bar--major-cutoff"><label><span>院校</span><el-select v-model="majorCutoffFilters.universityId" filterable clearable placeholder="请选择院校"><el-option v-for="item in universities" :key="item.id" :label="item.name" :value="item.id" /></el-select></label><label><span>专业关键词</span><el-input v-model.trim="majorCutoffFilters.majorKeyword" clearable placeholder="请输入专业关键词" /></label><label><span>年份</span><el-input v-model="majorCutoffFilters.admissionYear" clearable placeholder="请输入年份" /></label><label><span>省份</span><el-input v-model.trim="majorCutoffFilters.province" clearable placeholder="请输入省份" /></label><label><span>科类</span><el-select v-model="majorCutoffFilters.subjectType" clearable placeholder="全部"><el-option label="物理类" value="PHYSICS" /><el-option label="历史类" value="HISTORY" /></el-select></label><div class="admin-filter-actions"><el-button type="primary" @click="loadMajorCutoffs">查询</el-button><el-button @click="resetMajorCutoffFilters">重置</el-button></div><el-button class="admin-create-button" type="primary" @click="openRecordDialog()">新增专业录取线</el-button></section>
+      <section class="admin-table-panel"><el-table v-loading="loading" :data="pagedMajorCutoffs" height="100%"><el-table-column label="院校" min-width="190"><template #default="{ row }">{{ universityName(row.universityId) }}</template></el-table-column><el-table-column prop="majorName" label="专业名称" min-width="190" /><el-table-column prop="admissionYear" label="年份" width="90" /><el-table-column prop="province" label="招生省份" width="110" /><el-table-column label="科类" width="110"><template #default="{ row }">{{ subjectLabel(row.subjectType) }}</template></el-table-column><el-table-column prop="cutoffScore" label="最低分" width="100" /><el-table-column prop="minRank" label="最低位次" width="120" /><el-table-column label="操作" width="90"><template #default="{ row }"><el-button link type="primary" @click="openRecordDialog(row)">编辑</el-button></template></el-table-column></el-table><el-pagination v-model:current-page="majorCutoffPage" :page-size="pageSize" :total="majorCutoffs.length" layout="total, prev, pager, next" /></section>
+    </template>
+
+    <template v-else-if="section === 'ai'">
+      <section class="admin-ai-panel" v-loading="loading">
+        <div class="admin-ai-panel__heading">
+          <div>
+            <span class="admin-ai-panel__eyebrow">运行时配置</span>
+            <h2>AI 模型与接口</h2>
+            <p>保存后立即作用于新的 AI 对话和解析请求，无需重启服务。</p>
           </div>
-          <button class="admin-console__logout" type="button" @click="logout">
-            <el-icon><SwitchButton /></el-icon>退出
-          </button>
+          <el-tag :type="aiConfig.apiKeyConfigured ? 'success' : 'warning'" effect="light">
+            {{ aiConfig.apiKeyConfigured ? `密钥已配置 ${aiConfig.apiKeyMasked}` : "尚未配置密钥" }}
+          </el-tag>
         </div>
-      </header>
 
-      <main v-loading="loading" class="admin-console__content">
-        <template v-if="section === 'dashboard'">
-          <section class="admin-dashboard__hero">
+        <el-form class="admin-ai-form" label-position="top" @submit.prevent="saveAiConfig">
+          <div class="admin-ai-form__grid">
+            <el-form-item label="供应商名称">
+              <el-input v-model.trim="aiConfig.provider" placeholder="例如 DeepSeek、通义千问" />
+              <p class="admin-ai-field-help">用于标记当前 AI 服务供应商并写入调用日志；接口仍需兼容 OpenAI 协议。</p>
+            </el-form-item>
+            <el-form-item label="模型名称">
+              <el-input v-model.trim="aiConfig.model" placeholder="例如 deepseek-v4-flash" />
+            </el-form-item>
+            <el-form-item class="admin-ai-form__wide" label="OpenAI 兼容接口地址">
+              <el-input v-model.trim="aiConfig.baseUrl" placeholder="https://api.example.com" />
+            </el-form-item>
+            <el-form-item class="admin-ai-form__wide" label="API Key">
+              <el-input v-model="aiConfig.apiKey" type="password" show-password autocomplete="new-password" placeholder="留空则保留当前密钥" />
+            </el-form-item>
+          </div>
+          <el-alert
+            v-if="aiTestResult"
+            class="admin-ai-test-result"
+            :type="aiTestResult.available ? 'success' : 'warning'"
+            :title="aiTestResult.message"
+            :description="`${aiTestResult.provider} · ${aiTestResult.model} · ${aiTestResult.available ? '响应耗时' : '失败前耗时'} ${aiTestResult.latencyMillis} ms`"
+            :closable="false"
+            show-icon
+          />
+          <div class="admin-ai-form__footer">
             <div>
-              <span class="admin-dashboard__eyebrow">ADMIN WORKSPACE</span>
-              <h2>{{ currentUsername }}，欢迎进入管理工作台</h2>
-              <p>所有指标均由现有管理接口实时汇总；这里不提供脱离业务的数据或空白配置项。</p>
+              <p>当前来源：{{ aiConfig.apiKeySource === 'database' ? '管理端数据库配置' : (aiConfig.apiKeySource === 'environment' ? '服务器环境变量' : '未配置') }}。页面和接口不会回显完整密钥。</p>
             </div>
-            <div class="admin-dashboard__sync">
-              <span><i></i>实时业务数据</span>
-              <small>最近同步 {{ lastSyncedAt || '—' }}</small>
+            <div class="admin-ai-form__actions">
+              <el-button :loading="aiTesting" :disabled="aiSaving" @click="testAiConfig">检测可用性</el-button>
+              <el-button type="primary" :loading="aiSaving" :disabled="aiTesting" @click="saveAiConfig">保存 AI 配置</el-button>
             </div>
-          </section>
+          </div>
+        </el-form>
+      </section>
+    </template>
+  </main>
 
-          <section class="admin-dashboard__metrics" aria-label="平台核心指标">
-            <button type="button" @click="goSection('users')">
-              <span class="admin-dashboard__metric-icon"><el-icon><User /></el-icon></span>
-              <div><small>用户总数</small><strong>{{ overview.totalCount || 0 }}</strong><em>{{ overview.adminCount || 0 }} 名管理员</em></div>
-            </button>
-            <button type="button" @click="goSection('universities')">
-              <span class="admin-dashboard__metric-icon"><el-icon><School /></el-icon></span>
-              <div><small>院校主数据</small><strong>{{ universities.length }}</strong><em>{{ universities.length ? `${dataHealth.universityCoverage}% 已关联录取数据` : '待录入院校主数据' }}</em></div>
-            </button>
-            <button type="button" @click="goSection('majors')">
-              <span class="admin-dashboard__metric-icon"><el-icon><Reading /></el-icon></span>
-              <div><small>专业主数据</small><strong>{{ majors.length }}</strong><em>{{ majors.length ? `${dataHealth.majorCoverage}% 已关联专业录取线` : '待录入专业主数据' }}</em></div>
-            </button>
-            <button type="button" @click="goSection('cutoffs')">
-              <span class="admin-dashboard__metric-icon"><el-icon><TrendCharts /></el-icon></span>
-              <div><small>录取事实数据</small><strong>{{ cutoffs.length + majorCutoffs.length }}</strong><em>覆盖 {{ platformSnapshot.provinceCount }} 个招生省份</em></div>
-            </button>
-          </section>
-
-          <section class="admin-dashboard__grid">
-            <article class="admin-dashboard__panel admin-dashboard__panel--business">
-              <header><div><h3>业务运行</h3><p>来自用户推荐、志愿方案与 AI 会话计数</p></div><el-icon><DataAnalysis /></el-icon></header>
-              <div class="admin-dashboard__business-stats">
-                <div><span>推荐记录</span><strong>{{ formatNumber(businessTotals.recommendations) }}</strong><small>规则推荐与自然语言推荐</small></div>
-                <div><span>志愿方案</span><strong>{{ formatNumber(businessTotals.plans) }}</strong><small>用户已保存方案</small></div>
-                <div><span>AI 会话</span><strong>{{ formatNumber(businessTotals.conversations) }}</strong><small>受控 Agent 会话</small></div>
-              </div>
-            </article>
-
-            <article class="admin-dashboard__panel">
-              <header><div><h3>数据准备度</h3><p>按当前数据库关联关系计算</p></div><el-icon><TrendCharts /></el-icon></header>
-              <div class="admin-dashboard__progress-list">
-                <div><span>院校录取数据覆盖</span><b>{{ dataHealth.universityCoverage }}%</b><el-progress :percentage="dataHealth.universityCoverage" :show-text="false" /></div>
-                <div><span>专业录取数据覆盖</span><b>{{ dataHealth.majorCoverage }}%</b><el-progress :percentage="dataHealth.majorCoverage" :show-text="false" status="warning" /></div>
-                <div><span>普通用户档案完整度</span><b>{{ dataHealth.profileCompletion }}%</b><el-progress :percentage="dataHealth.profileCompletion" :show-text="false" status="success" /></div>
-              </div>
-            </article>
-          </section>
-
-          <section class="admin-dashboard__grid admin-dashboard__grid--bottom">
-            <article class="admin-dashboard__panel">
-              <header><div><h3>待处理事项</h3><p>由真实缺口自动生成，可直接进入对应模块</p></div><el-icon><Search /></el-icon></header>
-              <div class="admin-dashboard__attention-list">
-                <button v-for="item in attentionItems" :key="item.label" type="button" @click="goSection(item.section)">
-                  <span class="admin-dashboard__attention-status" :class="`is-${item.tone}`"></span>
-                  <div><strong>{{ item.label }}</strong><small>{{ item.detail }}</small></div>
-                  <b>{{ item.value }}</b>
-                </button>
-              </div>
-            </article>
-
-            <article class="admin-dashboard__panel">
-              <header>
-                <div><h3>最新院校录取数据</h3><p>按录取年份与记录编号排序</p></div>
-                <button type="button" @click="goSection('cutoffs')">查看全部</button>
-              </header>
-              <div v-if="recentCutoffs.length" class="admin-dashboard__recent-list">
-                <div v-for="row in recentCutoffs" :key="row.id">
-                  <span class="admin-dashboard__year">{{ row.admissionYear }}</span>
-                  <div><strong>{{ universityName(row.universityId) }}</strong><small>{{ row.province }} · {{ subjectLabel(row.subjectType) }}</small></div>
-                  <p><b>{{ row.cutoffScore ?? '—' }}</b> 分<small>位次 {{ formatNumber(row.minRank) }}</small></p>
-                </div>
-              </div>
-              <el-empty v-else description="暂无院校录取线，请先录入事实数据" :image-size="70" />
-            </article>
-          </section>
-        </template>
-
-        <template v-else-if="section === 'users'">
-          <section class="admin-user-overview" aria-label="用户概览">
-            <div><span><el-icon><User /></el-icon></span><p>用户总数<strong>{{ overview.totalCount || 0 }}</strong></p></div>
-            <div><span><el-icon><UserFilled /></el-icon></span><p>普通用户<strong>{{ overview.userCount || 0 }}</strong></p></div>
-            <div><span><el-icon><Lock /></el-icon></span><p>管理员<strong>{{ overview.adminCount || 0 }}</strong></p></div>
-            <div><span><el-icon><CircleCloseFilled /></el-icon></span><p>已停用<strong>{{ overview.disabledCount || 0 }}</strong></p></div>
-          </section>
-
-          <section class="admin-filter-panel">
-            <label><span>用户名</span><el-input v-model.trim="userFilters.keyword" clearable placeholder="请输入用户名" @keyup.enter="loadSection" /></label>
-            <label><span>角色</span><el-select v-model="userFilters.role"><el-option label="全部" value="" /><el-option label="普通用户" value="USER" /><el-option label="管理员" value="ADMIN" /></el-select></label>
-            <label><span>账号状态</span><el-select v-model="userFilters.enabled"><el-option label="全部" value="" /><el-option label="正常" value="true" /><el-option label="已停用" value="false" /></el-select></label>
-            <div class="admin-filter-panel__actions"><el-button type="primary" :icon="Search" @click="loadSection">查询</el-button><el-button @click="resetUserFilters">重置</el-button></div>
-          </section>
-
-          <section class="admin-table-panel admin-table-panel--content">
-            <header><div><h3>用户列表</h3><p>角色与账号状态修改立即作用于鉴权</p></div><span>共 {{ users.length }} 条</span></header>
-            <el-table :data="pagedUsers" max-height="560">
-              <el-table-column prop="username" label="用户名" min-width="130" fixed="left" />
-              <el-table-column label="报考资料" min-width="210"><template #default="{ row }"><span :class="{ 'admin-text--muted': profileLabel(row) === '未完善' }">{{ profileLabel(row) }}</span></template></el-table-column>
-              <el-table-column label="角色" width="110"><template #default="{ row }"><el-tag effect="plain" :type="row.role === 'ADMIN' ? 'primary' : 'info'">{{ row.role === 'ADMIN' ? '管理员' : '普通用户' }}</el-tag></template></el-table-column>
-              <el-table-column prop="recommendationCount" label="推荐记录" width="100" align="center" />
-              <el-table-column prop="planCount" label="志愿方案" width="100" align="center" />
-              <el-table-column prop="conversationCount" label="AI 会话" width="95" align="center" />
-              <el-table-column label="注册时间" min-width="170"><template #default="{ row }">{{ formatDate(row.createdAt) }}</template></el-table-column>
-              <el-table-column label="状态" width="95"><template #default="{ row }"><el-tag :type="row.enabled === false ? 'warning' : 'success'" effect="light">{{ row.enabled === false ? '已停用' : '正常' }}</el-tag></template></el-table-column>
-              <el-table-column label="操作" width="96" fixed="right"><template #default="{ row }"><el-button link type="primary" :icon="EditPen" @click="openUserSettings(row)">管理</el-button></template></el-table-column>
-            </el-table>
-            <el-pagination v-model:current-page="userPage" :page-size="pageSize" :total="users.length" layout="total, prev, pager, next" />
-          </section>
-        </template>
-
-        <template v-else-if="section === 'universities'">
-          <section class="admin-filter-panel admin-filter-panel--entity">
-            <label><span>院校名称 / 省份</span><el-input v-model.trim="universityKeyword" clearable placeholder="请输入院校名称或省份" @keyup.enter="universityPage = 1" /></label>
-            <label><span>院校层次</span><el-select v-model="universityTier" clearable placeholder="全部"><el-option v-for="tier in universityTiers" :key="tier" :label="tier" :value="tier" /></el-select></label>
-            <div class="admin-filter-panel__actions"><el-button type="primary" :icon="Search" @click="universityPage = 1">查询</el-button><el-button @click="resetUniversityFilters">重置</el-button></div>
-            <el-button class="admin-create-button" type="primary" :icon="Plus" @click="openRecordDialog()">新增院校</el-button>
-          </section>
-          <section class="admin-table-panel admin-table-panel--content">
-            <header><div><h3>院校主数据</h3><p>用于院校查询、推荐与录取线关联；211 按本分支规则并入双一流展示</p></div><span>筛选后 {{ filteredUniversities.length }} 条</span></header>
-            <el-table :data="pagedUniversities" max-height="610">
-              <el-table-column prop="name" label="院校名称" min-width="210" fixed="left" />
-              <el-table-column prop="province" label="省份" width="110" />
-              <el-table-column prop="tier" label="院校层次" width="120" />
-              <el-table-column label="985" width="80" align="center"><template #default="{ row }"><el-tag :type="row.is985 ? 'success' : 'info'" effect="light">{{ row.is985 ? '是' : '否' }}</el-tag></template></el-table-column>
-              <el-table-column label="双一流" width="95" align="center"><template #default="{ row }"><el-tag :type="row.is211 || row.isDoubleFirstClass ? 'success' : 'info'" effect="light">{{ row.is211 || row.isDoubleFirstClass ? '是' : '否' }}</el-tag></template></el-table-column>
-              <el-table-column prop="tags" label="标签" min-width="240" show-overflow-tooltip />
-              <el-table-column label="操作" width="96" fixed="right"><template #default="{ row }"><el-button link type="primary" :icon="EditPen" @click="openRecordDialog(row)">编辑</el-button></template></el-table-column>
-            </el-table>
-            <el-pagination v-model:current-page="universityPage" :page-size="pageSize" :total="filteredUniversities.length" layout="total, prev, pager, next" />
-          </section>
-        </template>
-
-        <template v-else-if="section === 'majors'">
-          <section class="admin-filter-panel admin-filter-panel--major">
-            <label><span>专业名称 / 类别</span><el-input v-model.trim="majorKeyword" clearable placeholder="请输入专业名称或类别" @keyup.enter="majorPage = 1" /></label>
-            <label><span>专业类别</span><el-select v-model="majorCategory" clearable placeholder="全部"><el-option v-for="category in majorCategories" :key="category" :label="category" :value="category" /></el-select></label>
-            <label><span>学位类型</span><el-select v-model="majorDegreeType" clearable placeholder="全部"><el-option v-for="degree in majorDegreeTypes" :key="degree" :label="degree" :value="degree" /></el-select></label>
-            <div class="admin-filter-panel__actions"><el-button type="primary" :icon="Search" @click="majorPage = 1">查询</el-button><el-button @click="resetMajorFilters">重置</el-button></div>
-            <el-button class="admin-create-button" type="primary" :icon="Plus" @click="openRecordDialog()">新增专业</el-button>
-          </section>
-          <section class="admin-table-panel admin-table-panel--content">
-            <header><div><h3>专业主数据</h3><p>专业录取线可通过专业 ID 或专业名称关联到这里</p></div><span>筛选后 {{ filteredMajors.length }} 条</span></header>
-            <el-table :data="pagedMajors" max-height="610">
-              <el-table-column prop="name" label="专业名称" min-width="190" fixed="left" />
-              <el-table-column prop="category" label="专业类别" width="140" />
-              <el-table-column prop="degreeType" label="学位类型" width="120" />
-              <el-table-column prop="subjectRequirement" label="选科要求" min-width="160" show-overflow-tooltip />
-              <el-table-column prop="tags" label="标签" min-width="160" show-overflow-tooltip />
-              <el-table-column prop="description" label="专业说明" min-width="260" show-overflow-tooltip />
-              <el-table-column label="操作" width="96" fixed="right"><template #default="{ row }"><el-button link type="primary" :icon="EditPen" @click="openRecordDialog(row)">编辑</el-button></template></el-table-column>
-            </el-table>
-            <el-pagination v-model:current-page="majorPage" :page-size="pageSize" :total="filteredMajors.length" layout="total, prev, pager, next" />
-          </section>
-        </template>
-
-        <template v-else-if="section === 'cutoffs'">
-          <section class="admin-filter-panel admin-filter-panel--records">
-            <label><span>院校</span><el-select v-model="cutoffFilters.universityId" filterable clearable placeholder="请选择院校"><el-option v-for="item in universities" :key="item.id" :label="item.name" :value="item.id" /></el-select></label>
-            <label><span>年份</span><el-input v-model="cutoffFilters.admissionYear" clearable placeholder="请输入年份" /></label>
-            <label><span>省份</span><el-input v-model.trim="cutoffFilters.province" clearable placeholder="请输入省份" /></label>
-            <label><span>科类</span><el-select v-model="cutoffFilters.subjectType" clearable placeholder="全部"><el-option label="物理类" value="PHYSICS" /><el-option label="历史类" value="HISTORY" /></el-select></label>
-            <div class="admin-filter-panel__actions"><el-button type="primary" :icon="Search" @click="loadSection">查询</el-button><el-button @click="resetCutoffFilters">重置</el-button></div>
-            <el-button class="admin-create-button" type="primary" :icon="Plus" @click="openRecordDialog()">新增录取线</el-button>
-          </section>
-          <section class="admin-table-panel admin-table-panel--content">
-            <header><div><h3>院校录取事实数据</h3><p>推荐服务优先使用数据库录取线；缺失值保持为空，不制造默认分数</p></div><span>当前返回 {{ cutoffs.length }} 条</span></header>
-            <el-table :data="pagedCutoffs" max-height="610">
-              <el-table-column label="院校" min-width="220" fixed="left"><template #default="{ row }">{{ universityName(row.universityId) }}</template></el-table-column>
-              <el-table-column prop="admissionYear" label="年份" width="100" />
-              <el-table-column prop="province" label="招生省份" width="130" />
-              <el-table-column label="科类" width="120"><template #default="{ row }">{{ subjectLabel(row.subjectType) }}</template></el-table-column>
-              <el-table-column label="最低分" width="110"><template #default="{ row }">{{ row.cutoffScore ?? '—' }}</template></el-table-column>
-              <el-table-column label="最低位次" width="140"><template #default="{ row }">{{ formatNumber(row.minRank) }}</template></el-table-column>
-              <el-table-column label="操作" width="96" fixed="right"><template #default="{ row }"><el-button link type="primary" :icon="EditPen" @click="openRecordDialog(row)">编辑</el-button></template></el-table-column>
-            </el-table>
-            <el-pagination v-model:current-page="cutoffPage" :page-size="pageSize" :total="cutoffs.length" layout="total, prev, pager, next" />
-          </section>
-        </template>
-
-        <template v-else-if="section === 'majorCutoffs'">
-          <section class="admin-filter-panel admin-filter-panel--major-cutoff">
-            <label><span>院校</span><el-select v-model="majorCutoffFilters.universityId" filterable clearable placeholder="请选择院校"><el-option v-for="item in universities" :key="item.id" :label="item.name" :value="item.id" /></el-select></label>
-            <label><span>专业关键词</span><el-input v-model.trim="majorCutoffFilters.majorKeyword" clearable placeholder="请输入专业关键词" /></label>
-            <label><span>年份</span><el-input v-model="majorCutoffFilters.admissionYear" clearable placeholder="年份" /></label>
-            <label><span>省份</span><el-input v-model.trim="majorCutoffFilters.province" clearable placeholder="省份" /></label>
-            <label><span>科类</span><el-select v-model="majorCutoffFilters.subjectType" clearable placeholder="全部"><el-option label="物理类" value="PHYSICS" /><el-option label="历史类" value="HISTORY" /></el-select></label>
-            <div class="admin-filter-panel__actions"><el-button type="primary" :icon="Search" @click="loadSection">查询</el-button><el-button @click="resetMajorCutoffFilters">重置</el-button></div>
-            <el-button class="admin-create-button" type="primary" :icon="Plus" @click="openRecordDialog()">新增专业录取线</el-button>
-          </section>
-          <section class="admin-table-panel admin-table-panel--content">
-            <header><div><h3>专业录取事实数据</h3><p>数据同时关联院校与专业，供专业优先推荐链路使用</p></div><span>当前返回 {{ majorCutoffs.length }} 条</span></header>
-            <el-table :data="pagedMajorCutoffs" max-height="610">
-              <el-table-column label="院校" min-width="190" fixed="left"><template #default="{ row }">{{ universityName(row.universityId) }}</template></el-table-column>
-              <el-table-column prop="majorName" label="专业名称" min-width="190" />
-              <el-table-column prop="admissionYear" label="年份" width="90" />
-              <el-table-column prop="province" label="招生省份" width="110" />
-              <el-table-column label="科类" width="110"><template #default="{ row }">{{ subjectLabel(row.subjectType) }}</template></el-table-column>
-              <el-table-column label="最低分" width="100"><template #default="{ row }">{{ row.cutoffScore ?? '—' }}</template></el-table-column>
-              <el-table-column label="最低位次" width="130"><template #default="{ row }">{{ formatNumber(row.minRank) }}</template></el-table-column>
-              <el-table-column label="操作" width="96" fixed="right"><template #default="{ row }"><el-button link type="primary" :icon="EditPen" @click="openRecordDialog(row)">编辑</el-button></template></el-table-column>
-            </el-table>
-            <el-pagination v-model:current-page="majorCutoffPage" :page-size="pageSize" :total="majorCutoffs.length" layout="total, prev, pager, next" />
-          </section>
-        </template>
-      </main>
-    </section>
-  </div>
-
-  <el-dialog v-model="settingsVisible" title="用户设置" width="500px" destroy-on-close>
-    <div v-if="selectedUser" class="admin-dialog-form">
-      <dl>
-        <div><dt>用户名</dt><dd>{{ selectedUser.username }}</dd></div>
-        <div><dt>报考资料</dt><dd>{{ profileLabel(selectedUser) }}</dd></div>
-        <div><dt>使用概况</dt><dd>推荐 {{ selectedUser.recommendationCount || 0 }} · 志愿方案 {{ selectedUser.planCount || 0 }} · AI 会话 {{ selectedUser.conversationCount || 0 }}</dd></div>
-      </dl>
+  <el-dialog v-model="settingsVisible" title="用户设置" width="480px" destroy-on-close>
+    <div v-if="selectedUser" class="admin-user-dialog">
+      <dl><div><dt>用户名</dt><dd>{{ selectedUser.username }}</dd></div><div><dt>报考资料</dt><dd>{{ profileLabel(selectedUser) }}</dd></div><div><dt>使用概况</dt><dd>推荐 {{ selectedUser.recommendationCount }} · 志愿方案 {{ selectedUser.planCount }} · AI会话 {{ selectedUser.conversationCount }}</dd></div></dl>
       <label><span>角色</span><el-select v-model="settingsForm.role" :disabled="selectedUser.username === currentUsername"><el-option label="普通用户" value="USER" /><el-option label="管理员" value="ADMIN" /></el-select></label>
       <label><span>账号状态</span><el-switch v-model="settingsForm.enabled" :disabled="selectedUser.username === currentUsername" active-text="正常" inactive-text="已停用" /></label>
-      <p v-if="selectedUser.username === currentUsername" class="admin-dialog-form__note">为避免管理权限中断，当前管理员不能停用或降级自己的账号。</p>
+      <p v-if="selectedUser.username === currentUsername" class="admin-form-note">当前管理员不能停用或降级自己的账号。</p>
     </div>
     <template #footer><el-button @click="settingsVisible = false">取消</el-button><el-button type="primary" :loading="settingsSubmitting" @click="saveUserSettings">保存设置</el-button></template>
   </el-dialog>
 
-  <el-dialog v-model="recordDialogVisible" :title="recordDialogTitle" width="640px" destroy-on-close>
+  <el-dialog v-model="recordDialogVisible" :title="recordDialogTitle" width="620px" destroy-on-close>
     <div class="admin-record-form">
-      <template v-if="section === 'universities'">
-        <label><span>院校名称</span><el-input v-model.trim="recordForm.name" placeholder="请输入标准院校名称" /></label>
-        <label><span>省份</span><el-input v-model.trim="recordForm.province" placeholder="例如：浙江" /></label>
-        <label><span>院校层次</span><el-input v-model.trim="recordForm.tier" placeholder="例如：985" /></label>
-        <label class="admin-record-form__wide"><span>院校标签</span><el-input v-model.trim="recordForm.tags" placeholder="多个标签使用逗号分隔" /></label>
-        <div class="admin-record-form__wide admin-record-form__checks"><el-checkbox v-model="recordForm.is985">985</el-checkbox><el-checkbox v-model="recordForm.isDoubleFirstClass">双一流（含 211）</el-checkbox></div>
-      </template>
-      <template v-else-if="section === 'majors'">
-        <label><span>专业名称</span><el-input v-model.trim="recordForm.name" /></label>
-        <label><span>专业类别</span><el-input v-model.trim="recordForm.category" /></label>
-        <label><span>学位类型</span><el-input v-model.trim="recordForm.degreeType" /></label>
-        <label><span>选科要求</span><el-input v-model.trim="recordForm.subjectRequirement" /></label>
-        <label class="admin-record-form__wide"><span>标签</span><el-input v-model.trim="recordForm.tags" /></label>
-        <label class="admin-record-form__wide"><span>专业说明</span><el-input v-model.trim="recordForm.description" type="textarea" :rows="3" /></label>
-      </template>
-      <template v-else>
-        <label><span>院校</span><el-select v-model="recordForm.universityId" filterable><el-option v-for="item in universities" :key="item.id" :label="item.name" :value="item.id" /></el-select></label>
-        <label v-if="section === 'majorCutoffs'"><span>专业名称</span><el-input v-model.trim="recordForm.majorName" /></label>
-        <label><span>年份</span><el-input-number v-model="recordForm.admissionYear" :min="2000" :max="2100" /></label>
-        <label><span>省份</span><el-input v-model.trim="recordForm.province" /></label>
-        <label><span>科类</span><el-select v-model="recordForm.subjectType"><el-option label="物理类" value="PHYSICS" /><el-option label="历史类" value="HISTORY" /></el-select></label>
-        <label><span>最低分</span><el-input-number v-model="recordForm.cutoffScore" :min="0" :max="750" /></label>
-        <label><span>最低位次</span><el-input-number v-model="recordForm.minRank" :min="1" /></label>
-      </template>
+      <template v-if="section === 'universities'"><label><span>院校名称</span><el-input v-model.trim="recordForm.name" /></label><label><span>省份</span><el-input v-model.trim="recordForm.province" /></label><label><span>院校层次</span><el-input v-model.trim="recordForm.tier" /></label><label class="admin-record-form__wide"><span>院校标签</span><el-input v-model.trim="recordForm.tags" /></label><div class="admin-record-form__wide admin-checkboxes"><el-checkbox v-model="recordForm.is985">985</el-checkbox><el-checkbox v-model="recordForm.is211">211</el-checkbox><el-checkbox v-model="recordForm.isDoubleFirstClass">双一流</el-checkbox></div></template>
+      <template v-else-if="section === 'majors'"><label><span>专业名称</span><el-input v-model.trim="recordForm.name" /></label><label><span>专业类别</span><el-input v-model.trim="recordForm.category" /></label><label><span>学位类型</span><el-input v-model.trim="recordForm.degreeType" /></label><label><span>选科要求</span><el-input v-model.trim="recordForm.subjectRequirement" /></label><label class="admin-record-form__wide"><span>标签</span><el-input v-model.trim="recordForm.tags" /></label><label class="admin-record-form__wide"><span>专业说明</span><el-input v-model.trim="recordForm.description" type="textarea" :rows="3" /></label></template>
+      <template v-else><label><span>院校</span><el-select v-model="recordForm.universityId" filterable><el-option v-for="item in universities" :key="item.id" :label="item.name" :value="item.id" /></el-select></label><label v-if="section === 'majorCutoffs'"><span>专业名称</span><el-input v-model.trim="recordForm.majorName" /></label><label><span>年份</span><el-input-number v-model="recordForm.admissionYear" :min="2000" :max="2100" /></label><label><span>省份</span><el-input v-model.trim="recordForm.province" /></label><label><span>科类</span><el-select v-model="recordForm.subjectType"><el-option label="物理类" value="PHYSICS" /><el-option label="历史类" value="HISTORY" /></el-select></label><label><span>最低分</span><el-input-number v-model="recordForm.cutoffScore" :min="0" :max="750" /></label><label><span>最低位次</span><el-input-number v-model="recordForm.minRank" :min="1" /></label></template>
     </div>
     <template #footer><el-button @click="recordDialogVisible = false">取消</el-button><el-button type="primary" :loading="recordSubmitting" @click="saveRecord">保存</el-button></template>
   </el-dialog>
+    </section>
+  </div>
 </template>
 
-<style scoped>
-.admin-console {
-  --admin-accent: #f47721;
-  --admin-accent-dark: #db5f13;
-  --admin-blue: #2f6fed;
-  --admin-ink: #1d2939;
-  --admin-muted: #667085;
-  --admin-border: #e7ebf1;
+<style>
+.app-layout {
   display: grid;
-  grid-template-columns: 264px minmax(0, 1fr);
+  grid-template-columns: 272px minmax(0, 1fr);
+  min-height: 100vh;
+  background: #fff;
+}
+
+.app-sidebar {
+  position: sticky;
+  top: 0;
+  display: flex;
+  flex-direction: column;
   height: 100vh;
-  min-height: 720px;
+  min-width: 0;
+  padding: 28px 18px 0;
   overflow: hidden;
-  color: var(--admin-ink);
-  background: #f7f8fb;
+  border-right: 1px solid #e7edf5;
+  background: linear-gradient(180deg, #f8faff 0%, #f4f7ff 46%, #eaf1ff 72%, #cfdeff 100%);
 }
-.admin-console__sidebar { position: relative; display: flex; flex-direction: column; min-width: 0; padding: 24px 18px 0; overflow: hidden; border-right: 1px solid #e8e4df; background: linear-gradient(180deg, #fffaf5 0%, #fff 48%, #eef4ff 100%); }
-.admin-console__brand { display: flex; align-items: center; min-height: 42px; padding: 0 8px; }
-.admin-console__nav { position: relative; z-index: 2; display: grid; gap: 22px; margin-top: 30px; }
-.admin-console__nav-group > p { margin: 0 0 7px 14px; color: #a0a7b4; font-size: 11px; font-weight: 700; letter-spacing: 0.12em; }
-.admin-console__nav-item { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 46px; padding: 0 14px; border: 0; border-radius: 11px; color: #657187; background: transparent; font: inherit; font-size: 14px; text-align: left; cursor: pointer; transition: color 0.18s ease, background 0.18s ease, transform 0.18s ease; }
-.admin-console__nav-item .el-icon { font-size: 19px; }
-.admin-console__nav-item:hover { color: var(--admin-accent-dark); background: #fff1e7; transform: translateX(2px); }
-.admin-console__nav-item.is-active { color: var(--admin-accent-dark); background: linear-gradient(90deg, #ffe8d7 0%, #fff3ea 100%); font-weight: 650; box-shadow: inset 3px 0 0 var(--admin-accent); }
-.admin-console__connection { position: relative; z-index: 2; display: flex; align-items: flex-start; gap: 10px; margin: auto 4px 18px; padding: 12px 13px; border: 1px solid rgba(47, 111, 237, 0.13); border-radius: 12px; background: rgba(255, 255, 255, 0.82); backdrop-filter: blur(8px); }
-.admin-console__connection-dot { flex: 0 0 auto; width: 8px; height: 8px; margin-top: 5px; border-radius: 50%; background: #20b26b; box-shadow: 0 0 0 4px rgba(32, 178, 107, 0.12); }
-.admin-console__connection div { display: grid; gap: 4px; min-width: 0; }
-.admin-console__connection strong { color: #344054; font-size: 12px; }
-.admin-console__connection small { overflow: hidden; color: #8a94a6; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
-.admin-console__art { position: absolute; z-index: 0; right: -35px; bottom: -48px; width: 265px; opacity: 0.4; pointer-events: none; mask-image: linear-gradient(to bottom, transparent, #000 28%); }
-.admin-console__workspace { display: grid; grid-template-rows: 78px minmax(0, 1fr); min-width: 0; min-height: 0; }
-.admin-console__header { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 0 28px; border-bottom: 1px solid var(--admin-border); background: rgba(255, 255, 255, 0.94); backdrop-filter: blur(12px); }
-.admin-console__heading { min-width: 0; }
-.admin-console__heading > span { display: none; color: #98a2b3; font-size: 11px; }
-.admin-console__heading h1 { margin: 0; color: #1d2939; font-size: 22px; line-height: 1.25; }
-.admin-console__heading p { margin: 5px 0 0; color: #8a94a6; font-size: 12px; }
-.admin-console__header-actions { display: flex; align-items: center; gap: 14px; }
-.admin-console__icon-button { display: grid; place-items: center; width: 36px; height: 36px; border: 1px solid #e3e8ef; border-radius: 10px; color: #667085; background: #fff; cursor: pointer; }
-.admin-console__icon-button:hover { color: var(--admin-blue); border-color: #bed0f7; }
-.admin-console__icon-button:disabled { cursor: wait; opacity: 0.65; }
-.admin-console__identity { display: flex; align-items: center; gap: 10px; min-width: 150px; padding-left: 14px; border-left: 1px solid #eaecf0; }
-.admin-console__avatar { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 50%; color: #fff; background: linear-gradient(135deg, #ffab70, var(--admin-accent)); font-size: 15px; font-weight: 700; box-shadow: 0 7px 16px rgba(244, 119, 33, 0.2); }
-.admin-console__identity div { display: grid; gap: 2px; }
-.admin-console__identity strong { color: #344054; font-size: 13px; }
-.admin-console__identity small { color: #98a2b3; font-size: 10px; }
-.admin-console__logout { display: inline-flex; align-items: center; gap: 6px; min-height: 34px; padding: 0 11px; border: 0; color: #667085; background: transparent; font: inherit; font-size: 12px; cursor: pointer; }
-.admin-console__logout:hover { color: #d92d20; }
-.admin-console__content { min-height: 0; padding: 24px 28px 36px; overflow: auto; }
-.admin-dashboard__hero { display: flex; align-items: center; justify-content: space-between; gap: 28px; padding: 24px 26px; border: 1px solid #f1dfd2; border-radius: 16px; background: linear-gradient(120deg, #fff9f4 0%, #fff 55%, #f1f6ff 100%); box-shadow: 0 8px 28px rgba(45, 55, 72, 0.035); }
-.admin-dashboard__eyebrow { color: var(--admin-accent); font-size: 11px; font-weight: 800; letter-spacing: 0.13em; }
-.admin-dashboard__hero h2 { margin: 7px 0 0; font-size: 24px; line-height: 1.3; }
-.admin-dashboard__hero p { margin: 8px 0 0; color: var(--admin-muted); font-size: 13px; line-height: 1.7; }
-.admin-dashboard__sync { display: grid; justify-items: end; gap: 7px; flex: 0 0 auto; }
-.admin-dashboard__sync span { display: inline-flex; align-items: center; gap: 7px; padding: 7px 11px; border-radius: 999px; color: #18794e; background: #ecfdf3; font-size: 12px; font-weight: 600; }
-.admin-dashboard__sync i { width: 7px; height: 7px; border-radius: 50%; background: #20b26b; }
-.admin-dashboard__sync small { color: #98a2b3; font-size: 11px; }
-.admin-dashboard__metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin-top: 18px; }
-.admin-dashboard__metrics > button { display: flex; align-items: center; gap: 15px; min-width: 0; min-height: 112px; padding: 20px; border: 1px solid var(--admin-border); border-radius: 14px; color: inherit; background: #fff; text-align: left; cursor: pointer; box-shadow: 0 7px 22px rgba(16, 24, 40, 0.025); transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease; }
-.admin-dashboard__metrics > button:hover { transform: translateY(-2px); border-color: #fac9a7; box-shadow: 0 12px 28px rgba(55, 65, 81, 0.07); }
-.admin-dashboard__metric-icon { display: grid; place-items: center; flex: 0 0 auto; width: 46px; height: 46px; border-radius: 13px; color: var(--admin-accent); background: #fff2e8; font-size: 22px; }
-.admin-dashboard__metrics button:nth-child(2) .admin-dashboard__metric-icon { color: #2f6fed; background: #edf3ff; }
-.admin-dashboard__metrics button:nth-child(3) .admin-dashboard__metric-icon { color: #7f56d9; background: #f4f0ff; }
-.admin-dashboard__metrics button:nth-child(4) .admin-dashboard__metric-icon { color: #039855; background: #ecfdf3; }
-.admin-dashboard__metrics button > div { display: grid; min-width: 0; }
-.admin-dashboard__metrics small { color: #667085; font-size: 12px; }
-.admin-dashboard__metrics strong { margin-top: 3px; color: #101828; font-size: 27px; line-height: 1.2; }
-.admin-dashboard__metrics em { overflow: hidden; margin-top: 5px; color: #98a2b3; font-size: 10px; font-style: normal; text-overflow: ellipsis; white-space: nowrap; }
-.admin-dashboard__grid { display: grid; grid-template-columns: minmax(0, 1.18fr) minmax(360px, 0.82fr); gap: 16px; margin-top: 16px; }
-.admin-dashboard__grid--bottom { grid-template-columns: minmax(0, 0.95fr) minmax(420px, 1.05fr); }
-.admin-dashboard__panel { min-width: 0; padding: 21px 22px; border: 1px solid var(--admin-border); border-radius: 14px; background: #fff; box-shadow: 0 7px 22px rgba(16, 24, 40, 0.025); }
-.admin-dashboard__panel > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
-.admin-dashboard__panel > header h3 { margin: 0; font-size: 16px; }
-.admin-dashboard__panel > header p { margin: 5px 0 0; color: #98a2b3; font-size: 11px; }
-.admin-dashboard__panel > header > .el-icon { color: #98a2b3; font-size: 20px; }
-.admin-dashboard__panel > header > button { border: 0; color: var(--admin-accent-dark); background: transparent; font: inherit; font-size: 12px; cursor: pointer; }
-.admin-dashboard__business-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 20px; }
-.admin-dashboard__business-stats > div { display: grid; min-width: 0; padding: 15px; border: 1px solid #edf0f4; border-radius: 11px; background: #fbfcfe; }
-.admin-dashboard__business-stats span { color: #667085; font-size: 11px; }
-.admin-dashboard__business-stats strong { margin-top: 8px; color: #1d2939; font-size: 24px; }
-.admin-dashboard__business-stats small { overflow: hidden; margin-top: 4px; color: #98a2b3; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
-.admin-dashboard__progress-list { display: grid; gap: 16px; margin-top: 20px; }
-.admin-dashboard__progress-list > div { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 7px 12px; }
-.admin-dashboard__progress-list span { color: #475467; font-size: 12px; }
-.admin-dashboard__progress-list b { color: #344054; font-size: 12px; }
-.admin-dashboard__progress-list :deep(.el-progress) { grid-column: 1 / -1; }
-.admin-dashboard__progress-list :deep(.el-progress-bar__outer) { height: 7px !important; background: #f0f2f5; }
-.admin-dashboard__attention-list { display: grid; gap: 8px; margin-top: 17px; }
-.admin-dashboard__attention-list > button { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; align-items: center; gap: 11px; width: 100%; padding: 11px 12px; border: 1px solid transparent; border-radius: 9px; color: inherit; background: #fafbfc; text-align: left; cursor: pointer; }
-.admin-dashboard__attention-list > button:hover { border-color: #f2d2bd; background: #fffaf6; }
-.admin-dashboard__attention-status { width: 8px; height: 8px; border-radius: 50%; background: #98a2b3; }
-.admin-dashboard__attention-status.is-warning { background: #f79009; }
-.admin-dashboard__attention-status.is-danger { background: #f04438; }
-.admin-dashboard__attention-status.is-info { background: #2f6fed; }
-.admin-dashboard__attention-status.is-success { background: #12b76a; }
-.admin-dashboard__attention-list div { display: grid; gap: 3px; min-width: 0; }
-.admin-dashboard__attention-list strong { color: #344054; font-size: 11px; }
-.admin-dashboard__attention-list small { overflow: hidden; color: #98a2b3; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
-.admin-dashboard__attention-list b { color: #475467; font-size: 12px; }
-.admin-dashboard__recent-list { display: grid; margin-top: 15px; }
-.admin-dashboard__recent-list > div { display: grid; grid-template-columns: 46px minmax(0, 1fr) auto; align-items: center; gap: 11px; padding: 10px 0; border-bottom: 1px solid #f0f2f5; }
-.admin-dashboard__recent-list > div:last-child { border-bottom: 0; }
-.admin-dashboard__year { display: grid; place-items: center; min-height: 28px; border-radius: 7px; color: var(--admin-accent-dark); background: #fff2e8; font-size: 10px; font-weight: 700; }
-.admin-dashboard__recent-list div > div { display: grid; gap: 3px; min-width: 0; }
-.admin-dashboard__recent-list strong { overflow: hidden; color: #344054; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
-.admin-dashboard__recent-list small { color: #98a2b3; font-size: 9px; }
-.admin-dashboard__recent-list p { display: grid; justify-items: end; gap: 2px; margin: 0; color: #667085; font-size: 10px; }
-.admin-dashboard__recent-list p b { color: #1d2939; font-size: 14px; }
-.admin-user-overview { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); min-height: 104px; padding: 0 18px; border: 1px solid var(--admin-border); border-radius: 14px; background: linear-gradient(110deg, #fffaf6 0%, #fff 48%, #f6f9ff 100%); }
-.admin-user-overview > div { position: relative; display: flex; align-items: center; justify-content: center; gap: 14px; }
-.admin-user-overview > div:not(:last-child)::after { position: absolute; top: 31px; right: 0; width: 1px; height: 42px; content: ""; background: #e7ebf1; }
-.admin-user-overview > div > span { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 50%; color: var(--admin-accent); background: #fff0e4; font-size: 20px; }
-.admin-user-overview p { display: grid; gap: 3px; margin: 0; color: #667085; font-size: 12px; }
-.admin-user-overview strong { color: var(--admin-accent-dark); font-size: 26px; }
-.admin-filter-panel { display: grid; grid-template-columns: minmax(210px, 1.3fr) repeat(2, minmax(160px, 1fr)) auto; gap: 18px; align-items: end; margin-top: 16px; padding: 18px 20px; border: 1px solid var(--admin-border); border-radius: 14px; background: #fff; }
-.admin-filter-panel--entity { grid-template-columns: minmax(250px, 1.6fr) minmax(160px, 0.8fr) auto 132px; }
-.admin-filter-panel--major { grid-template-columns: minmax(220px, 1.4fr) repeat(2, minmax(145px, 0.8fr)) auto 132px; }
-.admin-filter-panel--records { grid-template-columns: minmax(180px, 1.3fr) repeat(3, minmax(115px, 0.72fr)) auto 145px; }
-.admin-filter-panel--major-cutoff { grid-template-columns: minmax(170px, 1fr) minmax(150px, 0.9fr) repeat(3, minmax(100px, 0.62fr)) auto 178px; }
-.admin-filter-panel label, .admin-dialog-form label, .admin-record-form label { display: grid; gap: 7px; min-width: 0; color: #475467; font-size: 12px; font-weight: 600; }
-.admin-filter-panel :deep(.el-select), .admin-dialog-form :deep(.el-select), .admin-record-form :deep(.el-select), .admin-record-form :deep(.el-input-number) { width: 100%; }
-.admin-filter-panel :deep(.el-input__wrapper), .admin-filter-panel :deep(.el-select__wrapper) { min-height: 38px; border-radius: 8px; box-shadow: 0 0 0 1px #dfe4ea inset; }
-.admin-filter-panel__actions { display: flex; gap: 8px; }
-.admin-filter-panel__actions :deep(.el-button--primary), .admin-create-button { min-width: 92px; }
-.admin-filter-panel :deep(.el-button--primary), .admin-create-button { --el-button-bg-color: var(--admin-accent); --el-button-border-color: var(--admin-accent); --el-button-hover-bg-color: #ff8b42; --el-button-hover-border-color: #ff8b42; }
-.admin-table-panel { margin-top: 16px; overflow: hidden; border: 1px solid var(--admin-border); border-radius: 14px; background: #fff; }
-.admin-table-panel > header { display: flex; align-items: center; justify-content: space-between; gap: 20px; min-height: 68px; padding: 0 20px; border-bottom: 1px solid #edf0f4; }
-.admin-table-panel > header h3 { margin: 0; font-size: 15px; }
-.admin-table-panel > header p { margin: 5px 0 0; color: #98a2b3; font-size: 10px; }
-.admin-table-panel > header > span { flex: 0 0 auto; color: #98a2b3; font-size: 11px; }
-.admin-table-panel :deep(.el-table) { --el-table-border-color: #edf0f4; --el-table-header-bg-color: #f8f9fb; --el-table-row-hover-bg-color: #fffaf6; }
-.admin-table-panel :deep(.el-table th.el-table__cell) { height: 48px; color: #475467; font-size: 12px; }
-.admin-table-panel :deep(.el-table td.el-table__cell) { height: 54px; color: #475467; font-size: 12px; }
-.admin-table-panel :deep(.el-pagination) { justify-content: flex-end; padding: 14px 18px; border-top: 1px solid #edf0f4; }
-.admin-table-panel :deep(.el-pagination .is-active) { background: var(--admin-accent) !important; }
-.admin-text--muted { color: #98a2b3; }
-.admin-dialog-form { display: grid; gap: 18px; }
-.admin-dialog-form dl { display: grid; gap: 11px; margin: 0; padding: 15px; border-radius: 11px; background: #f8f9fb; }
-.admin-dialog-form dl > div { display: grid; grid-template-columns: 82px minmax(0, 1fr); gap: 12px; }
-.admin-dialog-form dt { color: #98a2b3; font-size: 12px; }
-.admin-dialog-form dd { margin: 0; color: #344054; font-size: 12px; }
-.admin-dialog-form__note { margin: -5px 0 0; color: #98a2b3; font-size: 11px; line-height: 1.6; }
-.admin-record-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 17px 20px; }
-.admin-record-form__wide { grid-column: 1 / -1; }
-.admin-record-form__checks { display: flex; gap: 24px; padding-top: 2px; }
-.admin-record-form :deep(.el-input__wrapper), .admin-record-form :deep(.el-select__wrapper), .admin-record-form :deep(.el-input-number) { min-height: 39px; border-radius: 8px; }
-.is-spinning { animation: admin-spin 0.85s linear infinite; }
-@keyframes admin-spin { to { transform: rotate(360deg); } }
-@media (max-width: 1380px) {
-  .admin-console { grid-template-columns: 232px minmax(0, 1fr); }
-  .admin-console__content { padding: 20px; }
-  .admin-dashboard__metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .admin-dashboard__grid, .admin-dashboard__grid--bottom { grid-template-columns: 1fr; }
-  .admin-filter-panel, .admin-filter-panel--entity, .admin-filter-panel--major, .admin-filter-panel--records, .admin-filter-panel--major-cutoff { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .admin-filter-panel__actions { justify-content: flex-end; }
-  .admin-create-button { width: 100%; }
+
+.app-brand {
+  display: flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 0 10px;
 }
+
+.app-brand-lockup {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  color: #172033;
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+}
+
+.app-brand-lockup__mark,
+.app-user__avatar,
+.summary-panel__icon,
+.university-card__mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  color: #2f6fed;
+  background: #eaf1ff;
+}
+
+.app-brand-lockup__mark {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  color: #f06418;
+  background: #fff0e5;
+  font-size: 21px;
+}
+
+.app-brand-lockup__badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 20px;
+  padding: 0 7px;
+  border: 1px solid #bfd2ff;
+  border-radius: 6px;
+  color: #2f6fed;
+  background: rgba(234, 241, 255, 0.88);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.app-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 34px;
+}
+
+.app-nav__item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 52px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: 9px;
+  color: #667085;
+  background: transparent;
+  font: inherit;
+  font-size: 16px;
+  text-align: left;
+  cursor: pointer;
+  transition: color 0.18s ease, background 0.18s ease;
+}
+
+.app-nav__item .el-icon {
+  font-size: 20px;
+}
+
+.app-nav__item:hover {
+  color: #245edb;
+  background: #edf3ff;
+}
+
+.app-nav__item.is-active {
+  color: #245edb;
+  background: #e7efff;
+  font-weight: 600;
+}
+
+.app-sidebar__art {
+  flex: 0 0 auto;
+  width: calc(100% + 36px);
+  aspect-ratio: 0.8;
+  margin: auto -18px 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.app-sidebar__art img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center bottom;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, rgba(0, 0, 0, 0.55) 18%, #000 34%);
+  mask-image: linear-gradient(to bottom, transparent 0%, rgba(0, 0, 0, 0.55) 18%, #000 34%);
+}
+
+.app-content {
+  min-width: 0;
+  background: #f8faff;
+}
+
+.app-header {
+  display: flex;
+  align-items: stretch;
+  min-height: 76px;
+  height: 76px;
+  padding: 0;
+  border-bottom: 1px solid #e8edf4;
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(8px);
+}
+
+.app-header__brand-column {
+  display: flex;
+  align-items: center;
+  width: 272px;
+  min-width: 272px;
+  padding: 0 28px;
+  border-right: 1px solid #e7edf5;
+}
+
+.app-header__content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex: 1;
+  min-width: 0;
+  padding: 0 28px;
+}
+
+.app-header__content h1 {
+  margin: 0;
+  color: #1e293b;
+  font-size: 22px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+.app-user {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  color: #344054;
+  font-size: 14px;
+}
+
+.app-user__meta {
+  color: #98a2b3;
+  white-space: nowrap;
+}
+
+.app-user__avatar {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  font-size: 19px;
+}
+
+.app-user__divider {
+  width: 1px;
+  height: 16px;
+  margin: 0 2px;
+  background: #dfe5ed;
+}
+
+.app-route-view {
+  min-width: 0;
+}
+
+.app-main {
+  padding: 22px 28px 40px;
+}
+
+/* Admin workspace reuses the shared app shell and visual tokens. */
+.admin-view {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  height: calc(100vh - 76px);
+  min-height: 0;
+  padding: 24px 28px 28px;
+  overflow: hidden;
+  background: #f8faff;
+}
+
+.admin-overview {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  flex: 0 0 auto;
+  min-height: 92px;
+  padding: 0 28px;
+  border: 1px solid #e4eaf2;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #fbfdff 0%, #f7faff 100%);
+}
+
+.admin-overview > div {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+}
+
+.admin-overview__icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  color: #1f6feb;
+  background: #edf4ff;
+  font-size: 22px;
+}
+
+.admin-overview > div:not(:last-child)::after {
+  position: absolute;
+  top: 28px;
+  right: 0;
+  width: 1px;
+  height: 36px;
+  content: "";
+  background: #dce5f1;
+}
+
+.admin-overview span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: #667085;
+  font-size: 14px;
+}
+
+.admin-overview strong {
+  color: #1f6feb;
+  font-size: 26px;
+  font-weight: 650;
+}
+
+.admin-ai-panel {
+  max-width: 920px;
+  padding: 30px;
+  border: 1px solid #f0dfd2;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 10px 28px rgba(114, 57, 18, 0.06);
+}
+
+.admin-ai-panel__heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; padding-bottom: 24px; border-bottom: 1px solid #f2e7df; }
+.admin-ai-panel__heading h2 { margin: 5px 0 8px; color: #1f2937; font-size: 24px; }
+.admin-ai-panel__heading p { margin: 0; color: #7a879a; line-height: 1.7; }
+.admin-ai-panel__eyebrow { color: #e86612; font-size: 12px; font-weight: 700; letter-spacing: 0.12em; }
+.admin-ai-form { margin-top: 26px; }
+.admin-ai-form__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 20px; }
+.admin-ai-form__wide { grid-column: 1 / -1; }
+.admin-ai-field-help { margin: 6px 0 0; color: #8a94a3; font-size: 12px; line-height: 1.6; }
+.admin-ai-test-result { margin-top: 8px; }
+.admin-ai-form__footer { display: flex; align-items: flex-end; justify-content: space-between; gap: 28px; margin-top: 8px; padding-top: 22px; border-top: 1px solid #f2e7df; }
+.admin-ai-form__footer p { margin: 6px 0 0; color: #8a94a3; font-size: 12px; }
+.admin-ai-form__actions { display: flex; flex: 0 0 auto; gap: 10px; }
+
+.app-layout--admin .app-sidebar { border-right-color: #f0dfd2; background: linear-gradient(180deg, #fffaf6 0%, #fff5ed 48%, #ffe8d5 100%); }
+.app-layout--admin .app-content,
+.app-layout--admin .admin-view { background: #fffaf6; }
+.app-layout--admin .app-brand-lockup__badge { border-color: #ffc79e; color: #e86612; background: #fff1e6; }
+.app-layout--admin .app-nav__item:hover { color: #e86612; background: #fff0e5; }
+.app-layout--admin .app-nav__item.is-active { color: #d95c08; background: #ffe8d5; }
+.app-layout--admin .app-user__avatar,
+.app-layout--admin .admin-overview__icon { color: #e86612; background: #fff0e5; }
+.app-layout--admin .admin-overview { border-color: #f0dfd2; background: linear-gradient(180deg, #fff 0%, #fffaf6 100%); }
+.app-layout--admin .admin-overview strong { color: #e86612; }
+.app-layout--admin .admin-filter-bar,
+.app-layout--admin .admin-section-toolbar,
+.app-layout--admin .admin-table-panel { border-color: #f0dfd2; }
+.app-layout--admin .el-button--primary:not(.is-link):not(.is-text) { border-color: #ff7a1a; background: #ff7a1a; }
+.app-layout--admin .el-button--primary:not(.is-link):not(.is-text):hover,
+.app-layout--admin .el-button--primary:not(.is-link):not(.is-text):focus { border-color: #ed6d12; background: #ed6d12; }
+.app-layout--admin .el-button.is-link.el-button--primary {
+  border-color: transparent;
+  color: #e86612;
+  background: transparent;
+}
+.app-layout--admin .el-button.is-link.el-button--primary:hover,
+.app-layout--admin .el-button.is-link.el-button--primary:focus { color: #d95c08; background: transparent; }
+.app-layout--admin .el-input__wrapper.is-focus,
+.app-layout--admin .el-select__wrapper.is-focused { box-shadow: 0 0 0 1px #ff7a1a inset !important; }
+
 @media (max-width: 900px) {
-  .admin-console { display: block; height: auto; min-height: 100vh; overflow: visible; }
-  .admin-console__sidebar { height: auto; padding-bottom: 14px; border-right: 0; border-bottom: 1px solid #e8e4df; }
-  .admin-console__nav { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 18px; }
-  .admin-console__nav-group > p { margin-left: 8px; }
-  .admin-console__connection, .admin-console__art { display: none; }
-  .admin-console__workspace { display: block; }
-  .admin-console__header { min-height: 78px; }
+  .admin-ai-form__grid { grid-template-columns: 1fr; }
+  .admin-ai-form__wide { grid-column: auto; }
+  .admin-ai-panel__heading,
+  .admin-ai-form__footer { align-items: stretch; flex-direction: column; }
+  .admin-ai-form__actions { justify-content: flex-end; }
 }
-@media (max-width: 680px) {
-  .admin-console__nav { grid-template-columns: 1fr; }
-  .admin-console__header { align-items: flex-start; padding: 16px; }
-  .admin-console__heading p, .admin-console__identity div, .admin-console__icon-button { display: none; }
-  .admin-console__identity { min-width: auto; padding-left: 0; border-left: 0; }
-  .admin-console__content { padding: 14px; }
-  .admin-dashboard__hero { align-items: flex-start; flex-direction: column; }
-  .admin-dashboard__sync { justify-items: start; }
-  .admin-dashboard__metrics, .admin-user-overview, .admin-filter-panel, .admin-filter-panel--entity, .admin-filter-panel--major, .admin-filter-panel--records, .admin-filter-panel--major-cutoff, .admin-record-form { grid-template-columns: 1fr; }
-  .admin-user-overview > div { min-height: 76px; }
-  .admin-user-overview > div::after { display: none; }
-  .admin-dashboard__business-stats { grid-template-columns: 1fr; }
-  .admin-record-form__wide { grid-column: auto; }
+
+.admin-filter-bar,
+.admin-section-toolbar,
+.admin-table-panel {
+  border: 1px solid #e4eaf2;
+  border-radius: 14px;
+  background: #fff;
+}
+
+.admin-filter-bar {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.2fr) minmax(180px, 1fr) minmax(180px, 1fr) auto;
+  gap: 24px;
+  align-items: end;
+  flex: 0 0 auto;
+  padding: 20px 24px;
+}
+
+.admin-filter-bar--records {
+  grid-template-columns: repeat(4, minmax(130px, 1fr)) auto 140px;
+}
+
+.admin-filter-bar--entity {
+  grid-template-columns: minmax(260px, 1.7fr) minmax(180px, 1fr) auto 140px;
+}
+
+.admin-filter-bar--major {
+  grid-template-columns: minmax(240px, 1.5fr) repeat(2, minmax(160px, 1fr)) auto 140px;
+}
+
+.admin-filter-bar--major-cutoff {
+  grid-template-columns: repeat(5, minmax(110px, 1fr)) auto 180px;
+}
+
+.admin-filter-bar label,
+.admin-user-dialog label,
+.admin-record-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  color: #344054;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.admin-filter-bar .el-select,
+.admin-record-form .el-select,
+.admin-record-form .el-input-number,
+.admin-user-dialog .el-select {
+  width: 100%;
+}
+
+.admin-filter-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.admin-filter-actions .el-button--primary,
+.admin-section-toolbar .el-button--primary,
+.admin-create-button {
+  min-width: 116px;
+}
+
+.admin-create-button {
+  align-self: end;
+}
+
+.admin-section-toolbar {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  flex: 0 0 auto;
+  padding: 20px 24px;
+}
+
+.admin-section-toolbar .el-input {
+  max-width: 460px;
+}
+
+.admin-table-panel {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.admin-table-panel .el-table {
+  flex: 1 1 auto;
+  --el-table-border-color: #edf1f6;
+  --el-table-header-bg-color: #f8faff;
+  --el-table-row-hover-bg-color: #f7faff;
+}
+
+.admin-table-panel .el-table th.el-table__cell {
+  height: 52px;
+  color: #344054;
+  font-weight: 600;
+}
+
+.admin-table-panel .el-table td.el-table__cell {
+  height: 58px;
+  color: #475467;
+}
+
+.admin-table-panel .el-pagination {
+  justify-content: flex-end;
+  flex: 0 0 auto;
+  padding: 16px 20px;
+  border-top: 1px solid #edf1f6;
+}
+
+.admin-user-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.admin-user-dialog dl {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 16px;
+  border-radius: 12px;
+  background: #f8faff;
+}
+
+.admin-user-dialog dl > div {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  gap: 12px;
+}
+
+.admin-user-dialog dt {
+  color: #98a2b3;
+}
+
+.admin-user-dialog dd {
+  margin: 0;
+  color: #344054;
+}
+
+.admin-form-note {
+  margin: -4px 0 0;
+  color: #98a2b3;
+  font-size: 13px;
+}
+
+.admin-record-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px 20px;
+}
+
+.admin-record-form__wide {
+  grid-column: 1 / -1;
+}
+
+.admin-checkboxes {
+  display: flex;
+  flex-direction: row;
+  gap: 24px;
+  padding-top: 4px;
+}
+
+/* Account for the persistent 272px sidebar on common 1280/1366px desktops. */
+@media (max-width: 1400px) {
+  .admin-view {
+    padding: 20px;
+  }
+
+  .admin-filter-bar,
+  .admin-filter-bar--records,
+  .admin-filter-bar--entity,
+  .admin-filter-bar--major,
+  .admin-filter-bar--major-cutoff {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+  }
+
+  .admin-filter-actions {
+    justify-content: flex-end;
+  }
+
+  .admin-create-button {
+    width: 100%;
+  }
+}
+
+@media (max-width: 760px) {
+  .admin-view {
+    height: auto;
+    min-height: calc(100vh - 62px);
+    overflow: visible;
+    padding: 14px;
+  }
+
+  .admin-overview {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding: 12px;
+  }
+
+  .admin-overview > div {
+    min-height: 64px;
+  }
+
+  .admin-overview > div::after {
+    display: none;
+  }
+
+  .admin-filter-bar,
+  .admin-filter-bar--records,
+  .admin-filter-bar--entity,
+  .admin-filter-bar--major,
+  .admin-filter-bar--major-cutoff,
+  .admin-record-form {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-filter-actions,
+  .admin-record-form__wide {
+    grid-column: auto;
+  }
+
+  .admin-table-panel {
+    min-height: 520px;
+  }
+}
+
+
+.app-user__logout { display:inline-flex; align-items:center; gap:6px; padding:6px 0; border:0; color:#667085; background:transparent; font:inherit; cursor:pointer; }
+.app-user__logout:hover { color:#e86612; }
+@media (max-width:900px) {
+  .app-layout { grid-template-columns:220px minmax(0,1fr); }
+  .app-sidebar { padding-right:12px; padding-left:12px; }
+  .app-sidebar__art { width:calc(100% + 24px); margin-right:-12px; margin-left:-12px; }
 }
 </style>

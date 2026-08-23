@@ -343,6 +343,15 @@ const MOCK_ADMIN_MAJOR_CUTOFFS = [
   { id: 5, universityId: 10, majorId: 5, majorName: "临床医学", admissionYear: 2024, province: "广东", subjectType: "PHYSICS", cutoffScore: 640, minRank: 6800 }
 ];
 
+const MOCK_ADMIN_AI_CONFIG = {
+  provider: "openai-compatible",
+  baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+  model: "qwen-plus",
+  apiKeyConfigured: false,
+  apiKeyMasked: "",
+  apiKeySource: "none"
+};
+
 function nextId(items) {
   return Math.max(0, ...items.map((item) => Number(item.id) || 0)) + 1;
 }
@@ -624,7 +633,7 @@ export function setupMockInterceptor() {
       });
     }
 
-    if (path === "/api/admin/users" && method === "GET") {
+    if ((path === "/api/admin/users" || path === "/api/admin/users/count") && method === "GET") {
       const keyword = searchParams.get("keyword")?.trim().toLowerCase();
       const role = searchParams.get("role");
       const enabled = searchParams.get("enabled");
@@ -634,7 +643,38 @@ export function setupMockInterceptor() {
         if (enabled != null && String(item.enabled) !== enabled) return false;
         return true;
       });
-      return mockResponse(users);
+      if (path.endsWith("/count")) return mockResponse({ total: users.length });
+      const page = Math.max(1, Number(searchParams.get("page") || 1));
+      const size = Math.max(1, Number(searchParams.get("size") || 200));
+      return mockResponse(users.slice((page - 1) * size, page * size));
+    }
+
+    if (path === "/api/admin/ai-config" && method === "GET") {
+      return mockResponse(MOCK_ADMIN_AI_CONFIG);
+    }
+    if (path === "/api/admin/ai-config/test" && method === "POST") {
+      const body = readJsonBody(options);
+      const hasKey = Boolean(body.apiKey) || MOCK_ADMIN_AI_CONFIG.apiKeyConfigured;
+      const available = Boolean(body.provider && body.baseUrl && body.model && hasKey);
+      return mockResponse({
+        available,
+        message: available ? "连接成功，模型响应正常" : "未配置 API Key，请填写后再检测",
+        provider: body.provider || "openai-compatible",
+        model: body.model || "",
+        latencyMillis: available ? 128 : 0
+      });
+    }
+    if (path === "/api/admin/ai-config" && method === "PUT") {
+      const body = readJsonBody(options);
+      Object.assign(MOCK_ADMIN_AI_CONFIG, {
+        provider: body.provider,
+        baseUrl: body.baseUrl,
+        model: body.model,
+        apiKeyConfigured: Boolean(body.apiKey) || MOCK_ADMIN_AI_CONFIG.apiKeyConfigured,
+        apiKeyMasked: body.apiKey ? `••••${String(body.apiKey).slice(-4)}` : MOCK_ADMIN_AI_CONFIG.apiKeyMasked,
+        apiKeySource: body.apiKey ? "database" : MOCK_ADMIN_AI_CONFIG.apiKeySource
+      });
+      return mockResponse(MOCK_ADMIN_AI_CONFIG);
     }
 
     const adminUserDetailMatch = path.match(/^\/api\/admin\/users\/(\d+)$/);
