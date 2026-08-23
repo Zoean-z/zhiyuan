@@ -25,6 +25,17 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         this.authService = authService;
     }
 
+    /**
+     * A {@link org.springframework.web.servlet.mvc.method.annotation.SseEmitter} completes through
+     * an internal ASYNC dispatch after the original request filter chain has cleared its context.
+     * Rebuild the JWT-backed context for that dispatch so an authenticated SSE response is not
+     * rejected after it has already started writing bytes.
+     */
+    @Override
+    protected boolean shouldNotFilterAsyncDispatch() {
+        return false;
+    }
+
     @Override
     protected void doFilterInternal(HttpServletRequest request,
                                     HttpServletResponse response,

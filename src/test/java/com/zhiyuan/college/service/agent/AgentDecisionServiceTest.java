@@ -80,6 +80,19 @@ class AgentDecisionServiceTest {
         assertEquals(AgentToolNames.RECOMMEND_MAJORS, d.getAction());
     }
 
+    @Test
+    void shouldUseMajorOverview_whenUserAsksAboutMajorProspectAndCurriculum() {
+        AgentDecision d = service.decide("临床医学专业怎么样？就业前景和学习内容介绍一下", List.of(), null);
+        assertEquals(AgentToolNames.GET_MAJOR_OVERVIEW, d.getAction());
+        assertEquals("临床医学", d.getToolArgs().get("majorKeyword"));
+    }
+
+    @Test
+    void shouldKeepRecommendation_whenUserExplicitlyRequestsMajorRecommendation() {
+        AgentDecision d = service.decide("推荐临床医学专业", List.of(), null);
+        assertEquals(AgentToolNames.RECOMMEND_MAJORS, d.getAction());
+    }
+
     // --- 正向用例 ---
     @Test
     void shouldTriggerGetCurrentPlan_forViewCurrentPlan() {

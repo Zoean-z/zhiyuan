@@ -384,6 +384,11 @@ const diagScore = computed(() => {
   return { label: "继续完善", cls: "mid" };
 });
 
+function openDiagnosis() {
+  activeTab.value = "sheet";
+  diagVisible.value = true;
+}
+
 /* ===== 志愿表视图模式：详细 / 表格 ===== */
 const viewMode = ref(props.initialView === "table" ? "table" : "detail");
 const tableRows = computed(() =>
@@ -448,7 +453,7 @@ watch(() => props.profile.score, () => {
   });
 });
 
-defineExpose({ smartFill });
+defineExpose({ smartFill, openDiagnosis });
 </script>
 
 <template>

@@ -26,6 +26,9 @@ public class AgentDecisionService {
     private static final Pattern DIGIT_SELECTION_PATTERN = Pattern.compile("第\\s*([1-6])\\s*(?:个|所|条)");
     private static final Pattern SAVE_NAME_PATTERN = Pattern.compile("保存(?:为|成)?[《\u201c\\\"]?([^》\u201d\\n]{2,30})[》\u201d\\\"]?(?:方案)?");
     private static final Pattern SCHOOL_NAME_DETAIL_PATTERN = Pattern.compile("([\\p{IsHan}A-Za-z0-9]{2,20}(?:大学|学院|学校))");
+    private static final Pattern MAJOR_OVERVIEW_PATTERN = Pattern.compile(
+            "(?:^|[，。！？?]|想了解|了解一下|请介绍|介绍一下|关于|问问|看看|查一下|帮我看看|帮我介绍)([\\p{IsHan}A-Za-z0-9]{2,16})(?:专业|方向)"
+    );
 
     /** 常见专业关键词：精确子串匹配优先于正则，避免"推荐好的计算机专业"捕获到"好的计算机"。 */
     private static final List<String> MAJOR_KEYWORDS = List.of(
@@ -92,7 +95,7 @@ public class AgentDecisionService {
     }
 
     private static final String DEFAULT_REPLY_TEXT =
-            "当前 agent 支持查看画像、查看当前志愿方案、生成学校/专业推荐、查看学校详情，也可以把最近推荐里的某一项加入志愿单。删除操作需要你明确确认。";
+            "当前 agent 支持查看画像、查看当前志愿方案、查询专业介绍、生成学校/专业推荐、查看学校详情，也可以把最近推荐里的某一项加入志愿单。删除操作需要你明确确认。";
 
     private AgentDecision defaultReply() {
         return new AgentDecision(AgentToolNames.REPLY, DEFAULT_REPLY_TEXT);
@@ -181,8 +184,22 @@ public class AgentDecisionService {
             );
         }
 
-        // --- P1 #7: recommendMajors（关键词扩展见 extractMajorKeyword） ---
+        // --- 专业介绍：必须先于推荐处理 ---
+        // “XX专业怎么样 / 学什么 / 就业前景”是知识查询，不应被错误地变成
+        // recommendMajors（后者会返回当前画像下的院校录取推荐）。
         String majorKeyword = extractMajorKeyword(normalized);
+        if (majorKeyword == null && containsMajorOverviewCue(normalized)) {
+            majorKeyword = extractMajorOverviewKeyword(normalized);
+        }
+        if (isMajorOverviewRequest(normalized, majorKeyword)) {
+            return new AgentDecision(
+                    AgentToolNames.GET_MAJOR_OVERVIEW,
+                    "我先查询“%s”的学习内容、就业方向和报考提醒。".formatted(majorKeyword),
+                    Map.of("majorKeyword", majorKeyword)
+            );
+        }
+
+        // --- P1 #7: recommendMajors（关键词扩展见 extractMajorKeyword） ---
         if (containsAny(normalized, "推荐") && majorKeyword != null) {
             return new AgentDecision(
                     AgentToolNames.RECOMMEND_MAJORS,
@@ -251,26 +268,27 @@ public class AgentDecisionService {
 
     private String buildSystemPrompt() {
         return """
-                你是高考志愿助手的受控编排器。你只能做十种决策：
+                你是高考志愿助手的受控编排器。你只能做十一种决策：
                 1. 调用 getUserProfile
                 2. 调用 getCurrentPlan
                 3. 调用 getSchoolDetail
                 4. 调用 getSchoolDetailByName
-                5. 调用 recommendSchools
-                6. 调用 recommendMajors
-                7. 调用 addPlanItem
-                8. 调用 removePlanItem
-                9. 调用 savePlan
-                10. 直接回复
+                5. 调用 getMajorOverview
+                6. 调用 recommendSchools
+                7. 调用 recommendMajors
+                8. 调用 addPlanItem
+                9. 调用 removePlanItem
+                10. 调用 savePlan
+                11. 直接回复
 
                 你必须只输出 JSON：
                 {
-                  "action": "getUserProfile | getCurrentPlan | getSchoolDetail | getSchoolDetailByName | recommendSchools | recommendMajors | addPlanItem | removePlanItem | savePlan | reply",
+                  "action": "getUserProfile | getCurrentPlan | getSchoolDetail | getSchoolDetailByName | getMajorOverview | recommendSchools | recommendMajors | addPlanItem | removePlanItem | savePlan | reply",
                   "reply": "给用户的简短说明",
                   "toolArgs": {
                     "selectionIndex": "getSchoolDetail/addPlanItem/removePlanItem 时可选，默认 1",
                     "universityName": "getSchoolDetailByName 时必填",
-                    "majorKeyword": "recommendMajors 时必填",
+                    "majorKeyword": "recommendMajors 或 getMajorOverview 时必填",
                     "planName": "savePlan 时必填"
                   }
                 }
@@ -282,6 +300,8 @@ public class AgentDecisionService {
                 2. 区分"生成方案"vs"查看方案"："生成/做/来个方案"→ recommendSchools；"查看/看看当前方案"→ getCurrentPlan。
                 3. 用户描述自己分数/省份/科类时不应触发 getUserProfile：除非用户明确问"我的画像是什么""我的分数记录"。
                 4. "看看XX大学"在没明确详情请求时不应该调 getSchoolDetailByName："看看能不能上XX"是推荐意图，应走 recommendSchools。
+                5. "XX专业怎么样"、"就业前景"、"学什么"、"课程介绍"等专业知识问题必须调用 getMajorOverview；只有明确要求“推荐专业/适合报什么专业”时才调用 recommendMajors。
+                6. 用户只要求查看画像时只调用 getUserProfile，不要额外调用推荐工具。
 
                 不要输出任何额外文本。
                 可用工具：
@@ -353,6 +373,28 @@ public class AgentDecisionService {
             }
         }
         return null;
+    }
+
+    private String extractMajorOverviewKeyword(String text) {
+        Matcher matcher = MAJOR_OVERVIEW_PATTERN.matcher(text);
+        if (!matcher.find()) {
+            return null;
+        }
+        return cleanMajorKeyword(matcher.group(1));
+    }
+
+    private boolean isMajorOverviewRequest(String text, String majorKeyword) {
+        if (majorKeyword == null || majorKeyword.isBlank() || !containsMajorOverviewCue(text)) {
+            return false;
+        }
+        // A request for matching, admission probability, or a school list still belongs to
+        // recommendation/probability workflows even if it mentions a major name.
+        return !containsAny(text, "推荐", "适合报", "能上", "录取", "概率", "院校", "学校", "志愿");
+    }
+
+    private boolean containsMajorOverviewCue(String text) {
+        return containsAny(text,
+                "怎么样", "好不好", "前景", "就业", "学什么", "学习内容", "课程", "介绍", "发展方向", "就业方向", "适不适合学");
     }
 
     /** 去掉专业名前的形容词/修饰词，如"推荐好的计算机专业"→"计算机"。 */

@@ -3,6 +3,8 @@ package com.zhiyuan.college.controller;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.asyncDispatch;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.request;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -17,10 +19,13 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.test.web.servlet.RequestBuilder;
 import org.springframework.web.server.ResponseStatusException;
 
 @SpringBootTest
@@ -76,6 +81,7 @@ class AgentControllerTest {
                         .content("{\"content\":\"帮我看看我的分数和画像信息\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.conversationId").value(conversationId))
+                .andExpect(jsonPath("$.generatedMessages.length()").value(3))
                 .andExpect(jsonPath("$.generatedMessages[0].messageType").value("tool_call"))
                 .andExpect(jsonPath("$.generatedMessages[0].toolName").value("getUserProfile"))
                 .andExpect(jsonPath("$.generatedMessages[1].messageType").value("tool_result"))
@@ -100,6 +106,57 @@ class AgentControllerTest {
         JsonNode detail = objectMapper.readTree(detailResult.getResponse().getContentAsString());
         Assertions.assertEquals("user", detail.get("messages").get(0).get("role").asText());
         Assertions.assertTrue(detail.get("messages").size() >= 8);
+    }
+
+    @Test
+    void sendMessage_shouldUseMajorOverviewInsteadOfRecommendation_forCareerQuestion() throws Exception {
+        String token = loginAndGetToken("testuser", "123456", 620, "PHYSICS", "浙江");
+        Long conversationId = createConversation(token, "专业介绍 Agent");
+
+        mockMvc.perform(post("/api/agent/conversations/" + conversationId + "/messages")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"临床医学专业怎么样？就业前景和学习内容介绍一下\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.generatedMessages.length()").value(3))
+                .andExpect(jsonPath("$.generatedMessages[0].toolName").value("getMajorOverview"))
+                .andExpect(jsonPath("$.generatedMessages[0].payload.majorKeyword").value("临床医学"))
+                .andExpect(jsonPath("$.generatedMessages[1].toolName").value("getMajorOverview"))
+                .andExpect(jsonPath("$.generatedMessages[1].payload.majorName").value("临床医学"))
+                .andExpect(jsonPath("$.generatedMessages[1].payload.overviewMarkdown").value(org.hamcrest.Matchers.containsString("学习内容")))
+                .andExpect(jsonPath("$.generatedMessages[2].content").value(org.hamcrest.Matchers.containsString("临床医学专业概览")));
+    }
+
+    @Test
+    void streamMessage_shouldNotSendDuplicateCompleteTextAfterDeltas() throws Exception {
+        String token = loginAndGetToken("testuser", "123456", 620, "PHYSICS", "浙江");
+        Long conversationId = createConversation(token, "流式 Agent");
+
+        MvcResult streamResult = mockMvc.perform(post("/api/agent/conversations/" + conversationId + "/messages/stream")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"content\":\"帮我看看我的画像信息\"}"))
+                .andExpect(request().asyncStarted())
+                .andReturn();
+        streamResult.getAsyncResult(5_000L);
+
+        RequestBuilder authenticatedAsyncDispatch = servletContext -> {
+            MockHttpServletRequest request = asyncDispatch(streamResult).buildRequest(servletContext);
+            request.addHeader(HttpHeaders.AUTHORIZATION, "Bearer " + token);
+            return request;
+        };
+        String eventStream = mockMvc.perform(authenticatedAsyncDispatch)
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        Assertions.assertTrue(eventStream.contains("event:tool_call"));
+        Assertions.assertTrue(eventStream.contains("event:tool_result"));
+        Assertions.assertTrue(eventStream.contains("event:delta"));
+        Assertions.assertTrue(eventStream.contains("event:done"));
+        Assertions.assertFalse(eventStream.contains("event:message"),
+                "a delta-based response must not append a second complete message event");
     }
 
     @Test

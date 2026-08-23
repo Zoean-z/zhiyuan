@@ -2,6 +2,7 @@ package com.zhiyuan.college.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.zhiyuan.college.security.JwtAuthenticationFilter;
+import jakarta.servlet.DispatcherType;
 import jakarta.servlet.http.HttpServletResponse;
 import java.util.Map;
 import org.springframework.beans.factory.annotation.Value;
@@ -51,7 +52,11 @@ public class SecurityConfig {
                     } else {
                         auth.requestMatchers(API_DOC_PATHS).denyAll();
                     }
-                    auth.requestMatchers("/api/auth/**", "/api/meta/**",
+                    // The initial request remains authenticated. Its internal ASYNC redispatch
+                    // only completes an already-authorized response (not a new client request),
+                    // so it must not be denied after an SSE emitter has committed response bytes.
+                    auth.dispatcherTypeMatchers(DispatcherType.ASYNC).permitAll()
+                            .requestMatchers("/api/auth/**", "/api/meta/**",
                                     "/api/universities", "/api/universities/**",
                                     "/api/probability", "/api/probability/**").permitAll()
                             .requestMatchers("/api/admin/**").hasRole("ADMIN")
@@ -79,6 +84,9 @@ public class SecurityConfig {
                             ObjectMapper objectMapper,
                             int status,
                             String message) throws java.io.IOException {
+        if (response.isCommitted()) {
+            return;
+        }
         response.setStatus(status);
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
         objectMapper.writeValue(response.getWriter(), Map.of(

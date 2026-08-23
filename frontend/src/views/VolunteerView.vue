@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref } from "vue";
+import { computed, nextTick, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import GkHeader from "../components/GkHeader.vue";
 import GkSidePanel from "../components/GkSidePanel.vue";
@@ -107,8 +107,16 @@ function customizePlan() {
   router.push({ path: "/agent", query: { q } });
 }
 
-function goDiagnose() {
-  router.push({ path: "/agent", query: { q: "帮我做一次志愿表防掉档诊断，检查涨度设置和掉档风险" } });
+async function goDiagnose() {
+  if (!isReady.value) {
+    scoreError.value = "请先填写高考分数，系统才能根据志愿表和录取概率完成防掉档诊断";
+    return;
+  }
+  confirmProfile();
+  stage.value = "sheet";
+  await nextTick();
+  sheetRef.value?.openDiagnosis();
+  window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
 function goPlans() {

@@ -88,6 +88,7 @@ const quickQuestions = ref(QUESTION_POOL.slice(0, 4));
 const TOOL_LABELS = {
   getUserProfile: "已读取用户画像",
   getCurrentPlan: "已读取当前志愿表",
+  getMajorOverview: "已读取专业资料",
   recommendSchools: "已生成院校推荐",
   recommendMajors: "已生成专业推荐",
   addPlanItem: "已将志愿加入志愿表",
@@ -443,6 +444,25 @@ async function openConversation(id) {
   }
 }
 
+/**
+ * An SSE connection can fail after the backend has persisted its final messages. Replace all
+ * optimistic and live messages with the server record so a partial stream never overlaps the
+ * final persisted answer.
+ */
+async function reconcileCurrentConversation() {
+  if (!activeConversationId.value) return false;
+  try {
+    const detail = await apiFetch(`/api/agent/conversations/${activeConversationId.value}`, {
+      headers: getAuthHeaders(),
+      timeoutMs: 5000
+    });
+    messages.value = Array.isArray(detail.messages) ? detail.messages : [];
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function scrollMessagesToBottom() {
   await nextTick();
   if (messageListRef.value) messageListRef.value.scrollTop = messageListRef.value.scrollHeight;
@@ -493,6 +513,7 @@ async function sendMessage(content = draft.value) {
     await createConversation(text.slice(0, 12));
     if (!activeConversationId.value) return;
   }
+  const turnStartIndex = messages.value.length;
   const optimistic = { id: `temp-${Date.now()}`, role: "user", messageType: "text", content: text, createdAt: new Date().toISOString() };
   messages.value.push(optimistic);
   draft.value = "";
@@ -506,15 +527,24 @@ async function sendMessage(content = draft.value) {
     const streamResult = await runStreamTurn(text);
     if (streamResult.streamed) {
       usedWriteTool = streamResult.usedWriteTool;
-    } else {
+    } else if (streamResult.allowLegacy) {
       usedWriteTool = await runLegacyTurn(text);
     }
   } catch (ex) {
     if (ex?.name === "AbortError" || stopRequested.value) {
       finalizeLiveMessage();
     } else {
-      messages.value = messages.value.filter((item) => item.id !== optimistic.id);
-      ElMessage.error(resolveErrorMessage(ex, "发送消息失败"));
+      const reconciled = await reconcileCurrentConversation();
+      if (!reconciled) {
+        messages.value.splice(turnStartIndex);
+      }
+      liveMessage = null;
+      streamingStarted.value = false;
+      if (reconciled) {
+        ElMessage.warning("流式连接已中断，已从服务器同步本次对话记录");
+      } else {
+        ElMessage.error(resolveErrorMessage(ex, "发送消息失败"));
+      }
     }
   } finally {
     finalizeLiveMessage();
@@ -542,11 +572,26 @@ async function runStreamTurn(text) {
     });
   } catch (ex) {
     if (ex?.name === "AbortError") throw ex;
-    return { streamed: false };
+    const connectionError = new Error(
+      "AI 对话服务连接失败：请确认后端服务已启动，并检查前端的 VITE_API_PROXY_TARGET 是否指向实际后端地址。为避免重复调用工具，本次消息未自动重试。"
+    );
+    throw connectionError;
   }
-  if (!response.ok) return { streamed: false };
+  if (!response.ok) {
+    // The legacy endpoint is only a compatibility fallback for backends that genuinely
+    // do not implement streaming. Retrying after a network failure can create a second
+    // tool call even when the original POST has already been persisted by the server.
+    if (response.status === 404 || response.status === 405) {
+      return { streamed: false, allowLegacy: true, usedWriteTool: false };
+    }
+    const isJson = response.headers.get("content-type")?.includes("application/json");
+    const data = isJson ? await response.json() : null;
+    throw createHttpError(response, data, UI_TEXT.common.requestFailed);
+  }
   const contentType = response.headers.get("content-type") || "";
-  if (!contentType.includes("text/event-stream")) return { streamed: false };
+  if (!contentType.includes("text/event-stream")) {
+    return { streamed: false, allowLegacy: true, usedWriteTool: false };
+  }
 
   let usedWriteTool = false;
   const WRITE_TOOLS = ["addPlanItem", "removePlanItem", "savePlan"];
@@ -602,13 +647,14 @@ async function runStreamTurn(text) {
     const { done, value } = await reader.read();
     if (done) break;
     buffer += decoder.decode(value, { stream: true });
-    let separatorIndex;
-    while ((separatorIndex = buffer.indexOf("\n\n")) >= 0) {
+    let separatorMatch;
+    while ((separatorMatch = /\r?\n\r?\n/.exec(buffer)) !== null) {
+      const separatorIndex = separatorMatch.index;
       const block = buffer.slice(0, separatorIndex);
-      buffer = buffer.slice(separatorIndex + 2);
+      buffer = buffer.slice(separatorIndex + separatorMatch[0].length);
       let eventName = "message";
       let dataText = "";
-      block.split("\n").forEach((line) => {
+      block.split(/\r?\n/).forEach((line) => {
         if (line.startsWith("event:")) eventName = line.slice(6).trim();
         else if (line.startsWith("data:")) dataText += line.slice(5).trim();
       });

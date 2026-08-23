@@ -35,6 +35,10 @@ public class AgentReplyFormatter {
         if (payload == null) {
             return toolResult.getSummary();
         }
+        String overviewMarkdown = payload.path("overviewMarkdown").asText("").trim();
+        if (!overviewMarkdown.isBlank()) {
+            return overviewMarkdown;
+        }
         // Fallback path: LLM already produced directional advice.
         if (payload.path("fallback").asBoolean(false)) {
             String advice = payload.path("fallbackAdvice").asText("");

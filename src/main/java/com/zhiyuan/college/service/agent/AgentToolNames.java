@@ -6,6 +6,7 @@ public final class AgentToolNames {
     public static final String GET_CURRENT_PLAN = "getCurrentPlan";
     public static final String GET_SCHOOL_DETAIL = "getSchoolDetail";
     public static final String GET_SCHOOL_DETAIL_BY_NAME = "getSchoolDetailByName";
+    public static final String GET_MAJOR_OVERVIEW = "getMajorOverview";
     public static final String RECOMMEND_SCHOOLS = "recommendSchools";
     public static final String RECOMMEND_MAJORS = "recommendMajors";
     public static final String ADD_PLAN_ITEM = "addPlanItem";

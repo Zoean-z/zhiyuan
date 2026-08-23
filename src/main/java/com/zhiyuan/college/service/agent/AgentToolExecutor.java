@@ -48,6 +48,9 @@ public class AgentToolExecutor {
             case AgentToolNames.GET_CURRENT_PLAN -> agentToolFacade.getCurrentPlan(userId, targetPlanId);
             case AgentToolNames.GET_SCHOOL_DETAIL -> agentToolFacade.getSchoolDetail(userId, toolArgs, recentMessages);
             case AgentToolNames.GET_SCHOOL_DETAIL_BY_NAME -> agentToolFacade.getSchoolDetailByName(userId, toolArgs);
+            case AgentToolNames.GET_MAJOR_OVERVIEW -> agentToolFacade.getMajorOverview(
+                    toolArgs == null ? null : toolArgs.get("majorKeyword")
+            );
             case AgentToolNames.RECOMMEND_SCHOOLS -> agentToolFacade.recommendSchools(userId, onChunk);
             case AgentToolNames.RECOMMEND_MAJORS -> agentToolFacade.recommendMajors(
                     userId,
@@ -72,7 +75,8 @@ public class AgentToolExecutor {
                     validateSelectionIndex(toolArgs, false);
             case AgentToolNames.REMOVE_PLAN_ITEM -> validateSelectionIndex(toolArgs, true);
             case AgentToolNames.GET_SCHOOL_DETAIL_BY_NAME -> validateUniversityName(toolArgs);
-            case AgentToolNames.RECOMMEND_MAJORS -> validateMajorKeyword(toolArgs);
+            case AgentToolNames.RECOMMEND_MAJORS, AgentToolNames.GET_MAJOR_OVERVIEW ->
+                    validateMajorKeyword(toolName, toolArgs);
             case AgentToolNames.SAVE_PLAN -> validatePlanName(toolArgs);
             default -> throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unsupported agent tool for execution: " + toolName);
         }
@@ -96,9 +100,9 @@ public class AgentToolExecutor {
         }
     }
 
-    private void validateMajorKeyword(Map<String, Object> toolArgs) {
+    private void validateMajorKeyword(String toolName, Map<String, Object> toolArgs) {
         if (toolArgs == null || toolArgs.get("majorKeyword") == null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "majorKeyword is required for recommendMajors");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "majorKeyword is required for " + toolName);
         }
         String majorKeyword = String.valueOf(toolArgs.get("majorKeyword")).trim();
         if (majorKeyword.isBlank() || majorKeyword.length() > 20) {

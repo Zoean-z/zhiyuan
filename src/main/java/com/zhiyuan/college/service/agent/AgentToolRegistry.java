@@ -13,6 +13,7 @@ public class AgentToolRegistry {
         tools.put(AgentToolNames.GET_CURRENT_PLAN, "读取当前用户最近保存的志愿方案摘要");
         tools.put(AgentToolNames.GET_SCHOOL_DETAIL, "查看最近推荐中的某个学校详情和专业列表，支持 selectionIndex，默认 1");
         tools.put(AgentToolNames.GET_SCHOOL_DETAIL_BY_NAME, "按学校名查询院校详情和专业列表，必须带 universityName");
+        tools.put(AgentToolNames.GET_MAJOR_OVERVIEW, "查询指定专业的学习内容、就业方向与报考提醒，必须带 majorKeyword；不生成院校录取推荐");
         tools.put(AgentToolNames.RECOMMEND_SCHOOLS, "基于当前用户画像生成学校推荐");
         tools.put(AgentToolNames.RECOMMEND_MAJORS, "基于当前用户画像和专业关键词生成专业推荐");
         tools.put(AgentToolNames.ADD_PLAN_ITEM, "把最近一轮推荐结果中的某一项加入当前志愿单，必须带 selectionIndex");

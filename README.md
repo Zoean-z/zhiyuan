@@ -167,6 +167,9 @@ npm run dev
 
 说明：
 - Vite 会把 `/api` 代理到 `http://localhost:8080`
+- 若后端不在默认地址，请复制 `frontend/.env.example` 为 `frontend/.env.local`，并设置
+  `VITE_API_PROXY_TARGET`（例如 `http://127.0.0.1:18080`）。这样浏览器仍通过相对 `/api`
+  请求后端，避免开发环境因目标地址不一致而报“网络连接异常”。
 
 ### 4. 演示模式（无需后端）
 

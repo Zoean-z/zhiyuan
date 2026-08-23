@@ -36,6 +36,7 @@ public class AgentToolFacade {
     private final ApplicationPlanService applicationPlanService;
     private final RecommendationService recommendationService;
     private final SchoolDetailService schoolDetailService;
+    private final AgentMajorOverviewService majorOverviewService;
     private final ObjectMapper objectMapper;
     private final AgentFallbackAdviceService fallbackAdviceService;
 
@@ -43,12 +44,14 @@ public class AgentToolFacade {
                            ApplicationPlanService applicationPlanService,
                            RecommendationService recommendationService,
                            SchoolDetailService schoolDetailService,
+                           AgentMajorOverviewService majorOverviewService,
                            ObjectMapper objectMapper,
                            AgentFallbackAdviceService fallbackAdviceService) {
         this.userAccountMapper = userAccountMapper;
         this.applicationPlanService = applicationPlanService;
         this.recommendationService = recommendationService;
         this.schoolDetailService = schoolDetailService;
+        this.majorOverviewService = majorOverviewService;
         this.objectMapper = objectMapper;
         this.fallbackAdviceService = fallbackAdviceService;
     }
@@ -128,6 +131,31 @@ public class AgentToolFacade {
         RecommendationRequest request = buildRequest(user, RecommendationMode.MAJOR_FIRST, majorKeyword);
         RecommendationResponse response = recommendationService.recommend(request);
         return buildRecommendationResult(AgentToolNames.RECOMMEND_MAJORS, response, user, request, onChunk);
+    }
+
+    /**
+     * Handles knowledge-style questions such as "临床医学专业怎么样".  This deliberately does
+     * not reuse the recommendation path: the user asks for an introduction, not a list of
+     * institutions whose admission probability happens to match the current profile.
+     */
+    public AgentToolResult getMajorOverview(Object majorKeywordValue) {
+        String majorKeyword = majorKeywordValue == null ? "" : String.valueOf(majorKeywordValue).trim();
+        if (majorKeyword.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "majorKeyword is required for getMajorOverview");
+        }
+        AgentMajorOverviewService.MajorOverview overview = majorOverviewService.lookup(majorKeyword);
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("majorName", overview.majorName());
+        payload.put("foundInCatalog", overview.foundInCatalog());
+        payload.put("category", overview.category());
+        payload.put("degreeType", overview.degreeType());
+        payload.put("tags", overview.tags());
+        payload.put("subjectRequirement", overview.subjectRequirement());
+        payload.put("overviewMarkdown", overview.markdown());
+        String summary = overview.foundInCatalog()
+                ? "已查询“%s”的专业介绍与就业方向。".formatted(overview.majorName())
+                : "未命中“%s”的完整专业主数据，已给出通用培养与就业说明。".formatted(overview.majorName());
+        return new AgentToolResult(AgentToolNames.GET_MAJOR_OVERVIEW, summary, toJson(payload));
     }
 
     public AgentToolResult getSchoolDetail(Long userId, Map<String, Object> toolArgs, List<AgentMessage> recentMessages) {

@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
@@ -139,7 +140,7 @@ public class AgentChatService {
      *   <li>tool_call progress → {@code {"type":"tool","data":{...}}}</li>
      *   <li>real data → template markdown sliced into repeated {@code {"type":"delta","data":"..."}}</li>
      *   <li>LLM fallback advice (empty data) → disclaimer first, then model deltas</li>
-     *   <li>complete final message → {@code {"type":"message","data":{...}}} on every path</li>
+     *   <li>complete final message → {@code {"type":"message","data":{...}}} only when no text delta was sent</li>
      *   <li>end → {@code {"type":"done","data":null}}</li>
      * </ul>
      */
@@ -179,29 +180,38 @@ public class AgentChatService {
                     toJson(decision.getToolArgs()));
 
             AgentToolResult toolResult;
+            AtomicBoolean streamedText = new AtomicBoolean(false);
             try {
                 toolResult = agentToolExecutor.execute(
                         userId, targetPlanId, decision.getAction(), decision.getToolArgs(), recentMessages,
-                        chunk -> sendEvent(emitter, "delta", Map.of("text", chunk)));
+                        chunk -> {
+                            if (chunk != null && !chunk.isEmpty()) {
+                                streamedText.set(true);
+                                sendEvent(emitter, "delta", Map.of("text", chunk));
+                            }
+                        });
             } catch (Exception ex) {
                 toolResult = buildFailureResult(decision.getAction(), ex);
             }
             agentConversationService.appendMessage(
                     userId, conversationId, AgentRoles.TOOL, AgentMessageTypes.TOOL_RESULT,
                     toolResult.getSummary(), toolResult.getToolName(), toolResult.getPayloadJson());
+            sendToolResult(emitter, toolResult);
 
             String finalText = replyFormatter.format(toolResult, currentUser);
             boolean fallback = isFallbackResult(toolResult);
             if (!fallback) {
                 // Real data → slice the template markdown into deltas so the demo always
                 // shows a streaming effect (fake streaming of an instantly generated template).
-                streamTemplateText(emitter, finalText);
+                streamedText.set(streamTemplateText(emitter, finalText) || streamedText.get());
             }
-            // Always send the complete final message on every path: it guarantees the
-            // disclaimer is present, corrects whitespace/newlines lost during streaming,
-            // and provides a stable final text when the model fails mid-stream.
-            sendEvent(emitter, "message",
-                    Map.of("message", Map.of("role", "assistant", "messageType", "text", "content", finalText)));
+            // The browser turns deltas into one live bubble. Sending the same final text again
+            // as a message event made some clients render two identical answers. Only send a
+            // complete message when no text was streamed at all (for example an empty fallback).
+            if (!streamedText.get()) {
+                sendEvent(emitter, "message",
+                        Map.of("message", Map.of("role", "assistant", "messageType", "text", "content", finalText)));
+            }
             agentConversationService.appendMessage(
                     userId, conversationId, AgentRoles.ASSISTANT, AgentMessageTypes.TEXT, finalText, null, null);
             sendDone(emitter);
@@ -218,9 +228,9 @@ public class AgentChatService {
      * chunks emitted as {@code delta} events with a short pause so the demo always shows
      * a streaming effect even when the answer was produced instantly.
      */
-    private void streamTemplateText(SseEmitter emitter, String text) {
+    private boolean streamTemplateText(SseEmitter emitter, String text) {
         if (text == null || text.isEmpty()) {
-            return;
+            return false;
         }
         for (int i = 0; i < text.length(); i += TEMPLATE_STREAM_CHUNK_SIZE) {
             String chunk = text.substring(i, Math.min(i + TEMPLATE_STREAM_CHUNK_SIZE, text.length()));
@@ -230,10 +240,11 @@ public class AgentChatService {
                     Thread.sleep(TEMPLATE_STREAM_CHUNK_DELAY_MILLIS);
                 } catch (InterruptedException interruptedException) {
                     Thread.currentThread().interrupt();
-                    return;
+                    return i > 0;
                 }
             }
         }
+        return true;
     }
 
     private boolean isFallbackResult(AgentToolResult toolResult) {
@@ -253,6 +264,25 @@ public class AgentChatService {
             String payload = data == null ? "null" : objectMapper.writeValueAsString(data);
             emitter.send(SseEmitter.event().name(eventName).data(payload, MediaType.APPLICATION_JSON));
         } catch (Exception ignore) {
+        }
+    }
+
+    private void sendToolResult(SseEmitter emitter, AgentToolResult toolResult) {
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("toolName", toolResult.getToolName());
+        data.put("content", toolResult.getSummary());
+        data.put("payload", parseEventPayload(toolResult.getPayloadJson()));
+        sendEvent(emitter, "tool_result", data);
+    }
+
+    private Object parseEventPayload(String payloadJson) {
+        if (payloadJson == null || payloadJson.isBlank()) {
+            return null;
+        }
+        try {
+            return objectMapper.readTree(payloadJson);
+        } catch (Exception ignore) {
+            return null;
         }
     }
 

@@ -56,6 +56,30 @@ public interface MajorMapper extends BaseMapper<Major> {
     Major findByExactName(@Param("name") String name);
 
     @Select("""
+            SELECT id,
+                   name,
+                   category,
+                   degree_type AS degreeType,
+                   tags,
+                   subject_requirement AS subjectRequirement,
+                   description,
+                   created_at AS createdAt,
+                   updated_at AS updatedAt
+            FROM major
+            WHERE LOWER(name) LIKE CONCAT('%', LOWER(#{keyword}), '%')
+            ORDER BY
+              CASE
+                WHEN LOWER(name) = LOWER(#{keyword}) THEN 0
+                WHEN LOWER(name) LIKE CONCAT(LOWER(#{keyword}), '%') THEN 1
+                ELSE 2
+              END,
+              LENGTH(name),
+              id
+            LIMIT 1
+            """)
+    Major findFirstByNameKeyword(@Param("keyword") String keyword);
+
+    @Select("""
             <script>
             SELECT DISTINCT mac.major_name
             FROM major_admission_cutoff mac
