@@ -218,9 +218,9 @@ public class AiChatClient {
         if (maxTokens != null) {
             requestBody.put("max_tokens", maxTokens);
         }
-        if (thinking != null) {
-            requestBody.put("thinking", thinking);
-        }
+        // Note: DeepSeek expects "thinking" as a struct (ThinkingOptions), not a boolean;
+        // sending boolean false causes a 400. Omitting it leaves the default (no thinking),
+        // which is what callers intended by passing thinking=false.
         return requestBody;
     }
 
