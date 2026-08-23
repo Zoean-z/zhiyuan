@@ -658,7 +658,7 @@ defineExpose({ smartFill });
                 {{ r.slot.schoolName }}
               </td>
               <td>
-                <span class="mnz-table__prob" :class="strategyOf(r.slot.prob).key">{{ probabilityText(r.slot.prob) }} · {{ strategyOf(r.slot.prob).label }}</span>
+                <span class="mnz-table__prob" :class="strategyOf(r.slot.prob).key"><em>录取率</em> {{ probabilityText(r.slot.prob) }}</span>
               </td>
               <td class="mnz-table__majors">{{ (r.slot.majorNames || []).join("、") || "—" }}</td>
               <td>{{ r.slot.adjust ? "是" : "否" }}</td>
@@ -732,7 +732,7 @@ defineExpose({ smartFill });
               </button>
 
               <span class="mnz-vrow__prob" :class="strategyOf(slots[seg.range[0] + n - 1].prob).key">
-                <em>{{ strategyOf(slots[seg.range[0] + n - 1].prob).full }}</em>
+                <em>录取率</em>
                 {{ probabilityText(slots[seg.range[0] + n - 1].prob) }}
               </span>
 
