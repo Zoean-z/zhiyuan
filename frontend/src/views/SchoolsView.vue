@@ -5,8 +5,6 @@ import { useRoute, useRouter } from "vue-router";
 import GkHeader from "../components/GkHeader.vue";
 import GkSchoolLogo from "../components/GkSchoolLogo.vue";
 import GkSidePanel from "../components/GkSidePanel.vue";
-import { SCHOOLS, schoolClubTags, schoolLoc, schoolTags } from "../utils/exploreData";
-import { probDetailOf, schoolCutoff } from "../utils/volunteerCore";
 import { strategyOf } from "../utils/scoreModel";
 import { isReady, profile, rank, score, subjectType, syncFromAuth } from "../utils/examProfile";
 import searchIcon from "../assets/gk_search_icon.png";
@@ -22,35 +20,57 @@ function applyHeaderQuery(value) {
 onMounted(() => {
   syncFromAuth();
   applyHeaderQuery(route.query.q);
+  fetchSchools();
 });
 watch(() => route.query.q, applyHeaderQuery);
 
-/* 与掌上高考 /school/search 一致的筛选项（军校-国际本科快捷栏已按需求舍弃） */
-const PROVINCE_OPTS = ["不限", ...Array.from(new Set(SCHOOLS.map((s) => s.province)))];
-const TYPE_OPTS = ["不限", "综合", "理工", "师范", "农林", "医药", "财经", "政法", "语言", "艺术", "体育", "民族"];
-const NATURE_OPTS = ["不限", "公办", "民办", "中外合作办学"];
-const FEATURE_OPTS = ["不限", "985", "双一流", "强基", "研究生院"];
+/* 数据源：后端 /api/universities（公开接口，无需登录），分页拉全量后本地筛选 */
+const schools = ref([]);
+const loading = ref(false);
+const loadError = ref("");
+
+async function fetchSchools() {
+  if (loading.value) return;
+  loading.value = true;
+  try {
+    const scoreVal = score.value == null ? "" : score.value;
+    const rankVal = rank.value == null ? "" : rank.value;
+    const base = `/api/universities?size=100&score=${scoreVal}&userRank=${rankVal}`;
+    const first = await (await fetch(base + "&page=1")).json();
+    const total = Number(first.total || 0);
+    const pages = Math.max(1, Math.ceil(total / 100));
+    const all = [...(first.items || [])];
+    for (let p = 2; p <= Math.min(pages, 15); p++) {
+      const pageData = await (await fetch(base + `&page=${p}`)).json();
+      all.push(...(pageData.items || []));
+    }
+    schools.value = all;
+  } catch (ex) {
+    loadError.value = String(ex?.message || ex);
+  } finally {
+    loading.value = false;
+  }
+}
+
+const PROVINCE_OPTS = computed(() => ["不限", ...new Set(schools.value.map((s) => s.province).filter(Boolean))]);
+const TYPE_OPTS = computed(() => ["不限", ...new Set(schools.value.map((s) => s.tags).filter(Boolean))]);
+const FEATURE_OPTS = ["不限", "985", "双一流"];
 const SORT_OPTS = ["默认排序", "录取概率由高到低", "分数由高到低", "分数由低到高"];
 
-/* 专业大类 → 院校类型映射（数据为院校维度，按类型近似筛选） */
+/* 专业大类 → 院校标签近似筛选（数据为院校标签维度） */
 const MAJOR_TYPE_MAP = {
-  "计算机类": "理工", "电子信息类": "理工", "机械类": "理工", "电气类": "理工", "材料类": "理工",
-  "土木类": "理工", "自动化类": "理工", "航空航天类": "理工", "法学类": "政法", "政治学类": "政法",
-  "教育学类": "师范", "中国语言文学类": "语言", "外国语言文学类": "语言", "经济学类": "财经",
-  "金融学类": "财经", "工商管理类": "财经", "临床医学类": "医药", "基础医学类": "医药", "药学类": "医药",
-  "植物生产类": "农林", "动物医学类": "农林", "设计学类": "艺术", "音乐与舞蹈学类": "艺术", "体育学类": "体育"
+  "计算机类": "工科", "电子信息类": "工科", "机械类": "工科", "电气类": "工科",
+  "法学类": "政法", "教育学类": "师范", "经济学类": "财经", "金融学类": "财经",
+  "临床医学类": "医药", "药学类": "医药", "植物生产类": "农林", "设计学类": "艺术", "体育学类": "体育"
 };
 const MAJOR_OPTS = ["不限", ...Object.keys(MAJOR_TYPE_MAP)];
 
 const provinceFilter = ref("不限");
 const typeFilter = ref("不限");
-const natureFilter = ref("不限");
 const featureFilter = ref("不限");
 const majorFilter = ref("不限");
 const sortKey = ref("默认排序");
 const keyword = ref("");
-
-const FEATURE_FIELD = { "985": "is985" };
 
 /**
  * 【修复】原来这里的录取概率是 `42 + (school.id * 37) % 52`，
@@ -58,18 +78,11 @@ const FEATURE_FIELD = { "985": "is985" };
  * 现在：没填分数就不显示概率（引导填分数），填了就按
  * 「位次差 75% + 分差 25%」的后端同款算法算，并把依据写在 tooltip 里。
  */
-const cutoffOpts = computed(() => ({
-  province: profile.province,
-  subjectType: subjectType.value,
-  userRank: rank.value
-}));
-
 function minScoreOf(school) {
-  const cutoff = schoolCutoff(school, cutoffOpts.value);
-  return cutoff ? cutoff.score : null;
+  return school.cutoffScore ?? null;
 }
 function probOfSchool(school) {
-  return probDetailOf(school, score.value, cutoffOpts.value);
+  return school.probability || null;
 }
 
 /**
@@ -79,11 +92,11 @@ function probOfSchool(school) {
  */
 function badgeOf(school) {
   const detail = probOfSchool(school);
-  if (detail.probability != null) {
+  if (detail && detail.probability != null) {
     const seg = strategyOf(detail.probability);
     return { detail, key: seg.key, label: seg.label, value: `${detail.probability}%`, flame: seg.key === "rush" || seg.key === "risk" };
   }
-  if (isReady.value && detail.cutoff && detail.rankGap != null && detail.rankGap < 0) {
+  if (isReady.value && detail && detail.cutoffScore != null && detail.rankGap != null && detail.rankGap < 0) {
     return { detail, key: "risk", label: "险", value: "<1%", flame: true };
   }
   return null;
@@ -91,18 +104,9 @@ function badgeOf(school) {
 
 function probTip(school) {
   const detail = probOfSchool(school);
-  const cutoff = detail.cutoff;
-  if (!cutoff) return "暂无录取数据";
-  const minRankText = cutoff.minRank == null ? "—" : cutoff.minRank.toLocaleString();
-  const sourceText = cutoff.source === "real"
-    ? "（浙江考试院2026一段投档线）"
-    : cutoff.source === "backend"
-      ? "（后端录取数据）"
-      : cutoff.source === "derived"
-        ? "（估算）"
-        : "";
-  const noteText = cutoff.note ? `【${cutoff.note}】` : "";
-  const base = `${cutoff.year} 年最低分 ${cutoff.score}分 / 最低位次 ${minRankText}${sourceText}${noteText}`;
+  if (!detail || detail.cutoffScore == null) return "暂无录取数据";
+  const minRankText = detail.minRank == null ? "—" : detail.minRank.toLocaleString();
+  const base = `${detail.admissionYear || "近年"} 最低分 ${detail.cutoffScore}分 / 最低位次 ${minRankText}（后端录取数据）`;
   if (detail.probability == null) {
     if (isReady.value && detail.rankGap != null && detail.rankGap < 0) {
       return `${base}；你位次落后 ${Math.abs(detail.rankGap).toLocaleString()} 名，超出可测算范围，录取概率极低（<1%）`;
@@ -130,20 +134,18 @@ function rankGapText(detail) {
 }
 const filtered = computed(() => {
   const kw = keyword.value.trim();
-  const list = SCHOOLS.filter((school) => {
+  const list = schools.value.filter((school) => {
     if (provinceFilter.value !== "不限" && school.province !== provinceFilter.value) return false;
-    if (typeFilter.value !== "不限" && !school.type.startsWith(typeFilter.value)) return false;
-    if (natureFilter.value !== "不限" && school.nature !== natureFilter.value) return false;
+    if (typeFilter.value !== "不限" && !(school.tags || "").includes(typeFilter.value)) return false;
     if (featureFilter.value !== "不限") {
       if (featureFilter.value === "双一流") {
         // 双一流 ≡ 211：选双一流时 211 院校同样命中（20260820 概念归并）
         if (!school.is211 && !school.isDoubleFirstClass) return false;
-      } else {
-        const field = FEATURE_FIELD[featureFilter.value];
-        if (field && !school[field]) return false;
+      } else if (featureFilter.value === "985" && !school.is985) {
+        return false;
       }
     }
-    if (majorFilter.value !== "不限" && !school.type.startsWith(MAJOR_TYPE_MAP[majorFilter.value] || "")) return false;
+    if (majorFilter.value !== "不限" && !(school.tags || "").includes(MAJOR_TYPE_MAP[majorFilter.value] || "")) return false;
     if (kw && !school.name.includes(kw)) return false;
     return true;
   });
@@ -151,14 +153,13 @@ const filtered = computed(() => {
   if (sortKey.value === "分数由高到低") sorted.sort((a, b) => (minScoreOf(b) ?? -1) - (minScoreOf(a) ?? -1));
   else if (sortKey.value === "分数由低到高") sorted.sort((a, b) => (minScoreOf(a) ?? Number.MAX_SAFE_INTEGER) - (minScoreOf(b) ?? Number.MAX_SAFE_INTEGER));
   else if (sortKey.value === "录取概率由高到低" && isReady.value) {
-    sorted.sort((a, b) => (probOfSchool(b).probability ?? -1) - (probOfSchool(a).probability ?? -1));
+    sorted.sort((a, b) => (probOfSchool(b)?.probability ?? -1) - (probOfSchool(a)?.probability ?? -1));
   }
   return sorted;
 });
 
 function applyType(value) {
   typeFilter.value = value;
-  natureFilter.value = "不限";
   featureFilter.value = "不限";
 }
 
@@ -202,8 +203,8 @@ function goProfile() {
 
               <el-dropdown trigger="click" popper-class="gks-drop gks-drop--wide">
                 <button type="button" class="gks-select">
-                  <span :class="{ 'is-set': typeFilter !== '不限' || natureFilter !== '不限' || featureFilter !== '不限' }">
-                    {{ typeFilter !== "不限" || natureFilter !== "不限" || featureFilter !== "不限" ? [typeFilter, natureFilter, featureFilter].filter((v) => v !== "不限").join("/") : "类型" }}
+                  <span :class="{ 'is-set': typeFilter !== '不限' || featureFilter !== '不限' }">
+                    {{ typeFilter !== "不限" || featureFilter !== "不限" ? [typeFilter, featureFilter].filter((v) => v !== "不限").join("/") : "类型" }}
                   </span>
                   <el-icon><ArrowDown /></el-icon>
                 </button>
@@ -213,12 +214,6 @@ function goProfile() {
                       <p class="gks-drop__label">院校类型</p>
                       <div class="gks-drop__grid">
                         <button v-for="t in TYPE_OPTS" :key="t" type="button" :class="['gks-drop__opt', { 'is-active': typeFilter === t }]" @click="applyType(t)">{{ t }}</button>
-                      </div>
-                    </div>
-                    <div class="gks-drop__group">
-                      <p class="gks-drop__label">办学性质</p>
-                      <div class="gks-drop__grid">
-                        <button v-for="n in NATURE_OPTS" :key="n" type="button" :class="['gks-drop__opt', { 'is-active': natureFilter === n }]" @click="natureFilter = n">{{ n }}</button>
                       </div>
                     </div>
                     <div class="gks-drop__group">
@@ -292,12 +287,12 @@ function goProfile() {
               <GkSchoolLogo :school="school" size="page" />
               <div class="gks-item__info">
                 <p class="gks-item__name">
-                  {{ school.name }}<span class="gks-item__city">{{ schoolLoc(school) }}</span>
+                  {{ school.name }}<span class="gks-item__city">{{ school.province }}</span>
                 </p>
                 <p class="gks-item__core">本科 · {{ school.type }} · {{ school.nature }} · {{ school.belong }}</p>
                 <p class="gks-item__tags">
-                  <i v-for="tag in schoolTags(school)" :key="tag" class="is-level">{{ tag }}</i>
-                  <i v-for="tag in schoolClubTags(school)" :key="tag">{{ tag }}</i>
+                  <i v-for="tag in [school.is985 ? '985' : '', school.is211 ? '211' : '', school.isDoubleFirstClass ? '双一流' : ''].filter(Boolean)" :key="tag" class="is-level">{{ tag }}</i>
+                  <i v-for="tag in (school.tags ? [school.tags] : [])" :key="tag">{{ tag }}</i>
                 </p>
               </div>
               <button
