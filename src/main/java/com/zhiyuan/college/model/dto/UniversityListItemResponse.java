@@ -16,5 +16,7 @@ public record UniversityListItemResponse(Long id,
                                          Integer admissionYear,
                                          Integer cutoffScore,
                                          Integer minRank,
+                                         Integer planCount,
+                                         Integer majorCount,
                                          ProbabilityBreakdownResponse probability) {
 }

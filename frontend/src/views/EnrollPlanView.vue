@@ -1,48 +1,89 @@
 <script setup>
 import { Search, TrendCharts } from "@element-plus/icons-vue";
-import { computed, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import GkHeader from "../components/GkHeader.vue";
 import GkSchoolLogo from "../components/GkSchoolLogo.vue";
 import GkSidePanel from "../components/GkSidePanel.vue";
-import { SCHOOLS, SCHOOL_LEVELS, SCHOOL_PROVINCES, schoolLoc, schoolTags } from "../utils/exploreData";
+import { profile } from "../utils/examProfile";
 
 const router = useRouter();
+const schools = ref([]);
+const loading = ref(false);
 const provinceFilter = ref("全部");
 const levelFilter = ref("all");
 const sortKey = ref("default");
 const keyword = ref("");
 
+const SCHOOL_LEVELS = [
+  { key: "all", label: "全部" },
+  { key: "985", label: "985" },
+  { key: "211", label: "211" },
+  { key: "isDoubleFirstClass", label: "双一流" }
+];
+
+const SCHOOL_PROVINCES = computed(() => ["全部", ...new Set(schools.value.map((s) => s.province).filter(Boolean))]);
+
 const SORTS = [
   { label: "默认排序", key: "default" },
   { label: "招生人数由高到低", key: "planCount" },
-  { label: "扩招人数由高到低", key: "planDelta" }
+  { label: "招生专业由多到少", key: "majorCount" }
 ];
 
-// 计划趋势迷你柱：基于 planCount/planDelta 生成稳定的 4 年序列
+/* 数据源：后端 /api/universities（1137 所真实大学 + 按考生省份聚合的计划数/专业数） */
+async function fetchSchools() {
+  if (loading.value) return;
+  loading.value = true;
+  try {
+    const examProvince = profile.province || "";
+    const base = `/api/universities?size=100&examProvince=${encodeURIComponent(examProvince)}`;
+    const first = await (await fetch(base + "&page=1")).json();
+    const total = Number(first.total || 0);
+    const pages = Math.max(1, Math.ceil(total / 100));
+    const all = [...(first.items || [])];
+    for (let p = 2; p <= Math.min(pages, 15); p++) {
+      const pageData = await (await fetch(base + `&page=${p}`)).json();
+      all.push(...(pageData.items || []));
+    }
+    schools.value = all;
+  } catch (ex) {
+    console.error("加载院校失败", ex);
+  } finally {
+    loading.value = false;
+  }
+}
+
+onMounted(fetchSchools);
+
+// 计划趋势示意：基于计划数生成稳定 4 年序列（非数据库字段）
 function trendBars(school) {
-  const base = school.planCount;
-  const delta = school.planDelta || 5;
-  return [0, 1, 2, 3].map((i) => Math.max(20, base - delta * (3 - i)));
+  const base = school.planCount || 100;
+  return [0, 1, 2, 3].map((i) => Math.max(20, base - 12 * (3 - i)));
 }
 
 const filtered = computed(() => {
   const kw = keyword.value.trim();
-  const list = SCHOOLS.filter((school) => {
+  const list = schools.value.filter((school) => {
     if (provinceFilter.value !== "全部" && school.province !== provinceFilter.value) return false;
-    if (levelFilter.value !== "all") {
-      // 双一流 ≡ 211：选双一流时 211 院校同样命中（20260820 概念归并）
-      if (levelFilter.value === "isDoubleFirstClass") {
-        if (!school.is211 && !school.isDoubleFirstClass) return false;
-      } else if (!school[levelFilter.value]) return false;
-    }
+    if (levelFilter.value === "985" && !school.is985) return false;
+    if (levelFilter.value === "211" && !school.is211) return false;
+    // 双一流 ≡ 211：选双一流时 985/211 院校同样命中（20260820 概念归并）
+    if (levelFilter.value === "isDoubleFirstClass" && !school.is985 && !school.is211) return false;
     if (kw && !school.name.includes(kw)) return false;
     return true;
   });
-  if (sortKey.value === "planCount") return [...list].sort((a, b) => b.planCount - a.planCount);
-  if (sortKey.value === "planDelta") return [...list].sort((a, b) => b.planDelta - a.planDelta);
+  if (sortKey.value === "planCount") return [...list].sort((a, b) => (b.planCount ?? 0) - (a.planCount ?? 0));
+  if (sortKey.value === "majorCount") return [...list].sort((a, b) => (b.majorCount ?? 0) - (a.majorCount ?? 0));
   return list;
 });
+
+function schoolTags(school) {
+  const tags = [school.schoolType || "本科"];
+  if (school.nature) tags.push(school.nature);
+  if (school.is985) tags.push("985");
+  if (school.is211 && !school.is985) tags.push("211");
+  return tags;
+}
 
 function askPlan(school) {
   router.push({ path: "/agent", query: { q: `查询${school.name}2026年招生计划与专业` } });
@@ -117,7 +158,7 @@ function askPlan(school) {
               <div class="gk-enroll__info">
                 <p class="gk-school__name">
                   {{ school.name }}
-                  <span class="gk-school__loc">@{{ schoolLoc(school) }}</span>
+                  <span class="gk-school__loc">@{{ school.province }}</span>
                 </p>
                 <p class="gk-school__badges">
                   <i v-for="tag in schoolTags(school)" :key="tag">{{ tag }}</i>
@@ -125,16 +166,16 @@ function askPlan(school) {
               </div>
               <div class="gk-enroll__stats">
                 <div class="gk-enroll__stat">
-                  <b>{{ school.planCount }}</b>
+                  <b>{{ school.planCount ?? "—" }}</b>
                   <span>26招生计划/人</span>
                 </div>
                 <div class="gk-enroll__stat">
-                  <b>{{ school.majorCount }}</b>
+                  <b>{{ school.majorCount ?? "—" }}</b>
                   <span>招生专业/个</span>
                 </div>
-                <div class="gk-enroll__stat" :class="school.planDelta >= 0 ? 'is-up' : 'is-down'">
-                  <b>{{ school.planDelta >= 0 ? `+${school.planDelta}` : school.planDelta }}</b>
-                  <span>同比{{ school.planDelta >= 0 ? "扩招" : "减招" }}/人</span>
+                <div class="gk-enroll__stat">
+                  <b>{{ school.cutoffScore ?? "—" }}</b>
+                  <span>参考最低分</span>
                 </div>
                 <div class="gk-enroll__trend" title="计划趋势">
                   <el-icon><TrendCharts /></el-icon>

@@ -64,6 +64,21 @@ public interface MajorAdmissionCutoffMapper extends BaseMapper<MajorAdmissionCut
                                                          @Param("subjectType") String subjectType);
 
     @Select("""
+            SELECT university_id AS universityId,
+                   SUM(plan_count) AS planCount,
+                   COUNT(DISTINCT major_name) AS majorCount
+            FROM major_admission_cutoff
+            WHERE province = #{province}
+              AND admission_year = (
+                SELECT MAX(m2.admission_year)
+                FROM major_admission_cutoff m2
+                WHERE m2.province = #{province}
+              )
+            GROUP BY university_id
+            """)
+    List<Map<String, Object>> aggregatePlanByUniversity(@Param("province") String province);
+
+    @Select("""
             SELECT m.id,
                    m.university_id AS universityId,
                    m.major_id AS majorId,

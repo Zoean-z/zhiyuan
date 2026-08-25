@@ -111,6 +111,26 @@ public class UniversityQueryService {
             }
         }
 
+        // 招生计划聚合：计划数 + 专业数（按考生省份最新年份）
+        Map<Long, long[]> planAgg = new HashMap<>();
+        if (examProvince != null && !examProvince.isBlank()) {
+            List<Map<String, Object>> rows = majorAdmissionCutoffMapper.aggregatePlanByUniversity(examProvince);
+            if (rows != null) {
+                for (Map<String, Object> row : rows) {
+                    Object uid = row.get("universityId");
+                    if (uid == null) {
+                        continue;
+                    }
+                    long[] agg = new long[2];
+                    Object plan = row.get("planCount");
+                    Object majorsCount = row.get("majorCount");
+                    agg[0] = plan == null ? 0 : ((Number) plan).longValue();
+                    agg[1] = majorsCount == null ? 0 : ((Number) majorsCount).longValue();
+                    planAgg.put(((Number) uid).longValue(), agg);
+                }
+            }
+        }
+
         List<UniversityListItemResponse> items = new ArrayList<>();
         for (University university : universities) {
             if (normalizedLevel != null && !UniversityTagUtils.matchesSchoolLevel(
@@ -133,6 +153,9 @@ public class UniversityQueryService {
                 continue;
             }
             AdmissionCutoff cutoff = latestCutoffs.get(university.getId());
+            long[] agg = planAgg.get(university.getId());
+            Integer planCount = agg == null ? null : (int) agg[0];
+            Integer majorCount = agg == null ? null : (int) agg[1];
             if (withDataOnly && cutoff == null) {
                 continue;
             }
@@ -167,6 +190,8 @@ public class UniversityQueryService {
                     cutoff == null ? null : cutoff.getAdmissionYear(),
                     cutoff == null ? null : cutoff.getCutoffScore(),
                     cutoff == null ? null : cutoff.getMinRank(),
+                    planCount,
+                    majorCount,
                     probability
             ));
         }

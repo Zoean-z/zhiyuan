@@ -1,12 +1,11 @@
 <script setup>
-import { computed, ref, watch } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { Delete, Bottom, Top, CircleCheckFilled, WarningFilled, InfoFilled, Promotion, StarFilled } from "@element-plus/icons-vue";
 import { useRouter } from "vue-router";
 import GkSchoolLogo from "./GkSchoolLogo.vue";
-import { SCHOOLS } from "../utils/exploreData";
 import {
-  SEGMENTS, TOTAL, calLine, cutoffHistory, majorsOfSchool, normalizeSchoolLike, probOf, readCurrentSheet, strategyOf, writeCurrentSheet
+  SEGMENTS, TOTAL, normalizeSchoolLike, readCurrentSheet, strategyOf, writeCurrentSheet
 } from "../utils/volunteerCore";
 import { normalizeSubjectType, rankOfScore, scoreOfRank } from "../utils/scoreModel";
 
@@ -19,6 +18,41 @@ const router = useRouter();
 
 /* ===== 模块切换：模拟填报（选校） / 志愿表（参考 mnzy.gaokao.cn 双模块） ===== */
 const activeTab = ref(props.initialTab === "sheet" ? "sheet" : "pick");
+
+/* ===== 院校库：后端 /api/universities（1137 所真实大学 + 录取线/概率） ===== */
+const schools = ref([]);
+const loadingSchools = ref(false);
+/* 专业下拉选项：后端专业目录（32 热门专业） */
+const majorOptions = ref([]);
+
+async function fetchSchools() {
+  if (loadingSchools.value) return;
+  loadingSchools.value = true;
+  try {
+    const base = `/api/universities?size=100&examProvince=${encodeURIComponent(props.profile.province || "")}`;
+    const first = await (await fetch(base + "&page=1")).json();
+    const total = Number(first.total || 0);
+    const pages = Math.max(1, Math.ceil(total / 100));
+    const all = [...(first.items || [])];
+    for (let p = 2; p <= Math.min(pages, 15); p++) {
+      const pageData = await (await fetch(base + `&page=${p}`)).json();
+      all.push(...(pageData.items || []));
+    }
+    schools.value = all;
+  } catch (ex) {
+    console.error("加载院校库失败", ex);
+  } finally {
+    loadingSchools.value = false;
+  }
+  try {
+    const data = await (await fetch("/api/majors")).json();
+    majorOptions.value = (data.majors || []).map((m) => m.name);
+  } catch (ex) {
+    console.error("加载专业目录失败", ex);
+  }
+}
+
+onMounted(fetchSchools);
 
 /* ===== 志愿位（含"进行中方案"持久化，跨页共享） ===== */
 const slots = ref(Array.from({ length: TOTAL }, () => null));
@@ -78,13 +112,14 @@ function scoreForRank(rank) {
 }
 const myRank = computed(() => Number(props.profile.rank || rankOf(props.profile.score)));
 
-/* ===== 模拟填报：院校卡片数据（确定性派生，参考 mnzy 院校卡） ===== */
+/* ===== 模拟填报：院校卡片数据（后端真实录取线/概率） ===== */
 const pickStrategy = ref("all");
 const pickType = ref("全部");
 const sortBy = ref("概率");
 const pickQuery = ref("");
 const lineBounds = computed(() => {
-  const lines = SCHOOLS.map((s) => calLine(s, modelOpts.value));
+  const lines = schools.value.map((s) => s.cutoffScore).filter((v) => v != null);
+  if (!lines.length) return [300, 700];
   return [Math.min(...lines) - 20, Math.max(...lines) + 20];
 });
 const scoreRange = ref([...lineBounds.value]);
@@ -93,47 +128,40 @@ watch(lineBounds, (b) => {
 });
 
 function schoolFacts(school) {
-  const prob = probOfHere(school);
-  const years = cutoffHistory(school, modelOpts.value, 3).filter(Boolean).map((cutoff) => {
-    const line = cutoff.score;
-    const cutoffRank = cutoff.minRank;
-    const gap = myRank.value - cutoffRank;
-    const equiv = scoreForRank(cutoffRank);
-    return {
-      year: cutoff.year,
-      source: cutoff.source,
-      line,
-      cutoffRank,
-      gap,
-      gapText: gap > 0 ? `靠前 ${gap.toLocaleString("zh-CN")} 名` : `落后 ${(-gap).toLocaleString("zh-CN")} 名`,
-      equiv,
-      diff: equiv - Number(props.profile.score || 0),
-      diffText: equiv >= Number(props.profile.score || 0) ? `高 ${equiv - Number(props.profile.score || 0)} 分` : `低 ${Number(props.profile.score || 0) - equiv} 分`
-    };
-  });
+  const prob = school.probability?.probability ?? null;
+  const years = school.cutoffScore == null
+    ? []
+    : [{
+        year: school.admissionYear || "近年",
+        line: school.cutoffScore,
+        cutoffRank: school.minRank,
+        source: "backend"
+      }];
   return {
     school,
     prob,
     strategy: strategyOf(prob),
-    line: years[0]?.line ?? calLine(school, modelOpts.value),
+    line: school.cutoffScore ?? null,
     years,
-    majorList: majorsOfSchool(school)
+    majorList: []
   };
 }
 
+const pickTypes = computed(() => ["全部", ...new Set(schools.value.map((s) => s.schoolType).filter(Boolean))]);
+
 const filteredFacts = computed(() => {
-  let list = SCHOOLS.map(schoolFacts).filter((f) => f.line >= scoreRange.value[0] && f.line <= scoreRange.value[1]);
-  if (pickType.value !== "全部") list = list.filter((f) => f.school.type === pickType.value);
+  let list = schools.value.map(schoolFacts).filter((f) => f.line != null && f.line >= scoreRange.value[0] && f.line <= scoreRange.value[1]);
+  if (pickType.value !== "全部") list = list.filter((f) => f.school.schoolType === pickType.value);
   const q = pickQuery.value.trim();
-  if (q) list = list.filter((f) => f.school.name.includes(q) || f.school.province.includes(q));
+  if (q) list = list.filter((f) => f.school.name.includes(q) || (f.school.province || "").includes(q));
   const byKey = { all: null, rush: "rush", safe: "safe", guard: "guard" };
   if (byKey[pickStrategy.value]) list = list.filter((f) => f.strategy.key === byKey[pickStrategy.value]);
   if (sortBy.value === "概率") list = [...list].sort((a, b) => compareProbability(a.prob, b.prob));
-  else list = [...list].sort((a, b) => a.school.id - b.school.id);
+  else list = [...list].sort((a, b) => a.id - b.id);
   return list;
 });
 const pickCounts = computed(() => {
-  const list = SCHOOLS.map(schoolFacts).filter((f) => f.line >= scoreRange.value[0] && f.line <= scoreRange.value[1]);
+  const list = schools.value.map(schoolFacts).filter((f) => f.line != null && f.line >= scoreRange.value[0] && f.line <= scoreRange.value[1]);
   return {
     all: list.length,
     rush: list.filter((f) => f.strategy.key === "rush").length,
@@ -178,28 +206,29 @@ function askAbout(facts) {
   router.push({ path: "/agent", query: { q: `帮我分析${facts.school.name}：我现在${props.profile.score}分，页面判断为${facts.strategy.label}，参考概率${probabilityText(facts.prob)}，近三年参考线为${facts.years.map((y) => y.line).join("/")}。请说明数据局限，并分析是否适合放进志愿表。` } });
 }
 
-/* 下拉可选项 = 本地院校库 + 已填的外部院校（来自推荐结果投放） */
+/* 下拉可选项 = 后端院校库 + 已填的外部院校（来自推荐结果投放） */
 const schoolOptions = computed(() => {
   const extras = [];
   slots.value.forEach((s) => {
     if (!s || s.schoolId == null) return;
-    if (SCHOOLS.some((x) => x.id === s.schoolId)) return;
+    if (schools.value.some((x) => x.id === s.schoolId)) return;
     if (extras.some((x) => x.id === s.schoolId)) return;
     extras.push({
       id: s.schoolId,
       name: s.schoolName || `院校 ${s.schoolId}`,
       province: "",
-      type: "综合类",
+      schoolType: "综合类",
+      nature: "",
       is985: false,
       is211: false,
       isDoubleFirstClass: false
     });
   });
-  return [...SCHOOLS, ...extras];
+  return [...schools.value, ...extras];
 });
 
 function probOfHere(school) {
-  return probOf(school, props.profile.score, { ...modelOpts.value, userRank: myRank.value });
+  return school.probability?.probability ?? null;
 }
 
 function setSchool(slot, schoolId) {
@@ -219,7 +248,7 @@ function setSchool(slot, schoolId) {
 
 function schoolOf(slot) {
   if (!slot) return null;
-  const matched = SCHOOLS.find((s) => s.id === slot.schoolId);
+  const matched = schools.value.find((s) => s.id === slot.schoolId);
   if (matched) return matched;
   if (slot.schoolId == null && !slot.schoolName) return null;
   return normalizeSchoolLike({ id: slot.schoolId, name: slot.schoolName });
@@ -251,7 +280,7 @@ function smartFill() {
     ElMessage.info("志愿表已填满");
     return;
   }
-  const ranked = SCHOOLS.map((s) => ({ school: s, prob: probOfHere(s) }))
+  const ranked = schools.value.map((s) => ({ school: s, prob: probOfHere(s) }))
     .filter((item) => normalizeProbability(item.prob) != null)
     .sort((a, b) => compareProbability(b.prob, a.prob));
   // 按段投放：冲→1-15 位、稳→16-30 位、保→31-45 位，段内从段首依次填
@@ -266,7 +295,7 @@ function smartFill() {
     for (let i = seg.range[0]; i < seg.range[1] && p < picks.length; i++) {
       if (slots.value[i]) continue;
       const pick = picks[p++];
-      slots.value[i] = { schoolId: pick.school.id, schoolName: pick.school.name, majorNames: majorsOfSchool(pick.school).slice(0, 3), adjust: true, prob: pick.prob };
+      slots.value[i] = { schoolId: pick.school.id, schoolName: pick.school.name, majorNames: [], adjust: true, prob: pick.prob };
       filledTotal += 1;
     }
   });
@@ -444,11 +473,11 @@ function removeSheet(id) {
   ElMessage.success("已删除方案");
 }
 
-/* profile 分数变化时，本地库院校概率同步刷新；外部投放的院校保留推荐概率 */
+/* profile 分数变化时，院校库概率同步刷新（后端已按分数/位次算好） */
 watch(() => props.profile.score, () => {
   slots.value.forEach((s) => {
     if (!s?.schoolId) return;
-    const matched = SCHOOLS.find((x) => x.id === s.schoolId);
+    const matched = schools.value.find((x) => x.id === s.schoolId);
     if (matched) s.prob = probOfHere(matched);
   });
 });
@@ -498,7 +527,7 @@ defineExpose({ smartFill, openDiagnosis });
 
       <div class="mnz-pick__filters">
         <div class="mnz-pick__seg">
-          <button v-for="t in ['全部', '综合类', '理工类']" :key="t" type="button" :class="{ 'is-active': pickType === t }" @click="pickType = t">
+          <button v-for="t in pickTypes" :key="t" type="button" :class="{ 'is-active': pickType === t }" @click="pickType = t">
             {{ t }}
           </button>
         </div>
@@ -536,7 +565,7 @@ defineExpose({ smartFill, openDiagnosis });
             </div>
 
             <div class="mnz-pcard__tags">
-              <span v-for="t in [f.school.province, f.school.type, f.school.nature, f.school.belong, f.school.is985 ? '985' : '', (f.school.is211 || f.school.isDoubleFirstClass) ? '双一流' : ''].filter(Boolean)" :key="t" class="mnz-pcard__tag">{{ t }}</span>
+              <span v-for="t in [f.school.province, f.school.schoolType, f.school.nature, f.school.is985 ? '985' : '', (f.school.is211 || f.school.isDoubleFirstClass) ? '双一流' : ''].filter(Boolean)" :key="t" class="mnz-pcard__tag">{{ t }}</span>
             </div>
 
             <div class="mnz-pcard__years">
@@ -724,7 +753,7 @@ defineExpose({ smartFill, openDiagnosis });
                 placeholder="选择专业（最多 6 个）"
                 :max-collapse-tags="2"
               >
-                <el-option v-for="m in majorsOfSchool(schoolOf(slots[seg.range[0] + n - 1]))" :key="m" :label="m" :value="m" />
+                <el-option v-for="m in majorOptions" :key="m" :label="m" :value="m" />
               </el-select>
 
               <button
