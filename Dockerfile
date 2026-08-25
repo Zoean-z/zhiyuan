@@ -12,7 +12,9 @@ COPY .mvn .mvn
 RUN mvn -q -DskipTests dependency:go-offline
 COPY src ./src
 COPY sql ./sql
-RUN mkdir -p ./src/main/resources/static
+# 清除仓库里提交过的旧前端产物，避免与本次构建产物叠加混叠（旧 chunk + 新 chunk 同时在 jar，
+# 浏览器缓存到旧 index.html 时可能引用已被覆盖的 chunk → 404 → 页面点击无响应/白屏）
+RUN rm -rf ./src/main/resources/static && mkdir -p ./src/main/resources/static
 COPY --from=frontend-builder /workspace/src/main/resources/static/ ./src/main/resources/static/
 RUN mvn -DskipTests package
 
