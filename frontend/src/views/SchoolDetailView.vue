@@ -5,81 +5,87 @@ import { useRoute, useRouter } from "vue-router";
 import GkHeader from "../components/GkHeader.vue";
 import GkSchoolLogo from "../components/GkSchoolLogo.vue";
 import GkSidePanel from "../components/GkSidePanel.vue";
-import { SCHOOLS, schoolClubTags, schoolLoc, schoolTags } from "../utils/exploreData";
-import { cutoffHistory, majorCutoff, majorDetailsOfSchool, probDetailOf, schoolCutoff } from "../utils/volunteerCore";
 import { strategyOf } from "../utils/scoreModel";
-import { isReady, profile, rank, score, subjectType, syncFromAuth } from "../utils/examProfile";
+import { isReady, profile, rank, score, syncFromAuth } from "../utils/examProfile";
 
 /**
- * 院校详情页（新增）
- * 【解决的问题】Word 文档最后一条：「这里面的概率是啥…也看不了院校详情」。
- * 原项目根本没有院校详情页，查大学列表点进去是 AI 对话页。
- * 现在：/schools/:id → 概况 / 近三年录取 / 开设专业 / 招生计划 四个 tab，
- * 并把「概率怎么算出来的」完整展示（位次差 / 分差 / 权重）。
+ * 院校详情页：数据源改为后端 /api/universities/{id}（真实数据库，
+ * 含概率拆解 + 近三年录取 + 开设专业），不再使用本地 mock。
  */
 
 const route = useRoute();
 const router = useRouter();
 
-onMounted(() => syncFromAuth());
+const detailData = ref(null);
+const loading = ref(false);
+const loadError = ref("");
 
-const school = computed(() => {
-  const id = Number(route.params.id);
-  return SCHOOLS.find((item) => item.id === id) || null;
+async function fetchDetail() {
+  const id = route.params.id;
+  loading.value = true;
+  try {
+    const scoreVal = score.value == null ? "" : score.value;
+    const rankVal = rank.value == null ? "" : rank.value;
+    const resp = await fetch(`/api/universities/${id}?score=${scoreVal}&userRank=${rankVal}`);
+    if (!resp.ok) throw new Error("HTTP " + resp.status);
+    detailData.value = await resp.json();
+  } catch (ex) {
+    loadError.value = String(ex?.message || ex);
+    detailData.value = null;
+  } finally {
+    loading.value = false;
+  }
+}
+
+onMounted(() => {
+  syncFromAuth();
+  fetchDetail();
 });
+
+const school = computed(() => detailData.value);
+const probability = computed(() => detailData.value?.probability || null);
+const detail = computed(() => probability.value);
+const history = computed(() =>
+  (detailData.value?.cutoffHistory || []).map((h) => ({
+    year: h.admissionYear,
+    score: h.cutoffScore,
+    minRank: h.minRank,
+    source: "backend"
+  }))
+);
+const majors = computed(() =>
+  (detailData.value?.majors || []).map((m, i) => ({
+    code: String(m.majorName || `m${i}`),
+    name: m.majorName || "—",
+    cutoffScore: m.cutoffScore,
+    minRank: m.minRank
+  }))
+);
 
 const TABS = ["院校概况", "近三年录取", "开设专业", "招生计划"];
 const tab = ref("院校概况");
 
-const opts = computed(() => ({
-  province: profile.province,
-  subjectType: subjectType.value,
-  userRank: rank.value
-}));
+const levelTags = computed(() => {
+  const s = detailData.value;
+  if (!s) return [];
+  return [s.is985 ? "985" : "", s.is211 ? "211" : "", s.isDoubleFirstClass ? "双一流" : ""].filter(Boolean);
+});
 
-const cutoff = computed(() => (school.value ? schoolCutoff(school.value, opts.value) : null));
-const history = computed(() => (school.value ? cutoffHistory(school.value, opts.value, 3) : []));
-const detail = computed(() => (school.value ? probDetailOf(school.value, score.value, opts.value) : null));
-
-/**
- * 有效策略：有概率 → 保/稳/冲/险；已设分数但位次落后超 3000 名（模型可测算下界）
- * → 判「险」并显示 <1%，对齐参考站「难 1%」的呈现，而不是误报「未设置分数」。
- */
 const strategy = computed(() => {
   if (!detail.value) return null;
   if (detail.value.probability != null) return strategyOf(detail.value.probability);
-  if (isReady.value && detail.value.cutoff && detail.value.rankGap != null && detail.value.rankGap < 0) {
+  if (isReady.value && detail.value.cutoffScore != null && detail.value.rankGap != null && detail.value.rankGap < 0) {
     return { key: "risk", label: "险", full: "风险" };
   }
   return null;
 });
-/** 概率显示值：模型给不出精确值（超出下界）时显示 <1 */
 const displayProbability = computed(() => {
   if (detail.value?.probability != null) return String(detail.value.probability);
   return "<1";
 });
-const majors = computed(() => (school.value ? majorDetailsOfSchool(school.value) : []));
 
-const planRows = computed(() => {
-  if (!school.value) return [];
-  return majors.value.slice(0, 8).map((major, index) => {
-    const mc = majorCutoff(school.value, major, opts.value);
-    return {
-      name: major.name,
-      code: major.code,
-      duration: major.duration,
-      count: Math.max(2, Math.round(school.value.planCount / (majors.value.length + 4)) + ((index * 3) % 5)),
-      tuition: 4600 + ((index * 7 + school.value.id) % 6) * 700,
-      score: mc?.score ?? null,
-      minRank: mc?.minRank ?? null
-    };
-  });
-});
+const planRows = computed(() => majors.value.slice(0, 8));
 
-/**
- * 【分数统一】分数在登录时确定、志愿填报页维护，全站生效；详情页不再提供
- * 「填入分数测录取概率」输入框，避免与全局档案形成两套数据。
- */
 function goProfile() {
   router.push({ path: "/volunteer" });
 }
@@ -122,23 +128,15 @@ function scoreGapLine(detailValue) {
               <div class="gkd-hero__info">
                 <h1>
                   {{ school.name }}
-                  <span class="gkd-hero__loc">{{ schoolLoc(school) }}</span>
+                  <span class="gkd-hero__loc">{{ school.province }}</span>
                 </h1>
                 <p class="gkd-hero__meta">
-                  {{ school.type }} · {{ school.nature }} · {{ school.belong }}
-                  <template v-if="school.masters">
-                    · 硕博点 {{ school.masters }}/{{ school.phds }}
-                  </template>
-                  <template v-if="school.baoyan">
-                    · 保研率 {{ school.baoyan }}%（{{ school.baoyanCohort }}）
-                  </template>
-                  <template v-if="school.ruanke">
-                    · 软科 {{ school.ruanke }}（2025）· 校友会 {{ school.xiaoyouhui }}（2026）
-                  </template>
+                  {{ school.tags || "—" }} · {{ levelTags.join(" / ") || "普通院校" }}
+                  <template v-if="school.tier"> · {{ school.tier }}</template>
                 </p>
                 <p class="gkd-hero__tags">
-                  <i v-for="item in schoolTags(school)" :key="item" class="is-level">{{ item }}</i>
-                  <i v-for="item in schoolClubTags(school)" :key="item">{{ item }}</i>
+                  <i v-for="item in levelTags" :key="item" class="is-level">{{ item }}</i>
+                  <i v-for="item in (school.schoolTags || [])" :key="item">{{ item }}</i>
                 </p>
               </div>
 
@@ -150,7 +148,7 @@ function scoreGapLine(detailValue) {
                   <span class="gkd-prob__seg">{{ strategy.full }}</span>
                   <ul class="gkd-prob__why">
                     <li>
-                      我的位次 <b>{{ fmt(rank) }}</b> · 院校最低位次 <b>{{ fmt(cutoff?.minRank) }}</b>
+                      我的位次 <b>{{ fmt(rank) }}</b> · 院校最低位次 <b>{{ fmt(detail?.minRank) }}</b>
                     </li>
                     <li>
                       {{ rankGapLine(detail) }}
@@ -179,20 +177,16 @@ function scoreGapLine(detailValue) {
             <!-- 关键数据条 -->
             <ul class="gkd-kpis">
               <li>
-                <span>{{ cutoff?.year }} 年最低分</span>
-                <strong>{{ cutoff?.score ?? "—" }}</strong>
+                <span>{{ detail?.admissionYear || "近年" }} 最低分</span>
+                <strong>{{ detail?.cutoffScore ?? "—" }}</strong>
               </li>
               <li>
-                <span>{{ cutoff?.year }} 年最低位次</span>
-                <strong>{{ fmt(cutoff?.minRank) }}</strong>
-              </li>
-              <li>
-                <span>招生计划</span>
-                <strong>{{ school.planCount }} <i>人</i></strong>
+                <span>{{ detail?.admissionYear || "近年" }} 最低位次</span>
+                <strong>{{ fmt(detail?.minRank) }}</strong>
               </li>
               <li>
                 <span>开设专业</span>
-                <strong>{{ school.majorCount }} <i>个</i></strong>
+                <strong>{{ majors.length }} <i>个</i></strong>
               </li>
             </ul>
 
@@ -213,22 +207,14 @@ function scoreGapLine(detailValue) {
             <section v-if="tab === '院校概况'" class="gkd-card">
               <h3>院校概况</h3>
               <dl class="gkd-facts">
-                <div><dt>所在地</dt><dd>{{ schoolLoc(school) }}</dd></div>
-                <div><dt>院校类型</dt><dd>{{ school.type }}</dd></div>
-                <div><dt>办学性质</dt><dd>{{ school.nature }}</dd></div>
-                <div><dt>主管部门</dt><dd>{{ school.belong }}</dd></div>
-                <div><dt>院校特色</dt><dd>{{ [...schoolTags(school), ...schoolClubTags(school)].join(" / ") || "—" }}</dd></div>
-                <div><dt>保研率</dt><dd>{{ school.baoyan ? `${school.baoyan}%（${school.baoyanCohort}）` : "—" }}</dd></div>
-                <div><dt>硕士/博士点</dt><dd>{{ school.masters ? `${school.masters} 个 / ${school.phds} 个（一级学科）` : "—" }}</dd></div>
-                <div><dt>软科 / 校友会排名</dt><dd>{{ school.ruanke ? `第 ${school.ruanke} 名（2025） / 第 ${school.xiaoyouhui} 名（2026）` : "—" }}</dd></div>
-                <div><dt>今年计划变化</dt><dd>{{ school.planDelta >= 0 ? `+${school.planDelta}` : school.planDelta }} 人（演示值）</dd></div>
+                <div><dt>所在地</dt><dd>{{ school.province }}</dd></div>
+                <div><dt>院校类型</dt><dd>{{ school.tags || "—" }}</dd></div>
+                <div><dt>院校层次</dt><dd>{{ levelTags.join(" / ") || "普通院校" }}</dd></div>
+                <div><dt>院校特色</dt><dd>{{ (school.schoolTags || []).join(" / ") || "—" }}</dd></div>
               </dl>
               <p class="gkd-note">
-                数据说明：录取线优先级为 后端数据库真实数据 → 内置真实投档线（浙江为省考试院 2026 年一段平行投档线）→ 真实位次百分位换算的估算值；
-                位次换算使用真实一分一段曲线（浙江锚点取自省考试院 2025/2026 年一分一段表）。
-                概率算法：位次差 75% + 分差 25% 加权（与后端 <code>RecommendationPolicyService</code> 同一套口径）。
-                排名来源：软科 2025 / 校友会 2026；保研率来源：各校 {{ school.baoyanCohort }}毕业生就业质量报告。
-                招生计划数为演示值。概率是参考不是保证，受招生计划、报考热度与专业组差异影响。
+                数据说明：录取线与概率来自后端数据库真实数据（位次差 75% + 分差 25% 加权，与
+                <code>RecommendationPolicyService</code> 同一套口径）。概率是参考不是保证，受招生计划、报考热度与专业组差异影响。
               </p>
             </section>
 
@@ -247,11 +233,7 @@ function scoreGapLine(detailValue) {
                 </thead>
                 <tbody>
                   <tr v-for="row in history" :key="row.year">
-                    <td>
-                      {{ row.year }}
-                      <i v-if="row.source === 'real' || row.source === 'backend'" class="gkd-tag-real">真实</i>
-                      <i v-else class="gkd-tag-est">估算</i>
-                    </td>
+                    <td>{{ row.year }} <i class="gkd-tag-real">真实</i></td>
                     <td><b>{{ row.score }}</b></td>
                     <td>{{ fmt(row.minRank) }}</td>
                     <td>
@@ -264,64 +246,63 @@ function scoreGapLine(detailValue) {
                       <span v-if="isReady && row.minRank != null" :class="row.minRank - rank >= 0 ? 'gkd-up' : 'gkd-down'">
                         {{ row.minRank - rank >= 0 ? "靠前" : "落后" }} {{ fmt(Math.abs(row.minRank - rank)) }} 名
                       </span>
-                      <span v-else-if="isReady" class="gkd-muted">
-                        位次待测
-                      </span>
+                      <span v-else-if="isReady" class="gkd-muted">位次待测</span>
                       <span v-else class="gkd-muted">未填分数</span>
                     </td>
+                  </tr>
+                  <tr v-if="!history.length">
+                    <td colspan="5" class="gkd-muted">暂无该省录取线数据</td>
                   </tr>
                 </tbody>
               </table>
               <p class="gkd-note">
-                「真实」= 官方发布的当年录取线（浙江为省考试院 2026 年普通类一段平行投档线，最低专业组）；「估算」= 在真实位次基础上按年均约 6% 的门槛位次后移推算，外省由浙江位次百分位换算。
-                位次比分数更可靠：各年题目难度不同，分数会潮起潮落，但位次直接反映你在全省的相对位置。
+                数据来源为后端数据库录取线；位次比分数更可靠：各年题目难度不同，分数会潮起潮落，但位次直接反映你在全省的相对位置。
               </p>
             </section>
 
             <!-- 开设专业 -->
             <section v-else-if="tab === '开设专业'" class="gkd-card">
-              <h3>开设专业（示例 {{ majors.length }} 个）</h3>
+              <h3>开设专业（{{ majors.length }} 个）</h3>
               <ul class="gkd-majors">
                 <li v-for="major in majors" :key="major.code" @click="router.push(`/majors/${major.code}`)">
                   <span class="gkd-majors__name">{{ major.name }}</span>
-                  <span class="gkd-majors__meta">{{ major.category }} · {{ major.duration }} · {{ major.degree }}</span>
                   <span class="gkd-majors__score">
-                    参考分 <b>{{ majorCutoff(school, major, opts)?.score }}</b>
+                    参考分 <b>{{ major.cutoffScore ?? "—" }}</b>（位次 {{ fmt(major.minRank) }}）
                   </span>
                   <span class="gkd-majors__more">专业详情 &gt;</span>
                 </li>
+                <li v-if="!majors.length" class="gkd-muted">暂无开设专业数据</li>
               </ul>
             </section>
 
             <!-- 招生计划 -->
             <section v-else class="gkd-card">
-              <h3>{{ profile.province }} 招生计划（{{ profile.firstSubject }}类 · {{ profile.batch }}）</h3>
+              <h3>{{ profile.province }} 招生参考（{{ profile.firstSubject }}类 · {{ profile.batch }}）</h3>
               <table class="gkd-table">
                 <thead>
                   <tr>
                     <th>专业</th>
-                    <th>专业代码</th>
-                    <th>计划数</th>
-                    <th>学制</th>
-                    <th>学费/年</th>
                     <th>参考最低分</th>
+                    <th>参考最低位次</th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr v-for="row in planRows" :key="row.code">
                     <td>{{ row.name }}</td>
-                    <td>{{ row.code }}</td>
-                    <td><b>{{ row.count }}</b></td>
-                    <td>{{ row.duration }}</td>
-                    <td>¥{{ row.tuition }}</td>
-                    <td>{{ row.score }}（位次 {{ fmt(row.minRank) }}）</td>
+                    <td><b>{{ row.cutoffScore ?? "—" }}</b></td>
+                    <td>{{ fmt(row.minRank) }}</td>
+                  </tr>
+                  <tr v-if="!planRows.length">
+                    <td colspan="3" class="gkd-muted">暂无专业数据</td>
                   </tr>
                 </tbody>
               </table>
             </section>
           </template>
 
-          <p v-else class="gks-empty">没有找到这所院校，请返回查大学重新选择</p>
+          <p v-else class="gks-empty">
+            {{ loading ? "加载中…" : loadError ? `加载失败：${loadError}` : "没有找到这所院校，请返回查大学重新选择" }}
+          </p>
         </section>
 
         <GkSidePanel />

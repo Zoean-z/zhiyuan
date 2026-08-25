@@ -853,6 +853,10 @@ onMounted(async () => {
   const presetQuestion = Array.isArray(route.query.q) ? route.query.q[0] : route.query.q;
   if (typeof presetQuestion === "string" && presetQuestion.trim() && !draft.value.trim()) {
     draft.value = presetQuestion.trim();
+    // 「问前景」等跳转带来的预设问题：会话就绪后自动发送
+    if (activeConversationId.value) {
+      await sendMessage(draft.value);
+    }
   }
 });
 </script>
