@@ -4,9 +4,8 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import GkHeader from "../components/GkHeader.vue";
 import GkSchoolLogo from "../components/GkSchoolLogo.vue";
-import { MAJORS, SCHOOLS, VOLUNTEER_SCHOOL_TOP } from "../utils/exploreData";
+import { MAJORS } from "../utils/exploreData";
 import { NEWS_TAGS, newsById } from "../utils/newsData";
-import { probDetailOf } from "../utils/volunteerCore";
 import { strategyOf } from "../utils/scoreModel";
 import {
   ENTRANT_TYPES,
@@ -61,8 +60,36 @@ const SLIDES = [
 const slideIndex = ref(0);
 let slideTimer = null;
 
+/* 数据源：后端 /api/universities（公开接口），首页学校数据全部来自真实数据库 */
+const schools = ref([]);
+const loading = ref(false);
+
+async function fetchSchools() {
+  if (loading.value) return;
+  loading.value = true;
+  try {
+    const scoreVal = score.value == null ? "" : score.value;
+    const rankVal = rank.value == null ? "" : rank.value;
+    const base = `/api/universities?size=100&score=${scoreVal}&userRank=${rankVal}`;
+    const first = await (await fetch(base + "&page=1")).json();
+    const total = Number(first.total || 0);
+    const pages = Math.max(1, Math.ceil(total / 100));
+    const all = [...(first.items || [])];
+    for (let p = 2; p <= Math.min(pages, 15); p++) {
+      const pageData = await (await fetch(base + `&page=${p}`)).json();
+      all.push(...(pageData.items || []));
+    }
+    schools.value = all;
+  } catch (ex) {
+    // 拉取失败时保持空列表，不阻塞首页
+  } finally {
+    loading.value = false;
+  }
+}
+
 onMounted(() => {
   syncFromAuth();
+  fetchSchools();
   slideTimer = window.setInterval(() => {
     slideIndex.value = (slideIndex.value + 1) % SLIDES.length;
   }, 5000);
@@ -84,13 +111,9 @@ function onScoreInput(event) {
 const simStats = computed(() => {
   if (!isReady.value) return null;
   const buckets = { rush: 0, safe: 0, guard: 0 };
-  SCHOOLS.forEach((school) => {
-    const detail = probDetailOf(school, score.value, {
-      province: profile.province,
-      subjectType: subjectType.value,
-      userRank: rank.value
-    });
-    if (detail.probability == null) return;
+  schools.value.forEach((school) => {
+    const detail = school.probability;
+    if (!detail || detail.probability == null) return;
     const key = strategyOf(detail.probability).key;
     if (buckets[key] != null) buckets[key] += 1;
   });
@@ -144,11 +167,11 @@ const QUICK_ENTRIES = [
 ];
 
 /* ── 热门院校 ── */
-const SCHOOL_TABS = ["全部", "综合类", "理工类"];
+const SCHOOL_TABS = computed(() => ["全部", ...new Set(schools.value.map((s) => s.tags).filter(Boolean))]);
 const schoolTab = ref("全部");
 const schoolOffset = ref(0);
 const hotSchools = computed(() => {
-  const list = schoolTab.value === "全部" ? SCHOOLS : SCHOOLS.filter((s) => s.type === schoolTab.value);
+  const list = schoolTab.value === "全部" ? schools.value : schools.value.filter((s) => (s.tags || "").includes(schoolTab.value));
   const take = Math.min(8, list.length);
   const out = [];
   for (let i = 0; i < take; i += 1) {
@@ -186,10 +209,13 @@ const hotMajors = computed(() => {
 });
 
 /* ── 院校热度 ── */
-const heatList = VOLUNTEER_SCHOOL_TOP.slice(0, 5).map((item, i) => {
-  const school = SCHOOLS.find((s) => s.name === item.name);
-  return { ...item, id: school?.id, hot: (9.9 - i * 0.86).toFixed(1) };
-});
+const heatList = computed(() =>
+  schools.value.slice(0, 5).map((school, i) => ({
+    name: school.name,
+    id: school.id,
+    hot: (9.9 - i * 0.86).toFixed(1)
+  }))
+);
 
 /* ── 高考资讯（全站只保留这一处，侧边栏与首页「热点资讯」已删） ──
  * 真实资讯源：中国教育在线 gaokao.eol.cn，站内详情页 */
@@ -363,7 +389,7 @@ const newsRest = computed(() => newsList.value.slice(1));
             <GkSchoolLogo :school="school" />
             <span class="gk-hp__school-copy">
               <strong>{{ school.name }}</strong>
-              <em>{{ school.type }} · {{ school.nature }}</em>
+              <em>{{ school.tags || "—" }}</em>
             </span>
             <span class="gk-hp__school-more">院校详情 &gt;</span>
           </button>
