@@ -43,7 +43,10 @@ public class UniversityController {
                                       @RequestParam(value = "sort", required = false) String sort,
                                       @RequestParam(value = "page", required = false, defaultValue = "1") @Min(1) int page,
                                       @RequestParam(value = "size", required = false, defaultValue = "20") @Min(1) @Max(100) int size,
-                                      @RequestParam(value = "withDataOnly", required = false, defaultValue = "false") boolean withDataOnly) {
+                                      @RequestParam(value = "withDataOnly", required = false, defaultValue = "false") boolean withDataOnly,
+                                      @RequestParam(value = "nature", required = false) @Size(max = 20) String nature,
+                                      @RequestParam(value = "type", required = false) @Size(max = 30) String type,
+                                      @RequestParam(value = "majorId", required = false) @Positive Long majorId) {
         return universityQueryService.list(
                 resolveExamProvince(examProvince),
                 resolveSubjectType(subjectType),
@@ -56,7 +59,10 @@ public class UniversityController {
                 sort,
                 page,
                 size,
-                withDataOnly
+                withDataOnly,
+                nature,
+                type,
+                majorId
         );
     }
 

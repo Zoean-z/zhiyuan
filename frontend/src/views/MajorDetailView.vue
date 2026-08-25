@@ -1,12 +1,10 @@
 <script setup>
 import { ArrowDown } from "@element-plus/icons-vue";
-import { computed, ref, watch } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import GkHeader from "../components/GkHeader.vue";
 import GkSchoolLogo from "../components/GkSchoolLogo.vue";
 import GkSidePanel from "../components/GkSidePanel.vue";
-import { MAJORS, SCHOOLS } from "../utils/exploreData";
-import { majorCutoff, probDetailOf, schoolCutoff } from "../utils/volunteerCore";
 import { profile, subjectType } from "../utils/examProfile";
 import { strategyOf } from "../utils/scoreModel";
 import hotIcon from "../assets/gk_hot.png";
@@ -22,37 +20,20 @@ const TABS = [
   { key: "jobs", label: "相关就业" }
 ];
 
-const SUB_TYPE = {
-  计算机类: "理工", 电子信息类: "理工", 机械类: "理工", 自动化类: "理工", 土木类: "理工",
-  管理科学与工程类: "理工", 生物医学工程类: "理工",
-  数学类: "综合", 物理类: "综合", 化学类: "综合", 生物科学类: "综合", 心理学类: "综合",
-  中国语言文学类: "综合", 外国语言文学类: "综合", 新闻传播学类: "综合",
-  工商管理类: "综合", 电子商务类: "综合", 经济学类: "综合", 金融学类: "综合", 财政学类: "综合",
-  法学类: "综合", 政治学类: "综合", 社会学类: "综合", 哲学类: "综合", 历史学类: "综合",
-  临床医学类: "医药", 口腔医学类: "医药", 护理学类: "医药", 中医学类: "医药",
-  教育学类: "师范", 体育学类: "体育", 设计学类: "艺术", 戏剧与影视学类: "艺术",
-  动物医学类: "农林", 植物生产类: "农林"
-};
-
+/* 学科门类 → 典型就业方向（静态知识参考，非数据库字段） */
 const EMPLOY_MAP = {
-  计算机类: ["前端开发", "后端开发", "算法工程师", "测试工程师", "运维工程师"],
-  电子信息类: ["硬件工程师", "嵌入式开发", "芯片设计", "通信工程师"],
-  机械类: ["机械设计", "智能制造", "汽车工程", "设备工程师"],
-  自动化类: ["自动控制", "机器人工程", "电气工程师", "工业互联网"],
-  土木类: ["结构设计", "工程造价", "施工管理", "市政规划"],
-  临床医学类: ["临床医师", "医学科研", "公共卫生", "医院管理"],
-  口腔医学类: ["口腔医师", "口腔诊所", "正畸方向", "医学教研"],
-  护理学类: ["临床护理", "护理管理", "社区护理", "国际护理"],
-  中医学类: ["中医师", "中医科研", "康复理疗", "中药研发"],
-  工商管理类: ["企业管理", "市场营销", "人力资源", "财务分析"],
-  经济学类: ["经济分析", "政策研究", "数据分析师", "金融顾问"],
-  金融学类: ["银行从业", "证券投资", "风控合规", "基金管理"],
-  法学类: ["律师", "法务专员", "公务员", "合规审查"],
-  中国语言文学类: ["编辑记者", "文案策划", "语文教师", "内容运营"],
-  教育学类: ["学校教师", "教育管理", "课程研发", "教育咨询"]
+  工学: ["软件开发", "算法工程师", "硬件工程师", "智能制造", "通信工程"],
+  理学: ["科研院所", "数据分析", "教师", "考研深造", "交叉学科"],
+  医学: ["临床医师", "医学科研", "公共卫生", "医院管理", "医药研发"],
+  文学: ["编辑记者", "文案策划", "教师", "翻译", "内容运营"],
+  法学: ["律师", "法务专员", "公务员", "合规审查"],
+  经济学: ["经济分析", "金融顾问", "数据分析师", "银行从业"],
+  管理学: ["企业管理", "市场营销", "人力资源", "财务分析"],
+  教育学: ["学校教师", "教育管理", "课程研发", "教育咨询"],
+  历史学: ["文博考古", "历史教师", "档案管理", "文化研究"]
 };
 
-const SORTS = ["默认排序", "分数排序", "软科排序", "学科排序", "毕业生满意度排序"];
+const SORTS = ["默认排序", "分数排序"];
 const SUBJECT_SCOPES = ["全部科类", "物理类", "历史类"];
 
 const provinceFilter = ref("不限");
@@ -66,11 +47,46 @@ const pageSize = 10;
 const followed = ref(false);
 const activeTab = ref("intro");
 
-const major = computed(() => MAJORS.find((m) => m.code === String(route.params.code || "")) || null);
+const majors = ref([]);
+const major = ref(null);
+const offeringSchools = ref([]);
+const loading = ref(true);
+
+async function load(id) {
+  loading.value = true;
+  if (!majors.value.length) {
+    try {
+      const res = await fetch("/api/majors");
+      const data = await res.json();
+      majors.value = data.majors || [];
+    } catch (e) {
+      console.error("加载专业目录失败", e);
+    }
+  }
+  major.value = majors.value.find((m) => String(m.id) === String(id)) || null;
+  offeringSchools.value = [];
+  if (major.value) {
+    try {
+      const params = new URLSearchParams();
+      if (profile.province) params.set("province", profile.province);
+      if (subjectType.value) params.set("subjectType", subjectType.value);
+      if (profile.score) params.set("score", profile.score);
+      const qs = params.toString();
+      const res = await fetch(`/api/majors/${major.value.id}/schools${qs ? `?${qs}` : ""}`);
+      const list = (await res.json()) || [];
+      // 校徽组件按 school.id/school.name 取图，补别名
+      offeringSchools.value = list.map((s) => ({ ...s, id: s.universityId, name: s.universityName }));
+    } catch (e) {
+      console.error("加载开设院校失败", e);
+      offeringSchools.value = [];
+    }
+  }
+  loading.value = false;
+}
 
 watch(
-  () => [route.params.code, route.query.tab],
-  ([, tab]) => {
+  () => [route.params.id, route.query.tab],
+  async ([id, tab]) => {
     const t = TABS.find((x) => x.key === tab);
     activeTab.value = t ? t.key : "intro";
     page.value = 1;
@@ -80,63 +96,38 @@ watch(
     featureFilter.value = "不限";
     sortKey.value = "默认排序";
     scope.value = "全部科类";
+    await load(id);
   },
   { immediate: true }
 );
 
-/* ---------- 派生数据（不再伪造专业录取口径） ---------- */
+/* ---------- 派生数据 ---------- */
 
 const popularity = computed(() =>
-  major.value ? (5240000 - major.value.hot * 91837).toLocaleString("en-US") : "0"
+  major.value ? (major.value.openSchoolCount || 0).toLocaleString("en-US") : "0"
 );
 
-/* 【修复】不再伪造“某专业在某校的最低分/开设情况”。
-   专业详情页暂只展示统一院校线参考，避免用 hash 派生出看似真实的专业录取数据。 */
-const baseScoreOf = (school) =>
-  schoolCutoff(school, { province: profile.province, subjectType: subjectType.value }).score;
-
-function subjectScoreOf(school) {
-  return baseScoreOf(school);
-}
-
-function ratingOf(school) {
-  return 92 + ((school.id * 7) % 8);
-}
-
-function satisfactionOf(school) {
-  return 86 + ((school.id * 5) % 10);
-}
-
-const offeringSchools = computed(() => {
-  if (!major.value) return [];
-  return SCHOOLS.map((school) => ({
-    ...school,
-    // 双一流 ≡ 211：派生字段按最高标准归并，筛选与标签展示统一走双一流（20260820 概念更新）
-    isDoubleFirstClass: school.isDoubleFirstClass || school.is211,
-    subjectScore: subjectScoreOf(school),
-    rating: ratingOf(school),
-    satisfaction: satisfactionOf(school)
-  }));
-});
+const offeringCount = computed(() => offeringSchools.value.length || major.value?.openSchoolCount || 0);
 
 const provinces = computed(() => ["不限", ...Array.from(new Set(offeringSchools.value.map((s) => s.province)))]);
-const types = computed(() => ["不限", ...Array.from(new Set(offeringSchools.value.map((s) => s.type.replace("类", ""))))]);
-
-const FEATURE_FIELD = { 985: "is985", 双一流: "isDoubleFirstClass" };
+const types = computed(() => ["不限", ...Array.from(new Set(offeringSchools.value.map((s) => (s.schoolType || "").replace("类", ""))))]);
 
 const filteredSchools = computed(() => {
   let list = offeringSchools.value.filter((s) => {
     if (provinceFilter.value !== "不限" && s.province !== provinceFilter.value) return false;
-    if (typeFilter.value !== "不限" && !s.type.startsWith(typeFilter.value)) return false;
+    if (typeFilter.value !== "不限" && !(s.schoolType || "").includes(typeFilter.value)) return false;
     if (natureFilter.value !== "不限" && s.nature !== natureFilter.value) return false;
-    if (featureFilter.value !== "不限" && !s[FEATURE_FIELD[featureFilter.value]]) return false;
+    if (featureFilter.value !== "不限") {
+      if (featureFilter.value === "985" && !s.is985) return false;
+      if (featureFilter.value === "双一流" && !s.is985 && !s.is211) return false;
+    }
     return true;
   });
-  if (sortKey.value === "分数排序") list = [...list].sort((a, b) => b.subjectScore - a.subjectScore);
-  else if (sortKey.value === "软科排序") list = [...list].sort((a, b) => a.id - b.id);
-  else if (sortKey.value === "学科排序") list = [...list].sort((a, b) => b.rating - a.rating);
-  else if (sortKey.value === "毕业生满意度排序") list = [...list].sort((a, b) => b.satisfaction - a.satisfaction);
-  else list = [...list].sort((a, b) => a.id - b.id);
+  if (sortKey.value === "分数排序") {
+    list = [...list].sort((a, b) => (b.cutoffScore ?? -1) - (a.cutoffScore ?? -1));
+  } else {
+    list = [...list].sort((a, b) => a.universityId - b.universityId);
+  }
   return list;
 });
 
@@ -145,28 +136,31 @@ const pagedSchools = computed(() =>
 );
 
 function probOf(school) {
-  const detail = probDetailOf(school, profile.score, { province: profile.province, subjectType: subjectType.value });
-  const tag = strategyOf(detail.probability);
+  const p = school.probability?.probability;
+  const tag = strategyOf(p);
   return {
-    p: detail.probability,
-    label: detail.probability == null ? "待测" : tag.full,
+    p,
+    label: p == null ? "待测" : tag.full,
     cls: tag.key
   };
 }
 
-const isHot = (school) => school.id <= 8;
+const isHot = (school) => Boolean(school.is985 || school.is211);
 
 function schoolTags(school) {
-  const tags = ["本科", school.type, school.nature];
+  const tags = [school.schoolType || "本科"];
+  if (school.nature) tags.push(school.nature);
   if (school.is985) tags.push("985");
-  // 双一流 ≡ 211：211 不再单独展示，由双一流标签统一承载（20260820 概念归并）
-  if (school.isDoubleFirstClass) tags.push("双一流");
+  if (school.is211 && !school.is985) tags.push("211");
   return tags;
 }
 
 /* ---------- 交互 ---------- */
 function askProb(school) {
-  router.push({ path: "/agent", query: { q: `我在湖南物理类560分，被${school.name}${major.value?.name || ""}专业录取的概率有多大？` } });
+  router.push({
+    path: "/agent",
+    query: { q: `我在${profile.province || "湖南"}${subjectType.value || "物理"}类${profile.score || ""}分，被${school.universityName}${major.value?.name || ""}专业录取的概率有多大？` }
+  });
 }
 
 function askPredict() {
@@ -174,22 +168,20 @@ function askPredict() {
 }
 
 function goMajor(m) {
-  router.push({ path: `/majors/${m.code}` });
+  router.push({ path: `/majors/${m.id}` });
 }
 
 const relatedMajors = computed(() => {
   if (!major.value) return [];
-  return MAJORS.filter((m) => m.code !== major.value.code && (m.sub === major.value.sub || m.category === major.value.category)).slice(0, 6);
+  return majors.value
+    .filter((m) => m.id !== major.value.id && m.category === major.value.category)
+    .slice(0, 6);
 });
 
-const employTags = computed(() => EMPLOY_MAP[major.value?.sub] || ["国企央企", "公务员", "科研院所", "自主创业"]);
+const employTags = computed(() => EMPLOY_MAP[major.value?.category] || ["国企央企", "公务员", "科研院所", "自主创业"]);
 
 const scoreBands = computed(() =>
-  filteredSchools.value.slice(0, 8).map((s) => ({
-    ...s,
-    prob: probOf(s),
-    rankNo: schoolCutoff(s, { province: profile.province, subjectType: subjectType.value })?.minRank ?? null
-  }))
+  filteredSchools.value.slice(0, 8).map((s) => ({ ...s, prob: probOf(s) }))
 );
 </script>
 
@@ -205,10 +197,10 @@ const scoreBands = computed(() =>
             <div class="gkd-head__left">
               <div class="gkd-head__name">
                 <h3>{{ major.name }}</h3>
-                <span class="gkd-head__pop">人气值：{{ popularity }}</span>
+                <span class="gkd-head__pop">开设院校：{{ popularity }} 所</span>
               </div>
               <p class="gkd-head__path">
-                <span v-for="seg in [major.level ? '专科(高职)' : '本科(普通)', major.category, major.sub]" :key="seg">{{ seg }}</span>
+                <span v-for="seg in ['本科(普通)', major.category]" :key="seg">{{ seg }}</span>
               </p>
             </div>
             <button type="button" class="gkd-head__follow" :class="{ 'is-on': followed }" @click="followed = !followed">
@@ -317,7 +309,7 @@ const scoreBands = computed(() =>
                 <GkSchoolLogo :school="school" />
                 <div class="gkd-item__info">
                   <p class="gkd-item__name">
-                    {{ school.name }}
+                    {{ school.universityName }}
                     <img v-if="isHot(school)" :src="hotIcon" alt="hot" class="gkd-item__hot" />
                   </p>
                   <p class="gkd-item__tags">
@@ -350,19 +342,15 @@ const scoreBands = computed(() =>
           <!-- 专业概况 -->
           <div v-else-if="activeTab === 'intro'" class="gkd-panel">
             <dl class="gkd-facts">
-              <div class="gkd-facts__item"><dt>修业年限</dt><dd>{{ major.duration }}</dd></div>
-              <div class="gkd-facts__item"><dt>授予学位</dt><dd>{{ major.degree }}</dd></div>
-              <div class="gkd-facts__item"><dt>男女比例</dt><dd>{{ major.gender }}</dd></div>
-              <div class="gkd-facts__item"><dt>平均年薪</dt><dd>{{ major.salary }}</dd></div>
-              <div class="gkd-facts__item"><dt>开设院校</dt><dd>{{ major.schoolCount }} 所</dd></div>
-              <div class="gkd-facts__item"><dt>专业代码</dt><dd>{{ major.code }}</dd></div>
+              <div class="gkd-facts__item"><dt>学科门类</dt><dd>{{ major.category }}</dd></div>
+              <div class="gkd-facts__item"><dt>授予学位</dt><dd>{{ major.degreeType || "—" }}</dd></div>
+              <div class="gkd-facts__item"><dt>选科要求</dt><dd>{{ major.subjectRequirement || "不限" }}</dd></div>
+              <div class="gkd-facts__item"><dt>开设院校</dt><dd>{{ major.openSchoolCount || 0 }} 所</dd></div>
+              <div class="gkd-facts__item"><dt>专业代码</dt><dd>{{ major.id }}</dd></div>
             </dl>
             <h4 class="gkd-sub">专业介绍</h4>
             <p class="gkd-text">
-              {{ major.name }}专业属于{{ major.category }}门类下的{{ major.sub }}，修业年限{{ major.duration }}，毕业后授予{{ major.degree }}学位。
-              该专业主要培养掌握{{ major.sub.replace("类", "") }}基础理论与专业技能、能够解决实际问题的复合型人才，
-              全国目前共有 {{ major.schoolCount }} 所院校开设。从历年报考热度看，该专业人气值约 {{ popularity }}，
-              在{{ major.category }}门类中热度排名靠前{{ major.hot <= 10 ? "（TOP10）" : "" }}。
+              {{ major.description || `${major.name}专业属于${major.category}门类，毕业后授予${major.degreeType || "相应"}学位。` }}
             </p>
             <h4 class="gkd-sub">就业方向</h4>
             <p class="gkd-text">毕业生主要面向以下岗位与行业，供参考：</p>
@@ -380,15 +368,15 @@ const scoreBands = computed(() =>
                 <tr><th>院校</th><th>最低分</th><th>最低位次</th><th>录取概率</th></tr>
               </thead>
               <tbody>
-                <tr v-for="row in scoreBands" :key="row.id">
+                <tr v-for="row in scoreBands" :key="row.universityId">
                   <td>
                     <span class="gkd-table__school">
                       <GkSchoolLogo :school="row" />
-                      {{ row.name }}
+                      {{ row.universityName }}
                     </span>
                   </td>
-                  <td>{{ row.subjectScore }}</td>
-                  <td>{{ row.rankNo == null ? "—" : row.rankNo }}</td>
+                  <td>{{ row.cutoffScore == null ? "—" : row.cutoffScore }}</td>
+                  <td>{{ row.minRank == null ? "—" : row.minRank }}</td>
                   <td><span class="gkd-badge" :class="`is-${row.prob.cls}`">{{ row.prob.p == null ? "待测" : `${row.prob.label} ${row.prob.p}%` }}</span></td>
                 </tr>
               </tbody>
@@ -401,16 +389,16 @@ const scoreBands = computed(() =>
           <div v-else class="gkd-panel">
             <div class="gkd-stats">
               <div class="gkd-stats__item">
-                <em>{{ major.salary.replace("¥", "") }}</em>
-                <span>毕业平均年薪</span>
-              </div>
-              <div class="gkd-stats__item">
-                <em>{{ major.gender.split(":")[0] }}% / {{ major.gender.split(":")[1] }}%</em>
-                <span>男生 / 女生比例</span>
-              </div>
-              <div class="gkd-stats__item">
-                <em>{{ major.schoolCount }}</em>
+                <em>{{ offeringCount }}</em>
                 <span>全国开设院校数</span>
+              </div>
+              <div class="gkd-stats__item">
+                <em>{{ major.category }}</em>
+                <span>学科门类</span>
+              </div>
+              <div class="gkd-stats__item">
+                <em>{{ major.subjectRequirement || "不限" }}</em>
+                <span>选科要求</span>
               </div>
             </div>
             <h4 class="gkd-sub">主要就业去向</h4>
@@ -424,7 +412,7 @@ const scoreBands = computed(() =>
         <aside class="gkd-side">
           <div class="gkd-related">
             <p class="gkd-related__title">相关专业推荐</p>
-            <button v-for="m in relatedMajors" :key="m.code" type="button" class="gkd-related__item" @click="goMajor(m)">
+            <button v-for="m in relatedMajors" :key="m.id" type="button" class="gkd-related__item" @click="goMajor(m)">
               {{ m.name }}
             </button>
           </div>

@@ -34,6 +34,18 @@ public class MajorAdmissionCutoff {
     @TableField("min_rank")
     private Integer minRank;
 
+    @TableField("plan_count")
+    private Integer planCount;
+
+    @TableField("duration_years")
+    private Integer durationYears;
+
+    @TableField("tuition_per_year")
+    private Integer tuitionPerYear;
+
+    @TableField("data_kind")
+    private String dataKind;
+
     public Long getId() {
         return id;
     }
@@ -104,5 +116,37 @@ public class MajorAdmissionCutoff {
 
     public void setMinRank(Integer minRank) {
         this.minRank = minRank;
+    }
+
+    public Integer getPlanCount() {
+        return planCount;
+    }
+
+    public void setPlanCount(Integer planCount) {
+        this.planCount = planCount;
+    }
+
+    public Integer getDurationYears() {
+        return durationYears;
+    }
+
+    public void setDurationYears(Integer durationYears) {
+        this.durationYears = durationYears;
+    }
+
+    public Integer getTuitionPerYear() {
+        return tuitionPerYear;
+    }
+
+    public void setTuitionPerYear(Integer tuitionPerYear) {
+        this.tuitionPerYear = tuitionPerYear;
+    }
+
+    public String getDataKind() {
+        return dataKind;
+    }
+
+    public void setDataKind(String dataKind) {
+        this.dataKind = dataKind;
     }
 }

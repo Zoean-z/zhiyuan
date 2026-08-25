@@ -16,7 +16,13 @@ public interface UniversityMapper extends BaseMapper<University> {
                    is_985 AS is985,
                    is_211 AS is211,
                    is_double_first_class AS isDoubleFirstClass,
-                   tags
+                   tags,
+                   nature,
+                   school_type AS schoolType,
+                   soft_ranking AS softRanking,
+                   postgraduate_rate AS postgraduateRate,
+                   has_graduate_school AS hasGraduateSchool,
+                   has_doctor_program AS hasDoctorProgram
             FROM university
             WHERE id = #{id}
             """)
@@ -30,7 +36,13 @@ public interface UniversityMapper extends BaseMapper<University> {
                    is_985 AS is985,
                    is_211 AS is211,
                    is_double_first_class AS isDoubleFirstClass,
-                   tags
+                   tags,
+                   nature,
+                   school_type AS schoolType,
+                   soft_ranking AS softRanking,
+                   postgraduate_rate AS postgraduateRate,
+                   has_graduate_school AS hasGraduateSchool,
+                   has_doctor_program AS hasDoctorProgram
             FROM university
             WHERE name = #{name}
             LIMIT 1
@@ -45,7 +57,13 @@ public interface UniversityMapper extends BaseMapper<University> {
                    is_985 AS is985,
                    is_211 AS is211,
                    is_double_first_class AS isDoubleFirstClass,
-                   tags
+                   tags,
+                   nature,
+                   school_type AS schoolType,
+                   soft_ranking AS softRanking,
+                   postgraduate_rate AS postgraduateRate,
+                   has_graduate_school AS hasGraduateSchool,
+                   has_doctor_program AS hasDoctorProgram
             FROM university
             ORDER BY id
             """)
@@ -55,7 +73,12 @@ public interface UniversityMapper extends BaseMapper<University> {
             <script>
             SELECT id, name, province, tier,
                    is_985 AS is985, is_211 AS is211,
-                   is_double_first_class AS isDoubleFirstClass, tags
+                   is_double_first_class AS isDoubleFirstClass, tags,
+                   nature, school_type AS schoolType,
+                   soft_ranking AS softRanking,
+                   postgraduate_rate AS postgraduateRate,
+                   has_graduate_school AS hasGraduateSchool,
+                   has_doctor_program AS hasDoctorProgram
             FROM university
             <where>
               <if test="province != null and province != ''">AND province = #{province}</if>
@@ -73,7 +96,12 @@ public interface UniversityMapper extends BaseMapper<University> {
             <script>
             SELECT id, name, province, tier,
                    is_985 AS is985, is_211 AS is211,
-                   is_double_first_class AS isDoubleFirstClass, tags
+                   is_double_first_class AS isDoubleFirstClass, tags,
+                   nature, school_type AS schoolType,
+                   soft_ranking AS softRanking,
+                   postgraduate_rate AS postgraduateRate,
+                   has_graduate_school AS hasGraduateSchool,
+                   has_doctor_program AS hasDoctorProgram
             FROM university
             WHERE id IN
             <foreach item="item" collection="ids" open="(" separator="," close=")">#{item}</foreach>
@@ -97,4 +125,20 @@ public interface UniversityMapper extends BaseMapper<University> {
             ORDER BY tags
             """)
     List<String> findDistinctTagValues();
+
+    @Select("""
+            SELECT DISTINCT nature
+            FROM university
+            WHERE nature IS NOT NULL AND nature != ''
+            ORDER BY nature
+            """)
+    List<String> findDistinctNatures();
+
+    @Select("""
+            SELECT DISTINCT school_type
+            FROM university
+            WHERE school_type IS NOT NULL AND school_type != ''
+            ORDER BY school_type
+            """)
+    List<String> findDistinctSchoolTypes();
 }

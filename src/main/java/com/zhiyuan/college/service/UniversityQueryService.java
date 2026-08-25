@@ -2,8 +2,10 @@ package com.zhiyuan.college.service;
 
 import com.zhiyuan.college.mapper.AdmissionCutoffMapper;
 import com.zhiyuan.college.mapper.MajorAdmissionCutoffMapper;
+import com.zhiyuan.college.mapper.MajorMapper;
 import com.zhiyuan.college.mapper.UniversityMapper;
 import com.zhiyuan.college.model.dto.CutoffHistoryItemResponse;
+import com.zhiyuan.college.model.dto.MajorSchoolItemResponse;
 import com.zhiyuan.college.model.dto.ProbabilityBreakdownResponse;
 import com.zhiyuan.college.model.dto.UniversityDetailResponse;
 import com.zhiyuan.college.model.dto.UniversityFilterOptionsResponse;
@@ -20,10 +22,13 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
@@ -40,15 +45,18 @@ public class UniversityQueryService {
     private final UniversityMapper universityMapper;
     private final AdmissionCutoffMapper admissionCutoffMapper;
     private final MajorAdmissionCutoffMapper majorAdmissionCutoffMapper;
+    private final MajorMapper majorMapper;
     private final ProbabilityService probabilityService;
 
     public UniversityQueryService(UniversityMapper universityMapper,
-                                 AdmissionCutoffMapper admissionCutoffMapper,
-                                 MajorAdmissionCutoffMapper majorAdmissionCutoffMapper,
-                                 ProbabilityService probabilityService) {
+                                  AdmissionCutoffMapper admissionCutoffMapper,
+                                  MajorAdmissionCutoffMapper majorAdmissionCutoffMapper,
+                                  MajorMapper majorMapper,
+                                  ProbabilityService probabilityService) {
         this.universityMapper = universityMapper;
         this.admissionCutoffMapper = admissionCutoffMapper;
         this.majorAdmissionCutoffMapper = majorAdmissionCutoffMapper;
+        this.majorMapper = majorMapper;
         this.probabilityService = probabilityService;
     }
 
@@ -63,7 +71,10 @@ public class UniversityQueryService {
                                       String sort,
                                       int page,
                                       int size,
-                                      boolean withDataOnly) {
+                                      boolean withDataOnly,
+                                      String nature,
+                                      String schoolType,
+                                      Long majorId) {
         int safePage = Math.max(1, page);
         int safeSize = Math.min(Math.max(1, size), MAX_PAGE_SIZE);
         String normalizedLevel = trimToNull(level);
@@ -72,6 +83,21 @@ public class UniversityQueryService {
                 trimToNull(schoolProvince), trimToNull(keyword), trimToNull(tag));
         if (universities == null) {
             universities = List.of();
+        }
+
+        // 按专业筛选：先查该专业开设的大学 id 集合（major_admission_cutoff 真实映射）
+        java.util.Set<Long> majorSchoolIds = null;
+        if (majorId != null) {
+            var majorRows = majorAdmissionCutoffMapper.findSchoolsByMajorName(
+                    resolveMajorName(majorId), null, null);
+            if (majorRows != null && !majorRows.isEmpty()) {
+                majorSchoolIds = new java.util.HashSet<>();
+                for (MajorSchoolItemResponse row : majorRows) {
+                    if (row.getUniversityId() != null) {
+                        majorSchoolIds.add(row.getUniversityId());
+                    }
+                }
+            }
         }
 
         RankResolution rank = probabilityService.resolveRank(examProvince, subjectType, score, providedRank);
@@ -95,6 +121,17 @@ public class UniversityQueryService {
                     university.getTier())) {
                 continue;
             }
+            String natureValue = trimToNull(university.getNature());
+            String schoolTypeValue = trimToNull(university.getSchoolType());
+            if (trimToNull(nature) != null && !Objects.equals(natureValue, trimToNull(nature))) {
+                continue;
+            }
+            if (trimToNull(schoolType) != null && !Objects.equals(schoolTypeValue, trimToNull(schoolType))) {
+                continue;
+            }
+            if (majorSchoolIds != null && !majorSchoolIds.contains(university.getId())) {
+                continue;
+            }
             AdmissionCutoff cutoff = latestCutoffs.get(university.getId());
             if (withDataOnly && cutoff == null) {
                 continue;
@@ -116,6 +153,8 @@ public class UniversityQueryService {
                     university.getName(),
                     university.getProvince(),
                     university.getTier(),
+                    university.getNature(),
+                    university.getSchoolType(),
                     UniversityTagUtils.resolveIs985(university.getIs985(), university.getTier()),
                     UniversityTagUtils.resolveIs211(university.getIs211(), university.getTier()),
                     UniversityTagUtils.resolveIsDoubleFirstClass(university.getIsDoubleFirstClass(), university.getTier()),
@@ -213,7 +252,11 @@ public class UniversityQueryService {
             }
         }
         List<UniversityMajorItemResponse> majors = new ArrayList<>();
+        int totalPlanCount = 0;
         for (MajorAdmissionCutoff row : latestByMajor.values()) {
+            if (row.getPlanCount() != null) {
+                totalPlanCount += row.getPlanCount();
+            }
             ProbabilityBreakdownResponse majorProbability = !canEvaluate(score, rank) ? null : probabilityService.buildBreakdown(
                     university.getId(),
                     university.getName(),
@@ -231,6 +274,9 @@ public class UniversityQueryService {
                     row.getAdmissionYear(),
                     row.getCutoffScore(),
                     row.getMinRank(),
+                    row.getPlanCount(),
+                    row.getDurationYears(),
+                    row.getTuitionPerYear(),
                     majorProbability
             ));
         }
@@ -240,6 +286,14 @@ public class UniversityQueryService {
                 university.getName(),
                 university.getProvince(),
                 university.getTier(),
+                university.getNature(),
+                university.getSchoolType(),
+                university.getSoftRanking(),
+                university.getPostgraduateRate() == null ? null : university.getPostgraduateRate().toPlainString(),
+                university.getHasGraduateSchool(),
+                university.getHasDoctorProgram(),
+                totalPlanCount,
+                latestByMajor.size(),
                 UniversityTagUtils.resolveIs985(university.getIs985(), university.getTier()),
                 UniversityTagUtils.resolveIs211(university.getIs211(), university.getTier()),
                 UniversityTagUtils.resolveIsDoubleFirstClass(university.getIsDoubleFirstClass(), university.getTier()),
@@ -265,6 +319,8 @@ public class UniversityQueryService {
         List<String> subjectTypes = Arrays.stream(SubjectType.values()).map(SubjectType::getDisplayName).toList();
         // 双一流 ≡ 211：筛选项不再单列 211（20260820 概念归并）
         List<String> levels = List.of("985", "双一流", "普通");
+        List<String> natures = safeList(universityMapper.findDistinctNatures());
+        List<String> types = safeList(universityMapper.findDistinctSchoolTypes());
 
         LinkedHashSet<String> tags = new LinkedHashSet<>();
         for (String raw : safeList(universityMapper.findDistinctTagValues())) {
@@ -283,7 +339,9 @@ public class UniversityQueryService {
                 examProvinces,
                 subjectTypes,
                 levels,
-                new ArrayList<>(tags)
+                new ArrayList<>(tags),
+                natures,
+                types
         );
     }
 
@@ -333,5 +391,11 @@ public class UniversityQueryService {
 
     private boolean canEvaluate(Integer score, RankResolution rank) {
         return score != null || (rank != null && rank.rank() != null);
+    }
+
+    /** majorId → major.name（查专业筛选用的大学集合）。 */
+    private String resolveMajorName(Long majorId) {
+        var major = majorMapper.findByIdCompat(majorId);
+        return major == null ? null : major.getName();
     }
 }

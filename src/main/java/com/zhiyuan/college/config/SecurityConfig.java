@@ -58,6 +58,7 @@ public class SecurityConfig {
                     auth.dispatcherTypeMatchers(DispatcherType.ASYNC).permitAll()
                             .requestMatchers("/api/auth/**", "/api/meta/**",
                                     "/api/universities", "/api/universities/**",
+                                    "/api/majors", "/api/majors/**",
                                     "/api/probability", "/api/probability/**").permitAll()
                             .requestMatchers("/api/admin/**").hasRole("ADMIN")
                             .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()

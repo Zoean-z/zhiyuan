@@ -21,6 +21,7 @@ onMounted(() => {
   syncFromAuth();
   applyHeaderQuery(route.query.q);
   fetchSchools();
+  loadMajors();
 });
 watch(() => route.query.q, applyHeaderQuery);
 
@@ -53,24 +54,51 @@ async function fetchSchools() {
 }
 
 const PROVINCE_OPTS = computed(() => ["不限", ...new Set(schools.value.map((s) => s.province).filter(Boolean))]);
-const TYPE_OPTS = computed(() => ["不限", ...new Set(schools.value.map((s) => s.tags).filter(Boolean))]);
+const TYPE_OPTS = computed(() => ["不限", ...new Set(schools.value.map((s) => s.schoolType).filter(Boolean))]);
+const NATURE_OPTS = ["不限", "公办", "民办", "中外合作办学"];
 const FEATURE_OPTS = ["不限", "985", "双一流"];
 const SORT_OPTS = ["默认排序", "录取概率由高到低", "分数由高到低", "分数由低到高"];
 
-/* 专业大类 → 院校标签近似筛选（数据为院校标签维度） */
-const MAJOR_TYPE_MAP = {
-  "计算机类": "工科", "电子信息类": "工科", "机械类": "工科", "电气类": "工科",
-  "法学类": "政法", "教育学类": "师范", "经济学类": "财经", "金融学类": "财经",
-  "临床医学类": "医药", "药学类": "医药", "植物生产类": "农林", "设计学类": "艺术", "体育学类": "体育"
-};
-const MAJOR_OPTS = ["不限", ...Object.keys(MAJOR_TYPE_MAP)];
+/* 专业筛选：真实专业目录（/api/majors）+ 开设院校集合（/api/majors/{id}/schools） */
+const majors = ref([]);
+const majorSchoolIds = ref(null);
+const MAJOR_OPTS = computed(() => ["不限", ...majors.value.map((m) => m.name)]);
 
 const provinceFilter = ref("不限");
 const typeFilter = ref("不限");
+const natureFilter = ref("不限");
 const featureFilter = ref("不限");
 const majorFilter = ref("不限");
 const sortKey = ref("默认排序");
 const keyword = ref("");
+
+async function loadMajors() {
+  try {
+    const data = await (await fetch("/api/majors")).json();
+    majors.value = data.majors || [];
+  } catch (e) {
+    console.error("加载专业目录失败", e);
+  }
+}
+
+async function applyMajor(name) {
+  majorFilter.value = name;
+  if (name === "不限") {
+    majorSchoolIds.value = null;
+    return;
+  }
+  const major = majors.value.find((m) => m.name === name);
+  if (!major) {
+    majorSchoolIds.value = null;
+    return;
+  }
+  try {
+    const list = await (await fetch(`/api/majors/${major.id}/schools`)).json();
+    majorSchoolIds.value = new Set((list || []).map((s) => s.universityId));
+  } catch (e) {
+    majorSchoolIds.value = null;
+  }
+}
 
 /**
  * 【修复】原来这里的录取概率是 `42 + (school.id * 37) % 52`，
@@ -136,7 +164,8 @@ const filtered = computed(() => {
   const kw = keyword.value.trim();
   const list = schools.value.filter((school) => {
     if (provinceFilter.value !== "不限" && school.province !== provinceFilter.value) return false;
-    if (typeFilter.value !== "不限" && !(school.tags || "").includes(typeFilter.value)) return false;
+    if (typeFilter.value !== "不限" && school.schoolType !== typeFilter.value) return false;
+    if (natureFilter.value !== "不限" && school.nature !== natureFilter.value) return false;
     if (featureFilter.value !== "不限") {
       if (featureFilter.value === "双一流") {
         // 双一流 ≡ 211：选双一流时 211 院校同样命中（20260820 概念归并）
@@ -145,7 +174,7 @@ const filtered = computed(() => {
         return false;
       }
     }
-    if (majorFilter.value !== "不限" && !(school.tags || "").includes(MAJOR_TYPE_MAP[majorFilter.value] || "")) return false;
+    if (majorSchoolIds.value && !majorSchoolIds.value.has(school.id)) return false;
     if (kw && !school.name.includes(kw)) return false;
     return true;
   });
@@ -160,6 +189,7 @@ const filtered = computed(() => {
 
 function applyType(value) {
   typeFilter.value = value;
+  natureFilter.value = "不限";
   featureFilter.value = "不限";
 }
 
@@ -203,8 +233,8 @@ function goProfile() {
 
               <el-dropdown trigger="click" popper-class="gks-drop gks-drop--wide">
                 <button type="button" class="gks-select">
-                  <span :class="{ 'is-set': typeFilter !== '不限' || featureFilter !== '不限' }">
-                    {{ typeFilter !== "不限" || featureFilter !== "不限" ? [typeFilter, featureFilter].filter((v) => v !== "不限").join("/") : "类型" }}
+                  <span :class="{ 'is-set': typeFilter !== '不限' || natureFilter !== '不限' || featureFilter !== '不限' }">
+                    {{ typeFilter !== "不限" || natureFilter !== "不限" || featureFilter !== "不限" ? [typeFilter, natureFilter, featureFilter].filter((v) => v !== "不限").join("/") : "类型" }}
                   </span>
                   <el-icon><ArrowDown /></el-icon>
                 </button>
@@ -214,6 +244,12 @@ function goProfile() {
                       <p class="gks-drop__label">院校类型</p>
                       <div class="gks-drop__grid">
                         <button v-for="t in TYPE_OPTS" :key="t" type="button" :class="['gks-drop__opt', { 'is-active': typeFilter === t }]" @click="applyType(t)">{{ t }}</button>
+                      </div>
+                    </div>
+                    <div class="gks-drop__group">
+                      <p class="gks-drop__label">办学性质</p>
+                      <div class="gks-drop__grid">
+                        <button v-for="n in NATURE_OPTS" :key="n" type="button" :class="['gks-drop__opt', { 'is-active': natureFilter === n }]" @click="natureFilter = n">{{ n }}</button>
                       </div>
                     </div>
                     <div class="gks-drop__group">
@@ -234,9 +270,9 @@ function goProfile() {
                 <template #dropdown>
                   <div class="gks-drop__groups">
                     <div class="gks-drop__group">
-                      <p class="gks-drop__label">按专业大类筛选院校</p>
+                      <p class="gks-drop__label">按专业筛选院校（真实开设数据）</p>
                       <div class="gks-drop__grid">
-                        <button v-for="mj in MAJOR_OPTS" :key="mj" type="button" :class="['gks-drop__opt', { 'is-active': majorFilter === mj }]" @click="majorFilter = mj">{{ mj }}</button>
+                        <button v-for="mj in MAJOR_OPTS" :key="mj" type="button" :class="['gks-drop__opt', { 'is-active': majorFilter === mj }]" @click="applyMajor(mj)">{{ mj }}</button>
                       </div>
                     </div>
                   </div>
@@ -289,7 +325,7 @@ function goProfile() {
                 <p class="gks-item__name">
                   {{ school.name }}<span class="gks-item__city">{{ school.province }}</span>
                 </p>
-                <p class="gks-item__core">本科 · {{ school.type }} · {{ school.nature }} · {{ school.belong }}</p>
+                <p class="gks-item__core">本科 · {{ school.schoolType || "综合" }} · {{ school.nature || "公办" }}</p>
                 <p class="gks-item__tags">
                   <i v-for="tag in [school.is985 ? '985' : '', school.is211 ? '211' : '', school.isDoubleFirstClass ? '双一流' : ''].filter(Boolean)" :key="tag" class="is-level">{{ tag }}</i>
                   <i v-for="tag in (school.tags ? [school.tags] : [])" :key="tag">{{ tag }}</i>

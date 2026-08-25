@@ -6,7 +6,13 @@ CREATE TABLE university (
   is_985 BOOLEAN NOT NULL DEFAULT FALSE,
   is_211 BOOLEAN NOT NULL DEFAULT FALSE,
   is_double_first_class BOOLEAN NOT NULL DEFAULT FALSE,
-  tags VARCHAR(255)
+  tags VARCHAR(255),
+  nature VARCHAR(16),
+  school_type VARCHAR(32),
+  soft_ranking INT,
+  postgraduate_rate DECIMAL(5,2),
+  has_graduate_school BOOLEAN NOT NULL DEFAULT FALSE,
+  has_doctor_program BOOLEAN NOT NULL DEFAULT FALSE
 );
 
 CREATE TABLE major (
@@ -43,6 +49,10 @@ CREATE TABLE major_admission_cutoff (
   subject_type VARCHAR(16) NOT NULL,
   cutoff_score INT NULL,
   min_rank INT NULL,
+  plan_count INT NULL,
+  duration_years INT NULL,
+  tuition_per_year INT NULL,
+  data_kind VARCHAR(16) NOT NULL DEFAULT 'SIMULATED',
   CONSTRAINT fk_major_cutoff_university FOREIGN KEY (university_id) REFERENCES university(id),
   CONSTRAINT fk_major_cutoff_major FOREIGN KEY (major_id) REFERENCES major(id)
 );

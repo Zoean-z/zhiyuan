@@ -6,5 +6,7 @@ public record UniversityFilterOptionsResponse(List<String> schoolProvinces,
                                               List<String> examProvinces,
                                               List<String> subjectTypes,
                                               List<String> levels,
-                                              List<String> tags) {
+                                              List<String> tags,
+                                              List<String> natures,
+                                              List<String> types) {
 }

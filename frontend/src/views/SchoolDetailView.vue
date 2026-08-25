@@ -19,6 +19,23 @@ const router = useRouter();
 const detailData = ref(null);
 const loading = ref(false);
 const loadError = ref("");
+const majorIdByName = ref({});
+
+async function loadMajorMap() {
+  try {
+    const data = await (await fetch("/api/majors")).json();
+    const map = {};
+    for (const m of data.majors || []) map[m.name] = m.id;
+    majorIdByName.value = map;
+  } catch (e) {
+    console.error("加载专业目录失败", e);
+  }
+}
+
+function majorLink(major) {
+  const id = majorIdByName.value[major.name];
+  return `/majors/${id || encodeURIComponent(major.name)}`;
+}
 
 async function fetchDetail() {
   const id = route.params.id;
@@ -40,6 +57,7 @@ async function fetchDetail() {
 onMounted(() => {
   syncFromAuth();
   fetchDetail();
+  loadMajorMap();
 });
 
 const school = computed(() => detailData.value);
@@ -58,7 +76,10 @@ const majors = computed(() =>
     code: String(m.majorName || `m${i}`),
     name: m.majorName || "—",
     cutoffScore: m.cutoffScore,
-    minRank: m.minRank
+    minRank: m.minRank,
+    planCount: m.planCount,
+    durationYears: m.durationYears,
+    tuitionPerYear: m.tuitionPerYear
   }))
 );
 
@@ -131,8 +152,10 @@ function scoreGapLine(detailValue) {
                   <span class="gkd-hero__loc">{{ school.province }}</span>
                 </h1>
                 <p class="gkd-hero__meta">
-                  {{ school.tags || "—" }} · {{ levelTags.join(" / ") || "普通院校" }}
+                  {{ school.schoolType || "综合类" }} · {{ school.nature || "公办" }} · {{ levelTags.join(" / ") || "普通院校" }}
                   <template v-if="school.tier"> · {{ school.tier }}</template>
+                  <template v-if="school.softRanking"> · 软科排名 #{{ school.softRanking }}</template>
+                  <template v-if="school.postgraduateRate"> · 保研率 {{ school.postgraduateRate }}%</template>
                 </p>
                 <p class="gkd-hero__tags">
                   <i v-for="item in levelTags" :key="item" class="is-level">{{ item }}</i>
@@ -208,8 +231,14 @@ function scoreGapLine(detailValue) {
               <h3>院校概况</h3>
               <dl class="gkd-facts">
                 <div><dt>所在地</dt><dd>{{ school.province }}</dd></div>
-                <div><dt>院校类型</dt><dd>{{ school.tags || "—" }}</dd></div>
+                <div><dt>院校类型</dt><dd>{{ school.schoolType || "综合类" }}</dd></div>
+                <div><dt>办学性质</dt><dd>{{ school.nature || "公办" }}</dd></div>
                 <div><dt>院校层次</dt><dd>{{ levelTags.join(" / ") || "普通院校" }}</dd></div>
+                <div><dt>软科排名</dt><dd>{{ school.softRanking ? `#${school.softRanking}` : "—" }}</dd></div>
+                <div><dt>保研率</dt><dd>{{ school.postgraduateRate ? `${school.postgraduateRate}%` : "—" }}</dd></div>
+                <div><dt>研究生院</dt><dd>{{ school.hasGraduateSchool ? "有" : "无" }}</dd></div>
+                <div><dt>博士点</dt><dd>{{ school.hasDoctorProgram ? "有" : "无" }}</dd></div>
+                <div><dt>招生计划</dt><dd>{{ school.planCount ? `${school.planCount} 人` : "—" }}</dd></div>
                 <div><dt>院校特色</dt><dd>{{ (school.schoolTags || []).join(" / ") || "—" }}</dd></div>
               </dl>
               <p class="gkd-note">
@@ -264,10 +293,13 @@ function scoreGapLine(detailValue) {
             <section v-else-if="tab === '开设专业'" class="gkd-card">
               <h3>开设专业（{{ majors.length }} 个）</h3>
               <ul class="gkd-majors">
-                <li v-for="major in majors" :key="major.code" @click="router.push(`/majors/${major.code}`)">
+                <li v-for="major in majors" :key="major.code" @click="router.push(majorLink(major))">
                   <span class="gkd-majors__name">{{ major.name }}</span>
                   <span class="gkd-majors__score">
                     参考分 <b>{{ major.cutoffScore ?? "—" }}</b>（位次 {{ fmt(major.minRank) }}）
+                    <template v-if="major.planCount"> · 计划 {{ major.planCount }} 人</template>
+                    <template v-if="major.durationYears"> · {{ major.durationYears }} 年</template>
+                    <template v-if="major.tuitionPerYear"> · ¥{{ major.tuitionPerYear }}/年</template>
                   </span>
                   <span class="gkd-majors__more">专业详情 &gt;</span>
                 </li>
@@ -284,6 +316,7 @@ function scoreGapLine(detailValue) {
                     <th>专业</th>
                     <th>参考最低分</th>
                     <th>参考最低位次</th>
+                    <th>计划数</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -291,9 +324,10 @@ function scoreGapLine(detailValue) {
                     <td>{{ row.name }}</td>
                     <td><b>{{ row.cutoffScore ?? "—" }}</b></td>
                     <td>{{ fmt(row.minRank) }}</td>
+                    <td>{{ row.planCount ?? "—" }}</td>
                   </tr>
                   <tr v-if="!planRows.length">
-                    <td colspan="3" class="gkd-muted">暂无专业数据</td>
+                    <td colspan="4" class="gkd-muted">暂无专业数据</td>
                   </tr>
                 </tbody>
               </table>
