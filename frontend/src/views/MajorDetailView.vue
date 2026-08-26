@@ -63,7 +63,11 @@ async function load(id) {
       console.error("加载专业目录失败", e);
     }
   }
-  major.value = majors.value.find((m) => String(m.id) === String(id)) || null;
+  // 优先按 id 匹配；id 为非数字（如 URL 编码的专业名）时按 name 兜底
+  const isNumericId = /^\d+$/.test(String(id));
+  major.value = isNumericId
+    ? (majors.value.find((m) => String(m.id) === String(id)) || null)
+    : (majors.value.find((m) => decodeURIComponent(String(id)) === m.name) || null);
   offeringSchools.value = [];
   if (major.value) {
     try {

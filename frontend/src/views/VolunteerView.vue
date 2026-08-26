@@ -2,7 +2,6 @@
 import { computed, nextTick, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import GkHeader from "../components/GkHeader.vue";
-import GkSidePanel from "../components/GkSidePanel.vue";
 import VolunteerSheet from "../components/VolunteerSheet.vue";
 import { currentSheetCount } from "../utils/volunteerCore";
 import {
@@ -312,8 +311,6 @@ function goPlans() {
             />
           </div>
         </section>
-
-        <GkSidePanel />
       </div>
     </main>
   </div>

@@ -1,12 +1,10 @@
 <script setup>
 import { Promotion } from "@element-plus/icons-vue";
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import GkHeader from "../components/GkHeader.vue";
 import GkSchoolLogo from "../components/GkSchoolLogo.vue";
 import GkSidePanel from "../components/GkSidePanel.vue";
-import { CHOOSE_PROBABILITIES, RANK_LIST, schoolLoc, schoolTags } from "../utils/exploreData";
-import { probDetailOf, schoolCutoff } from "../utils/volunteerCore";
 import { strategyOf } from "../utils/scoreModel";
 import {
   FIRST_SUBJECTS,
@@ -25,16 +23,18 @@ import {
 } from "../utils/examProfile";
 
 /**
- * 智能选大学
- * 【修复】原来本页的分数/选科是局部 ref，首页面板填的东西传不过来；
- * 同时 buildChooseResults() 内部又是一套自己的假公式（701 - rank*7、位次 7200+rank*4860），
- * 与查大学/志愿表的数据完全矛盾。
- * 现在：考生信息走 examProfile，录取数据与概率走 volunteerCore + scoreModel（全站同一套）。
+ * 智能选大学：数据源为后端 /api/universities（80 所精选大学 + 真实湖南录取线 + 概率拆解）。
+ * 概率/类型筛选、排序均在真实数据上生效；点击卡片进入院校详情（数据库真实 id）。
  */
 
 const router = useRouter();
 const route = useRoute();
 const probability = ref("全部");
+const typeFilter = ref("全部");
+const sortKey = ref("概率");
+const schools = ref([]);
+const loading = ref(false);
+const loadError = ref("");
 
 onMounted(() => {
   syncFromAuth();
@@ -49,53 +49,67 @@ onMounted(() => {
     patch.secondSubjects = q.second.split(",").filter((item) => SECOND_SUBJECTS.includes(item)).slice(0, 2);
   }
   if (Object.keys(patch).length) patchProfile(patch);
+  fetchSchools();
 });
 
-const opts = computed(() => ({
-  province: profile.province,
-  subjectType: subjectType.value,
-  userRank: rank.value
-}));
+/* 分数/科类变化 → 重新拉取（后端实时重算概率） */
+watch([score, subjectType], () => fetchSchools());
 
-/** 概率档位 → 页面上的「概率大/中/小」 */
-function probLabelOf(key) {
-  if (key === "guard") return "概率大";
-  if (key === "safe") return "概率中";
-  return "概率小";
+async function fetchSchools() {
+  loading.value = true;
+  loadError.value = "";
+  try {
+    const params = new URLSearchParams({
+      examProvince: profile.province || "湖南",
+      subjectType: subjectType.value === "历史" ? "HISTORY" : "PHYSICS",
+      size: "100"
+    });
+    if (score.value != null && Number(score.value) > 0) params.set("score", String(Number(score.value)));
+    if (rank.value != null && Number(rank.value) > 0) params.set("userRank", String(Number(rank.value)));
+    const resp = await fetch(`/api/universities?${params.toString()}`);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data = await resp.json();
+    schools.value = (data.items || []).map((s) => {
+      const prob = s.probability?.probability ?? null;
+      const strategy = prob != null ? strategyOf(prob) : null;
+      // 已设分数但位次/分差远低于院校线 → 极低概率（不再显示"待测"）
+      const below = isReady.value && s.cutoffScore != null && score.value != null
+        && (Number(score.value) - s.cutoffScore) < -20;
+      return {
+        ...s,
+        minScore: s.cutoffScore,
+        minRank: s.minRank,
+        probability: prob,
+        probText: prob != null ? `${prob}%` : (below ? "<1%" : "待测算"),
+        rankGap: s.probability?.rankGap ?? null,
+        scoreGap: s.probability?.scoreGap ?? null,
+        strategyKey: strategy?.key ?? (below ? "risk" : "unknown"),
+        prob: prob != null
+          ? (prob >= 75 ? "概率大" : prob >= 45 ? "概率中" : "概率小")
+          : (below ? "概率小" : "待测算")
+      };
+    });
+  } catch (ex) {
+    loadError.value = String(ex?.message || ex);
+    schools.value = [];
+  } finally {
+    loading.value = false;
+  }
 }
 
-const allResults = computed(() =>
-  RANK_LIST.map((school) => {
-    const cutoff = schoolCutoff(school, opts.value);
-    const detail = probDetailOf(school, score.value, opts.value);
-    // 已设分数但位次落后超模型下界 → 判「<1%」极低概率，不允许出现「待测」
-    const belowLine = isReady.value && detail.cutoff != null
-      && detail.rankGap != null && detail.rankGap < 0
-      && detail.scoreGap != null && detail.scoreGap < 0;
-    const strategy = detail.probability != null
-      ? strategyOf(detail.probability)
-      : (belowLine ? { key: "risk" } : null);
-    const second = profile.secondSubjects.length ? profile.secondSubjects.join(" / ") : "不限";
-    return {
-      ...school,
-      rule: `首选${profile.firstSubject}，再选${second}`,
-      minScore: cutoff?.score ?? null,
-      minRank: cutoff?.minRank ?? null,
-      probability: detail.probability,
-      probText: detail.probability != null
-        ? `${detail.probability}%`
-        : (belowLine ? "<1%" : "待测"),
-      rankGap: detail.rankGap,
-      scoreGap: detail.scoreGap,
-      strategyKey: strategy?.key ?? "unknown",
-      prob: strategy ? probLabelOf(strategy.key) : "待测算"
-    };
-  }).sort((a, b) => (b.probability ?? (b.probText === "<1%" ? 0 : -1)) - (a.probability ?? (a.probText === "<1%" ? 0 : -1)))
-);
+const typeOpts = computed(() => ["全部", ...new Set(schools.value.map((s) => s.schoolType).filter(Boolean))]);
+const PROB_OPTS = ["全部", "概率大", "概率中", "概率小"];
+const SORT_OPTS = ["概率", "分数"];
 
-const results = computed(() =>
-  probability.value === "全部" ? allResults.value : allResults.value.filter((item) => item.prob === probability.value)
-);
+const results = computed(() => {
+  let list = schools.value;
+  if (probability.value !== "全部") list = list.filter((item) => item.prob === probability.value);
+  if (typeFilter.value !== "全部") list = list.filter((item) => item.schoolType === typeFilter.value);
+  const probNum = (i) => i.probability ?? (i.probText === "<1%" ? 0 : -1);
+  if (sortKey.value === "概率") list = [...list].sort((a, b) => probNum(b) - probNum(a));
+  else list = [...list].sort((a, b) => (b.minScore ?? -1) - (a.minScore ?? -1));
+  return list;
+});
 
 function onScoreInput(event) {
   setScore(event.target.value);
@@ -123,7 +137,7 @@ function gapClass(value) {
   return value >= 0 ? "is-up" : "is-down";
 }
 
-/* 【修复】原来「测概率」是拉起 AI 对话问一句，现在直接进院校详情页看近三年录取与概率拆解 */
+/* 点击进院校详情（数据库真实 id，不再 404） */
 function openSchool(item) {
   router.push({ name: "school-detail", params: { id: item.id } });
 }
@@ -195,7 +209,7 @@ function goAgentPlan() {
             <div class="gk-filter__row">
               <span class="gk-filter__label">概率</span>
               <button
-                v-for="p in CHOOSE_PROBABILITIES"
+                v-for="p in PROB_OPTS"
                 :key="p"
                 type="button"
                 class="gk-filter__opt"
@@ -203,6 +217,32 @@ function goAgentPlan() {
                 @click="probability = p"
               >
                 {{ p }}
+              </button>
+            </div>
+            <div class="gk-filter__row">
+              <span class="gk-filter__label">类型</span>
+              <button
+                v-for="t in typeOpts"
+                :key="t"
+                type="button"
+                class="gk-filter__opt"
+                :class="{ 'is-active': typeFilter === t }"
+                @click="typeFilter = t"
+              >
+                {{ t }}
+              </button>
+            </div>
+            <div class="gk-filter__row">
+              <span class="gk-filter__label">排序</span>
+              <button
+                v-for="s in SORT_OPTS"
+                :key="s"
+                type="button"
+                class="gk-filter__opt"
+                :class="{ 'is-active': sortKey === s }"
+                @click="sortKey = s"
+              >
+                {{ s === "概率" ? "概率由高到低" : "分数由高到低" }}
               </button>
             </div>
           </div>
@@ -219,12 +259,11 @@ function goAgentPlan() {
               <div class="gk-choose__info">
                 <p class="gk-school__name">
                   {{ item.name }}
-                  <span class="gk-school__loc">@{{ schoolLoc(item) }}</span>
+                  <span class="gk-school__loc">@{{ item.province }}</span>
                 </p>
-                <p class="gk-choose__rule">当前筛选：{{ item.rule }}</p>
+                <p class="gk-choose__rule">当前筛选：{{ item.schoolType || "综合" }} · {{ item.nature || "公办" }}</p>
                 <p class="gk-school__tags">
-                  {{ item.type }} | {{ item.nature }}
-                  <i v-for="tag in schoolTags(item)" :key="tag">{{ tag }}</i>
+                  <i v-for="tag in (item.schoolTags && item.schoolTags.length ? item.schoolTags : [item.schoolType, item.is985 ? '985' : '', (item.is211 || item.isDoubleFirstClass) ? '双一流' : '']).filter(Boolean)" :key="tag">{{ tag }}</i>
                 </p>
               </div>
               <div class="gk-choose__nums">

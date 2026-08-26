@@ -19,26 +19,33 @@ const router = useRouter();
 /* ===== 模块切换：模拟填报（选校） / 志愿表（参考 mnzy.gaokao.cn 双模块） ===== */
 const activeTab = ref(props.initialTab === "sheet" ? "sheet" : "pick");
 
-/* ===== 院校库：后端 /api/universities（1137 所真实大学 + 录取线/概率） ===== */
+/* ===== 院校库：后端 /api/universities（80 所精选大学 + 录取线/概率） ===== */
 const schools = ref([]);
 const loadingSchools = ref(false);
-/* 专业下拉选项：后端专业目录（32 热门专业） */
+/* 专业下拉选项：后端专业目录（88 个专业） */
 const majorOptions = ref([]);
+/* 每所大学开设专业（按需加载：展开"可填专业"时拉详情） */
+const majorCache = ref({});
 
 async function fetchSchools() {
   if (loadingSchools.value) return;
   loadingSchools.value = true;
   try {
-    const base = `/api/universities?size=100&examProvince=${encodeURIComponent(props.profile.province || "")}`;
-    const first = await (await fetch(base + "&page=1")).json();
-    const total = Number(first.total || 0);
-    const pages = Math.max(1, Math.ceil(total / 100));
-    const all = [...(first.items || [])];
-    for (let p = 2; p <= Math.min(pages, 15); p++) {
-      const pageData = await (await fetch(base + `&page=${p}`)).json();
-      all.push(...(pageData.items || []));
+    const params = new URLSearchParams({
+      examProvince: props.profile.province || "湖南",
+      size: "100"
+    });
+    /* 关键：把考生分数/位次传给后端 → 每所大学算出真实概率 → 冲/稳/保计数有数据 */
+    if (props.profile.score != null && Number(props.profile.score) > 0) {
+      params.set("score", String(Number(props.profile.score)));
     }
-    schools.value = all;
+    if (myRank.value != null && Number(myRank.value) > 0) {
+      params.set("userRank", String(Number(myRank.value)));
+    }
+    const resp = await fetch(`/api/universities?${params.toString()}`);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data = await resp.json();
+    schools.value = data.items || [];
   } catch (ex) {
     console.error("加载院校库失败", ex);
   } finally {
@@ -49,6 +56,20 @@ async function fetchSchools() {
     majorOptions.value = (data.majors || []).map((m) => m.name);
   } catch (ex) {
     console.error("加载专业目录失败", ex);
+  }
+}
+
+/* 展开"可填专业"时按需加载该校专业列表（详情接口含 majors） */
+async function loadSchoolMajors(id) {
+  if (majorCache.value[id]) return;
+  try {
+    const resp = await fetch(`/api/universities/${id}`);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const d = await resp.json();
+    majorCache.value = { ...majorCache.value, [id]: (d.majors || []).map((m) => m.majorName).filter(Boolean) };
+  } catch (ex) {
+    console.error("加载专业列表失败", ex);
+    majorCache.value = { ...majorCache.value, [id]: [] };
   }
 }
 
@@ -129,21 +150,42 @@ watch(lineBounds, (b) => {
 
 function schoolFacts(school) {
   const prob = school.probability?.probability ?? null;
+  const strategy = strategyOf(prob);
+  const myScore = Number(props.profile.score || 0);
   const years = school.cutoffScore == null
     ? []
-    : [{
-        year: school.admissionYear || "近年",
-        line: school.cutoffScore,
-        cutoffRank: school.minRank,
-        source: "backend"
-      }];
+    : (() => {
+        const line = school.cutoffScore;
+        const cutoffRank = school.minRank;
+        const gap = myRank.value != null && cutoffRank != null ? myRank.value - cutoffRank : null;
+        const equiv = cutoffRank != null ? scoreForRank(cutoffRank) : null;
+        const diff = equiv != null ? equiv - myScore : null;
+        return [{
+          year: school.admissionYear || "近年",
+          source: "backend",
+          line,
+          cutoffRank,
+          gap,
+          gapText: gap == null ? "位次待测" : gap > 0
+            ? `靠前 ${gap.toLocaleString("zh-CN")} 名`
+            : `落后 ${(-gap).toLocaleString("zh-CN")} 名`,
+          equiv,
+          diff,
+          diffText: diff == null ? "分数待测" : diff >= 0 ? `高 ${diff} 分` : `低 ${-diff} 分`
+        }];
+      })();
+  /* 纯净度：专业越多越杂（组内冷热均衡度越低），映射 2-5 星 */
+  const majorCount = school.majorCount ?? 0;
+  const purity = majorCount === 0 ? null : Math.max(2, Math.min(5, 5 - Math.floor(majorCount / 4)));
   return {
     school,
     prob,
-    strategy: strategyOf(prob),
+    strategy,
     line: school.cutoffScore ?? null,
     years,
-    majorList: []
+    purity,
+    majorList: majorCache.value[school.id] || [],
+    majorCount
   };
 }
 
@@ -157,7 +199,7 @@ const filteredFacts = computed(() => {
   const byKey = { all: null, rush: "rush", safe: "safe", guard: "guard" };
   if (byKey[pickStrategy.value]) list = list.filter((f) => f.strategy.key === byKey[pickStrategy.value]);
   if (sortBy.value === "概率") list = [...list].sort((a, b) => compareProbability(a.prob, b.prob));
-  else list = [...list].sort((a, b) => a.id - b.id);
+  else list = [...list].sort((a, b) => (a.school.id ?? 0) - (b.school.id ?? 0));
   return list;
 });
 const pickCounts = computed(() => {
@@ -173,6 +215,8 @@ const pickCounts = computed(() => {
 const expandedId = ref(null);
 function toggleExpand(id) {
   expandedId.value = expandedId.value === id ? null : id;
+  /* 展开时按需加载该校专业列表 */
+  if (expandedId.value === id) loadSchoolMajors(id);
 }
 function inSheet(facts) {
   return slots.value.some((s) => s && s.schoolId === facts.school.id);
@@ -345,78 +389,7 @@ function clearAll() {
     .catch(() => {});
 }
 
-/* ===== 风险诊断 ===== */
-const diagVisible = ref(false);
-const diagItems = computed(() => {
-  const filled = slots.value.map((s, i) => ({ slot: s, idx: i })).filter((x) => x.slot);
-  const items = [];
-  if (!filled.length) {
-    items.push({ level: "warn", text: "还没有填写任何志愿，建议先在「模拟填报」中添加院校，或使用「智能填充」生成初始方案" });
-    return items;
-  }
-  const probs = filled.map((x) => normalizeProbability(x.slot.prob)).filter((x) => x != null);
-  const unknownCount = filled.length - probs.length;
-  // 梯度
-  if (probs.length >= 2) {
-    if (Math.max(...probs) - Math.min(...probs) < 15) {
-      items.push({ level: "warn", text: `全部志愿录取概率集中在 ${Math.min(...probs)}%~${Math.max(...probs)}%，梯度不足，掉档风险高，建议拉开冲稳保层次` });
-    } else {
-      items.push({ level: "ok", text: `志愿梯度 ${Math.min(...probs)}%~${Math.max(...probs)}%，层次合理` });
-    }
-  } else {
-    items.push({ level: "info", text: "当前可测概率不足 2 个，暂时无法判断梯度，建议补充分数或录取线数据" });
-  }
-  if (unknownCount) {
-    items.push({ level: "info", text: `有 ${unknownCount} 个志愿暂未测出概率，当前不纳入梯度诊断` });
-  }
-  // 兜底
-  const tail = filled.filter((x) => x.idx >= 30);
-  const tailKnown = tail.map((x) => normalizeProbability(x.slot.prob)).filter((x) => x != null);
-  if (tailKnown.length && Math.min(...tailKnown) < 85) {
-    items.push({ level: "warn", text: "保底段（31-45 位）存在录取概率低于 85% 的志愿，兜底不牢固，建议换成把握更大的院校" });
-  } else if (tail.length >= 3) {
-    items.push({ level: "ok", text: "保底段兜底充分，掉档风险低" });
-  } else {
-    items.push({ level: "info", text: `保底段仅填 ${tail.length} 个志愿，建议至少填满 5 个高概率兜底` });
-  }
-  // 冲刺段
-  const head = filled.filter((x) => x.idx < 15);
-  const headKnown = head.map((x) => normalizeProbability(x.slot.prob)).filter((x) => x != null);
-  if (headKnown.length && Math.min(...headKnown) > 70) {
-    items.push({ level: "info", text: "冲刺段（1-15 位）缺少真正可冲一冲的院校，可加入 1-2 所概率 20%~45% 的目标院校" });
-  }
-  // 重复
-  const seen = new Map();
-  filled.forEach((x) => {
-    const key = `${x.slot.schoolId}-${[...x.slot.majorNames].sort().join(",")}`;
-    if (seen.has(key)) items.push({ level: "error", text: `第 ${seen.get(key) + 1} 位与第 ${x.idx + 1} 位志愿完全相同（同院校同专业），请删除其一` });
-    else seen.set(key, x.idx + 1);
-  });
-  // 调剂
-  const noAdjust = filled.filter((x) => !x.slot.adjust && x.slot.majorNames.length < 6);
-  if (noAdjust.length) {
-    items.push({ level: "info", text: `有 ${noAdjust.length} 个志愿未服从调剂且专业数不足 6 个，退档风险略高，建议开启服从调剂或补足专业` });
-  }
-  // 填满度
-  if (filled.length < TOTAL) {
-    items.push({ level: "info", text: `已填 ${filled.length}/${TOTAL} 个志愿，还有 ${TOTAL - filled.length} 个空位，多填一个多一分机会` });
-  } else {
-    items.push({ level: "ok", text: "45 个志愿全部填满，完整度 100%" });
-  }
-  return items;
-});
-const diagScore = computed(() => {
-  const items = diagItems.value;
-  if (items.some((i) => i.level === "error")) return { label: "需修正", cls: "bad" };
-  if (items.some((i) => i.level === "warn")) return { label: "有风险", cls: "mid" };
-  if (filledCount.value >= 20) return { label: "结构良好", cls: "good" };
-  return { label: "继续完善", cls: "mid" };
-});
-
-function openDiagnosis() {
-  activeTab.value = "sheet";
-  diagVisible.value = true;
-}
+/* （风险诊断模块已按要求移除：内容晦涩、用户体验差） */
 
 /* ===== 志愿表视图模式：详细 / 表格 ===== */
 const viewMode = ref(props.initialView === "table" ? "table" : "detail");
@@ -482,7 +455,7 @@ watch(() => props.profile.score, () => {
   });
 });
 
-defineExpose({ smartFill, openDiagnosis });
+defineExpose({ smartFill, smartSort });
 </script>
 
 <template>
@@ -532,9 +505,11 @@ defineExpose({ smartFill, openDiagnosis });
           </button>
         </div>
         <div class="mnz-pick__seg">
-          <button v-for="s in ['概率', '院校']" :key="s" type="button" :class="{ 'is-active': sortBy === s }" @click="sortBy = s">
+          <el-tooltip content="按概率：把录取概率高的院校排前面，方便优先选择把握大的；按院校：按院校编号排序浏览" placement="top">
+            <button v-for="s in ['概率', '院校']" :key="s" type="button" :class="{ 'is-active': sortBy === s }" @click="sortBy = s">
             {{ s === '概率' ? '按概率' : '按院校' }}
-          </button>
+            </button>
+          </el-tooltip>
         </div>
         <div class="mnz-pick__search">
           <el-icon><Promotion /></el-icon>
@@ -556,11 +531,19 @@ defineExpose({ smartFill, openDiagnosis });
           <div class="mnz-pcard__main">
             <div class="mnz-pcard__title">
               <h4>{{ f.school.name }}<span>[{{ String(f.school.id).padStart(2, "0") }}组]</span></h4>
-              <span class="mnz-pcard__purity" title="纯净度：院校组内专业冷热均衡程度">
-                纯净度
-                <i v-for="n in 5" :key="n" :class="{ 'is-on': n <= Math.round(f.purity) }">★</i>
-                <em>{{ f.purity }}</em>
-              </span>
+              <el-tooltip
+                content="纯净度：院校招生专业组内的专业冷热均衡程度。星级越高表示组内专业方向越集中（越“纯”），调剂风险越小；专业越多越杂，星级越低。点击展开可查看该校全部可填专业。"
+                placement="top"
+              >
+                <span
+                  class="mnz-pcard__purity"
+                  @click.stop="toggleExpand(f.school.id)"
+                >
+                  纯净度
+                  <i v-for="n in 5" :key="n" :class="{ 'is-on': f.purity != null && n <= Math.round(f.purity) }">★</i>
+                  <em>{{ f.purity == null ? "暂无" : f.purity }}</em>
+                </span>
+              </el-tooltip>
               <span class="mnz-pcard__disc">{{ f.disciplines }}</span>
             </div>
 
@@ -581,12 +564,15 @@ defineExpose({ smartFill, openDiagnosis });
 
             <div class="mnz-pcard__foot">
               <button type="button" class="mnz-pcard__majors-btn" @click="toggleExpand(f.school.id)">
-                可填专业({{ f.majorList.length }})
+                可填专业({{ f.majorCount ?? f.majorList.length }})
                 <el-icon><Promotion /></el-icon>
               </button>
               <button type="button" class="mnz-pcard__ask" @click="askAbout(f)">问小智解读</button>
               <div v-if="expandedId === f.school.id" class="mnz-pcard__major-list">
-                <span v-for="m in f.majorList" :key="m">{{ m }}</span>
+                <template v-if="f.majorList.length">
+                  <span v-for="m in f.majorList" :key="m">{{ m }}</span>
+                </template>
+                <span v-else class="mnz-pcard__major-loading">专业列表加载中…</span>
               </div>
             </div>
           </div>
@@ -638,7 +624,6 @@ defineExpose({ smartFill, openDiagnosis });
           <button type="button" class="mnz-vsheet__op mnz-vsheet__op--fill" @click="smartFill">智能填充</button>
           <button type="button" class="mnz-vsheet__op" @click="smartSort">智能排序</button>
           <button type="button" class="mnz-vsheet__op" @click="exportSheet">导出</button>
-          <button type="button" class="mnz-vsheet__op" @click="diagVisible = !diagVisible">风险诊断</button>
           <button type="button" class="mnz-vsheet__op" @click="clearAll">清空</button>
           <button type="button" class="mnz-vsheet__op mnz-vsheet__op--save" @click="saveSheet">保存方案</button>
         </div>
@@ -650,25 +635,6 @@ defineExpose({ smartFill, openDiagnosis });
         <span class="mnz-vstat is-safe">稳 {{ segStats.safe }}</span>
         <span class="mnz-vstat is-guard">保 {{ segStats.guard }}</span>
         <span class="mnz-vsheet__drag-tip">拖拽志愿行可调整顺序，志愿位置决定投档先后</span>
-      </div>
-
-      <!-- 诊断面板 -->
-      <div v-if="diagVisible" class="mnz-vdiag">
-        <div class="mnz-vdiag__head">
-          <h4>防掉档诊断报告</h4>
-          <span class="mnz-vdiag__score" :class="`is-${diagScore.cls}`">{{ diagScore.label }}</span>
-          <button type="button" class="mnz-vdiag__close" @click="diagVisible = false">收起</button>
-        </div>
-        <ul class="mnz-vdiag__list">
-          <li v-for="(item, i) in diagItems" :key="i" :class="`is-${item.level}`">
-            <el-icon>
-              <CircleCheckFilled v-if="item.level === 'ok'" />
-              <WarningFilled v-else-if="item.level === 'warn' || item.level === 'error'" />
-              <InfoFilled v-else />
-            </el-icon>
-            <span>{{ item.text }}</span>
-          </li>
-        </ul>
       </div>
 
       <!-- 表格模式：官方填报系统同款表格 -->
