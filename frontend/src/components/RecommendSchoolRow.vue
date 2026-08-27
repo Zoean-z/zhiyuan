@@ -1,5 +1,6 @@
 <script setup>
 import { computed } from "vue";
+import GkSchoolLogo from "./GkSchoolLogo.vue";
 import { normalizeItem, recommendationBasisLabel } from "../utils/recommendation";
 import { rankOfScore as modelRankOfScore, scoreOfRank } from "../utils/scoreModel";
 import { SCHOOLS } from "../utils/exploreData";
@@ -122,7 +123,10 @@ const rankCompare = computed(() => {
 const basisLabel = computed(() => recommendationBasisLabel(model.value.recommendationBasis));
 const isDirectAddMode = computed(() => model.value.recommendationMode === "MAJOR_FIRST" || !!model.value.majorName);
 const actionLabel = computed(() => (isDirectAddMode.value ? (props.added ? "已加入" : "加入志愿表") : "加入志愿表"));
-const nameInitial = computed(() => String(model.value.universityName || "").slice(0, 1));
+const logoSchool = computed(() => ({
+  id: model.value.universityId,
+  name: model.value.universityName
+}));
 
 function handleAdd() {
   emit("add", props.item, props.strategy);
@@ -140,7 +144,7 @@ function handleDetail() {
       </span>
 
       <div class="mnz-rlrow__identity" @click="handleDetail">
-        <span class="mnz-rlrow__logo">{{ nameInitial }}</span>
+        <GkSchoolLogo :school="logoSchool" size="sm" class="mnz-rlrow__logo" />
         <div class="mnz-rlrow__titled">
           <h4 class="mnz-rlrow__name">
             {{ model.universityName }}

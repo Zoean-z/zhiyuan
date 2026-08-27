@@ -19,8 +19,6 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 public class RecommendationService {
 
-    private static final int MAX_PER_GROUP = 5;
-
     private final AdmissionCutoffMapper admissionCutoffMapper;
     private final MajorAdmissionCutoffMapper majorAdmissionCutoffMapper;
     private final ScoreRankMappingService scoreRankMappingService;
@@ -137,9 +135,9 @@ public class RecommendationService {
             }
         }
 
-        sortAndLimit(rush);
-        sortAndLimit(safe);
-        sortAndLimit(guarantee);
+        sortRecommendations(rush);
+        sortRecommendations(safe);
+        sortRecommendations(guarantee);
 
         aiExplanationService.enrichItems(request, rush);
         aiExplanationService.enrichItems(request, safe);
@@ -221,9 +219,9 @@ public class RecommendationService {
             }
         }
 
-        sortAndLimit(rush);
-        sortAndLimit(safe);
-        sortAndLimit(guarantee);
+        sortRecommendations(rush);
+        sortRecommendations(safe);
+        sortRecommendations(guarantee);
 
         aiExplanationService.enrichItems(request, rush);
         aiExplanationService.enrichItems(request, safe);
@@ -251,11 +249,8 @@ public class RecommendationService {
                 : request.getRecommendationMode();
     }
 
-    private void sortAndLimit(List<RecommendationItemResponse> items) {
+    private void sortRecommendations(List<RecommendationItemResponse> items) {
         items.sort(recommendationPolicyService.recommendationComparator());
-        if (items.size() > MAX_PER_GROUP) {
-            items.subList(MAX_PER_GROUP, items.size()).clear();
-        }
     }
 
     @SafeVarargs

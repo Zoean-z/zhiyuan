@@ -86,3 +86,10 @@ test("recommendation result does not reconstruct score or probability", async ()
   assert.doesNotMatch(result, /100\s*-\s*Number\(risk/);
   assert.doesNotMatch(result, /:\s*50\s*;/);
 });
+
+test("recommendation school rows use the verified school-logo component", async () => {
+  const row = await source("../src/components/RecommendSchoolRow.vue");
+  assert.match(row, /import GkSchoolLogo from ["']\.\/GkSchoolLogo\.vue["']/);
+  assert.match(row, /<GkSchoolLogo\s+:school="logoSchool"/);
+  assert.doesNotMatch(row, /<span class="mnz-rlrow__logo">/);
+});

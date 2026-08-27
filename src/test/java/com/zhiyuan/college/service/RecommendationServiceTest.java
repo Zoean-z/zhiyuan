@@ -167,6 +167,26 @@ class RecommendationServiceTest {
         verify(aiExplanationService, never()).buildSummary(any(), anyInt(), any(), anyBoolean());
     }
 
+    @Test
+    void recommend_shouldKeepAllQualifiedSchoolsInsteadOfFivePerGroup() {
+        RecommendationRequest request = buildSchoolFirstRequest();
+        when(recommendationCacheService.getRecommendation(request)).thenReturn(null);
+        when(scoreRankMappingService.resolveUserRank("浙江", "物理", 620)).thenReturn(26000);
+        when(admissionCutoffMapper.findLatestByProvinceAndSubject("浙江", "物理")).thenReturn(List.of(
+                buildCutoff(1L, "保底大学1", "浙江", "普通", false, false, false, "综合类", 580, 50000),
+                buildCutoff(2L, "保底大学2", "浙江", "普通", false, false, false, "综合类", 581, 50000),
+                buildCutoff(3L, "保底大学3", "浙江", "普通", false, false, false, "综合类", 582, 50000),
+                buildCutoff(4L, "保底大学4", "浙江", "普通", false, false, false, "综合类", 583, 50000),
+                buildCutoff(5L, "保底大学5", "浙江", "普通", false, false, false, "综合类", 584, 50000),
+                buildCutoff(6L, "保底大学6", "浙江", "普通", false, false, false, "综合类", 585, 50000)
+        ));
+
+        RecommendationResponse response = recommendationService.recommend(request);
+
+        assertEquals(6, response.getGuarantee().size());
+        verify(aiExplanationService).enrichItems(eq(request), eq(response.getGuarantee()));
+    }
+
     private RecommendationRequest buildSchoolFirstRequest() {
         RecommendationRequest request = new RecommendationRequest();
         request.setScore(620);
