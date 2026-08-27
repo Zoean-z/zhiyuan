@@ -80,10 +80,11 @@ test("volunteer flow contains no smart fill, purity, or fabricated history", asy
   assert.doesNotMatch(header, /label:\s*["']我的志愿表["']/);
 });
 
-test("volunteer flow does not expose the removed drop-prevention diagnosis", async () => {
+test("volunteer flow does not expose removed dead controls", async () => {
   const view = await source("../src/views/VolunteerView.vue");
 
   assert.doesNotMatch(view, /防掉档诊断|goDiagnose|openDiagnosis/);
+  assert.doesNotMatch(view, /所属年级|profile\.grade|\bGRADES\b/);
 });
 
 test("recommendation result does not reconstruct score or probability", async () => {

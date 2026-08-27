@@ -7,7 +7,6 @@ import { currentSheetCount } from "../utils/volunteerCore";
 import {
   BATCHES,
   FIRST_SUBJECTS,
-  GRADES,
   PROVINCES,
   SECOND_SUBJECTS,
   confirmProfile,
@@ -131,12 +130,6 @@ function goPlans() {
                   <span class="mnz-field__label">考试地区</span>
                   <el-select v-model="profile.province" size="large">
                     <el-option v-for="p in PROVINCES" :key="p" :label="p" :value="p" />
-                  </el-select>
-                </label>
-                <label class="mnz-field">
-                  <span class="mnz-field__label">所属年级</span>
-                  <el-select v-model="profile.grade" size="large">
-                    <el-option v-for="g in GRADES" :key="g" :label="g" :value="g" />
                   </el-select>
                 </label>
                 <div class="mnz-field">
