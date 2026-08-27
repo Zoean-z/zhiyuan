@@ -85,6 +85,7 @@ test("volunteer flow does not expose removed dead controls", async () => {
 
   assert.doesNotMatch(view, /防掉档诊断|goDiagnose|openDiagnosis/);
   assert.doesNotMatch(view, /所属年级|profile\.grade|\bGRADES\b/);
+  assert.doesNotMatch(view, /信息会被全站复用|首选决定科类|决定院校库/);
 });
 
 test("recommendation result does not reconstruct score or probability", async () => {

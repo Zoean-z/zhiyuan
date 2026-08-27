@@ -123,7 +123,7 @@ function goPlans() {
             </ol>
 
             <div class="mnz-form">
-              <p class="mnz-form__title">① 请填写您的高考信息<em>信息会被全站复用（查大学、智能选大学、院校详情的概率）</em></p>
+              <p class="mnz-form__title">① 请填写您的高考信息</p>
 
               <div class="mnz-form__grid">
                 <label class="mnz-field">
@@ -133,7 +133,7 @@ function goPlans() {
                   </el-select>
                 </label>
                 <div class="mnz-field">
-                  <span class="mnz-field__label">填报批次<em>（决定院校库：本科批为本科院校，专科批只显专科院校与专业）</em></span>
+                  <span class="mnz-field__label">填报批次</span>
                   <el-select v-model="profile.batch" size="large">
                     <el-option v-for="b in BATCHES" :key="b" :label="b" :value="b" />
                   </el-select>
@@ -153,7 +153,6 @@ function goPlans() {
                   >
                     {{ s }}
                   </button>
-                  <em class="mnz-form__hint">首选决定科类（物理类 / 历史类），一分一段表与录取数据按科类分开统计</em>
                 </div>
               </div>
 
