@@ -64,6 +64,7 @@ public class UniversityQueryService {
                                       String subjectType,
                                       String schoolProvince,
                                       String level,
+                                      String admissionBatch,
                                       String tag,
                                       String keyword,
                                       Integer score,
@@ -78,6 +79,7 @@ public class UniversityQueryService {
         int safePage = Math.max(1, page);
         int safeSize = Math.min(Math.max(1, size), MAX_PAGE_SIZE);
         String normalizedLevel = trimToNull(level);
+        String normalizedAdmissionBatch = normalizeAdmissionBatch(admissionBatch);
 
         List<University> universities = universityMapper.findForPublicList(
                 trimToNull(schoolProvince), trimToNull(keyword), trimToNull(tag));
@@ -133,6 +135,9 @@ public class UniversityQueryService {
 
         List<UniversityListItemResponse> items = new ArrayList<>();
         for (University university : universities) {
+            if (normalizedAdmissionBatch != null && !matchesAdmissionBatch(normalizedAdmissionBatch, university.getTier())) {
+                continue;
+            }
             if (normalizedLevel != null && !UniversityTagUtils.matchesSchoolLevel(
                     normalizedLevel,
                     university.getIs985(),
@@ -425,6 +430,26 @@ public class UniversityQueryService {
 
     private boolean canEvaluate(Integer score, RankResolution rank) {
         return score != null || (rank != null && rank.rank() != null);
+    }
+
+    /** 批次维度（本科批/专科批）：与 level 的名校标签语义平行的独立过滤，按 university.tier 前缀归一化；无法识别的取值视为不过滤。 */
+    private String normalizeAdmissionBatch(String admissionBatch) {
+        String value = trimToNull(admissionBatch);
+        if (value == null) {
+            return null;
+        }
+        return switch (value) {
+            case "本科", "本科批", "本科批次" -> "本科";
+            case "专科", "专科批", "专科批次" -> "专科";
+            default -> null;
+        };
+    }
+
+    private boolean matchesAdmissionBatch(String normalizedBatch, String tier) {
+        if (normalizedBatch == null || tier == null || tier.isBlank()) {
+            return false;
+        }
+        return tier.trim().startsWith(normalizedBatch);
     }
 
     /** majorId → major.name（查专业筛选用的大学集合）。 */

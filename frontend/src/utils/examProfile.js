@@ -23,25 +23,16 @@ import { fetchRankLookup } from "./scoreRankApi.js";
 
 const STORAGE_KEY = "zhiyuan_exam_profile";
 
-export const PROVINCES = [
-  "北京", "天津", "河北", "山西", "内蒙古", "辽宁", "吉林", "黑龙江", "上海", "江苏",
-  "浙江", "安徽", "福建", "江西", "山东", "河南", "湖北", "湖南", "广东", "广西",
-  "海南", "重庆", "四川", "贵州", "云南", "陕西", "甘肃", "青海", "宁夏", "新疆"
-];
+/* 只保留有真实数据（院校线/专业线/一分一段）的省份；其余省份接口返回空，展示无意义 */
+export const PROVINCES = ["湖南", "浙江"];
 export const FIRST_SUBJECTS = ["物理", "历史"];
 export const SECOND_SUBJECTS = ["化学", "生物", "政治", "地理"];
 export const BATCHES = ["本科批", "专科批"];
 export const GRADES = ["高三", "高二", "高一"];
-export const ENTRANT_TYPES = [
-  { key: "general", label: "普通类", icon: "学" },
-  { key: "art", label: "艺术类", icon: "艺" }
-];
 
 const DEFAULTS = {
-  entrantType: "general",
   province: "湖南",
   grade: "高三",
-  degreeType: "本科",
   firstSubject: "物理",
   secondSubjects: ["化学", "生物"],
   score: null,

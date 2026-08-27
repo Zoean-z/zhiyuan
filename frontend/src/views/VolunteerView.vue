@@ -6,7 +6,6 @@ import VolunteerSheet from "../components/VolunteerSheet.vue";
 import { currentSheetCount } from "../utils/volunteerCore";
 import {
   BATCHES,
-  ENTRANT_TYPES,
   FIRST_SUBJECTS,
   GRADES,
   PROVINCES,
@@ -53,9 +52,7 @@ const sheetProfile = computed(() => ({
   subjects: [profile.firstSubject, ...profile.secondSubjects],
   score: score.value,
   rank: rank.value,
-  batch: profile.batch,
-  degreeType: profile.degreeType,
-  entrantType: profile.entrantType
+  batch: profile.batch
 }));
 
 onMounted(() => {
@@ -102,7 +99,7 @@ function customizePlan() {
   }
   confirmProfile();
   const rankText = rank.value == null ? "暂无位次数据" : `全省位次约${rank.value}名`;
-  const q = `我是${profile.province}${profile.entrantType === "art" ? "艺术类" : "普通类"}考生，${profile.degreeType}${profile.batch}，选科${subjectsText.value}，${score.value}分（${rankText}），请生成 45 个志愿位的冲稳保涨度方案`;
+  const q = `我是${profile.province}考生，${profile.batch}，选科${subjectsText.value}，${score.value}分（${rankText}），请生成 45 个志愿位的冲稳保涨度方案`;
   router.push({ path: "/agent", query: { q } });
 }
 
@@ -142,20 +139,6 @@ function goPlans() {
             <div class="mnz-form">
               <p class="mnz-form__title">① 请填写您的高考信息<em>信息会被全站复用（查大学、智能选大学、院校详情的概率）</em></p>
 
-              <div class="mnz-form__row mnz-form__row--entrant">
-                <button
-                  v-for="t in ENTRANT_TYPES"
-                  :key="t.key"
-                  type="button"
-                  class="mnz-entrant"
-                  :class="{ 'is-active': profile.entrantType === t.key }"
-                  @click="profile.entrantType = t.key"
-                >
-                  <i :class="`mnz-entrant__icon mnz-entrant__icon--${t.key}`">{{ t.key === "general" ? "学" : "艺" }}</i>
-                  <span>{{ t.label }}</span>
-                </button>
-              </div>
-
               <div class="mnz-form__grid">
                 <label class="mnz-field">
                   <span class="mnz-field__label">考试地区</span>
@@ -170,22 +153,7 @@ function goPlans() {
                   </el-select>
                 </label>
                 <div class="mnz-field">
-                  <span class="mnz-field__label">成绩类型</span>
-                  <div class="mnz-field__opts">
-                    <button
-                      v-for="d in ['本科', '专科']"
-                      :key="d"
-                      type="button"
-                      class="mnz-radio"
-                      :class="{ 'is-active': profile.degreeType === d }"
-                      @click="profile.degreeType = d"
-                    >
-                      {{ d }}
-                    </button>
-                  </div>
-                </div>
-                <div class="mnz-field">
-                  <span class="mnz-field__label">填报批次</span>
+                  <span class="mnz-field__label">填报批次<em>（决定院校库：本科批为本科院校，专科批只显专科院校与专业）</em></span>
                   <el-select v-model="profile.batch" size="large">
                     <el-option v-for="b in BATCHES" :key="b" :label="b" :value="b" />
                   </el-select>

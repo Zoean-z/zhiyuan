@@ -6,7 +6,6 @@ import GkHeader from "../components/GkHeader.vue";
 import GkSchoolLogo from "../components/GkSchoolLogo.vue";
 import { NEWS_TAGS, newsById } from "../utils/newsData";
 import {
-  ENTRANT_TYPES,
   SECOND_SUBJECTS,
   confirmProfile,
   isReady,
@@ -273,17 +272,6 @@ const newsRest = computed(() => newsList.value.slice(1));
         <aside class="gk-hp__sim">
           <header class="gk-hp__sim-head">
             <h3>模拟报志愿</h3>
-            <div class="gk-hp__sim-types">
-              <button
-                v-for="item in ENTRANT_TYPES"
-                :key="item.key"
-                type="button"
-                :class="{ 'is-active': profile.entrantType === item.key }"
-                @click="profile.entrantType = item.key"
-              >
-                {{ item.label }}
-              </button>
-            </div>
           </header>
 
           <div class="gk-hp__sim-field">

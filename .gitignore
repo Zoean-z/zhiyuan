@@ -10,8 +10,8 @@ frontend/dist/
 
 # 前端构建产物（vite 输出到后端 static）：不入库，由 Dockerfile 构建生成。
 # 曾经 37 个旧产物入库导致 jar 内每次 build 产物叠加混叠 → 页面无响应/白屏（20260825 根治）
-src/main/resources/static/assets/
-src/main/resources/static/index.html
+# 20260827 收口：整个 static/ 都视为构建产物（Dockerfile 构建前会清空重建），含 logos/ 拷贝
+src/main/resources/static/
 
 *.log
 *.err
