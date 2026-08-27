@@ -1,10 +1,10 @@
 <script setup>
 import { Search } from "@element-plus/icons-vue";
-import { computed, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import BrandLockup from "./BrandLockup.vue";
 import XiaoZhiAvatar from "./XiaoZhiAvatar.vue";
-import { clearStoredAuth, readStoredAuth, subjectTypeLabel } from "../utils/recommendation";
+import { AUTH_UPDATED_EVENT, clearStoredAuth, readStoredAuth, subjectTypeLabel } from "../utils/recommendation";
 
 const props = defineProps({
   active: { type: String, default: "首页" },
@@ -48,8 +48,7 @@ const NAV_ITEMS = [
     label: "志愿填报",
     to: { path: "/volunteer" },
     children: [
-      { label: "志愿填报", to: { path: "/volunteer" }, desc: "45 个志愿位模拟填报" },
-      { label: "我的志愿表", to: { path: "/plans" }, desc: "已保存的志愿方案" }
+      { label: "志愿填报", to: { path: "/volunteer" }, desc: "45 个志愿位模拟填报" }
     ]
   },
   {
@@ -100,8 +99,17 @@ function logout() {
   router.push({ name: "login" });
 }
 
+function refreshAuth(event) {
+  auth.value = event?.detail ?? readStoredAuth();
+}
+
 onMounted(() => {
   auth.value = readStoredAuth();
+  window.addEventListener(AUTH_UPDATED_EVENT, refreshAuth);
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener(AUTH_UPDATED_EVENT, refreshAuth);
 });
 </script>
 

@@ -131,6 +131,115 @@ class RecommendationControllerTest {
     }
 
     @Test
+    void recommend_shouldUseHunanHistoryCompetitionCoverage() throws Exception {
+        Integer simulatedMajorCount = jdbcTemplate.queryForObject("""
+                SELECT COUNT(*)
+                FROM major_admission_cutoff
+                WHERE province = '湖南'
+                  AND subject_type = '历史'
+                  AND data_kind = 'SIMULATED'
+                """, Integer.class);
+        Integer cutoffMismatchCount = jdbcTemplate.queryForObject("""
+                SELECT COUNT(*)
+                FROM admission_cutoff cutoff
+                WHERE cutoff.province = '湖南'
+                  AND cutoff.subject_type = '历史'
+                  AND cutoff.cutoff_score <> (
+                    SELECT MIN(major_cutoff.cutoff_score)
+                    FROM major_admission_cutoff major_cutoff
+                    WHERE major_cutoff.university_id = cutoff.university_id
+                      AND major_cutoff.admission_year = cutoff.admission_year
+                      AND major_cutoff.province = cutoff.province
+                      AND major_cutoff.subject_type = cutoff.subject_type
+                      AND major_cutoff.data_kind = 'SIMULATED'
+                  )
+                """, Integer.class);
+        Assertions.assertEquals(5, simulatedMajorCount);
+        Assertions.assertEquals(0, cutoffMismatchCount);
+
+        String token = loginAndGetToken("freshuser", "123456", 650, "HISTORY", "湖南");
+        String requestJson = objectMapper.writeValueAsString(Map.of(
+                "score", 650,
+                "province", "湖南",
+                "subjectType", "HISTORY"
+        ));
+
+        MvcResult result = mockMvc.perform(post("/api/recommendations")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(requestJson))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        JsonNode response = objectMapper.readTree(result.getResponse().getContentAsString());
+        Assertions.assertEquals(1200, response.get("userRank").asInt());
+        Assertions.assertEquals("SCHOOL_FIRST", response.get("recommendationMode").asText());
+        Assertions.assertTrue(response.get("rush").size()
+                + response.get("safe").size()
+                + response.get("guarantee").size() >= 3);
+        Assertions.assertFalse(response.get("summary").asText().contains("暂无历史类院校录取数据"));
+
+        JsonNode provenanceItem = null;
+        for (String group : new String[]{"rush", "safe", "guarantee"}) {
+            if (!response.get(group).isEmpty()) {
+                provenanceItem = response.get(group).get(0);
+                break;
+            }
+        }
+        Assertions.assertNotNull(provenanceItem);
+        Assertions.assertEquals("SIMULATED", provenanceItem.get("dataKind").asText());
+        Assertions.assertFalse(provenanceItem.get("calibrationSource").asText().isBlank());
+        Assertions.assertFalse(provenanceItem.get("simulationRule").asText().isBlank());
+    }
+
+    @Test
+    void publicCutoffApis_shouldExposeProvenanceAndKeepUncoveredProvinceEmpty() throws Exception {
+        MvcResult listResult = mockMvc.perform(get("/api/universities")
+                        .param("examProvince", "湖南")
+                        .param("subjectType", "HISTORY")
+                        .param("withDataOnly", "true"))
+                .andExpect(status().isOk())
+                .andReturn();
+        JsonNode listResponse = objectMapper.readTree(listResult.getResponse().getContentAsString());
+        Assertions.assertTrue(listResponse.get("items").size() >= 1);
+        JsonNode listItem = listResponse.get("items").get(0);
+        Assertions.assertEquals("SIMULATED", listItem.get("dataKind").asText());
+        Assertions.assertFalse(listItem.get("calibrationSource").asText().isBlank());
+        Assertions.assertFalse(listItem.get("simulationRule").asText().isBlank());
+
+        MvcResult detailResult = mockMvc.perform(get("/api/universities/2")
+                        .param("examProvince", "湖南")
+                        .param("subjectType", "HISTORY"))
+                .andExpect(status().isOk())
+                .andReturn();
+        JsonNode detailResponse = objectMapper.readTree(detailResult.getResponse().getContentAsString());
+        JsonNode historyItem = detailResponse.get("cutoffHistory").get(0);
+        Assertions.assertEquals("SIMULATED", historyItem.get("dataKind").asText());
+        Assertions.assertFalse(historyItem.get("calibrationSource").asText().isBlank());
+        Assertions.assertFalse(historyItem.get("simulationRule").asText().isBlank());
+        JsonNode majorItem = detailResponse.get("majors").get(0);
+        Assertions.assertEquals("SIMULATED", majorItem.get("dataKind").asText());
+        Assertions.assertFalse(majorItem.get("calibrationSource").asText().isBlank());
+        Assertions.assertFalse(majorItem.get("simulationRule").asText().isBlank());
+
+        Long lawMajorId = jdbcTemplate.queryForObject(
+                "SELECT id FROM major WHERE name = '法学' LIMIT 1", Long.class);
+        mockMvc.perform(get("/api/majors/{majorId}/schools", lawMajorId)
+                        .param("province", "湖南")
+                        .param("subjectType", "HISTORY"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].dataKind").value("SIMULATED"))
+                .andExpect(jsonPath("$[0].calibrationSource").isNotEmpty())
+                .andExpect(jsonPath("$[0].simulationRule").isNotEmpty());
+
+        mockMvc.perform(get("/api/majors/{majorId}/schools", lawMajorId)
+                        .param("province", "江苏")
+                        .param("subjectType", "HISTORY"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").isEmpty());
+    }
+
+    @Test
     void recommend_shouldExposeMultipleSchoolTagsFor985University() throws Exception {
         String token = loginAndGetToken("testuser", "123456", 660, "PHYSICS", "浙江");
         String requestJson = objectMapper.writeValueAsString(Map.of(
@@ -347,6 +456,23 @@ class RecommendationControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$").isArray())
                 .andExpect(jsonPath("$[0]").isNotEmpty());
+    }
+
+    @Test
+    void majorSchools_shouldTranslateApiSubjectTypeToDatabaseValue() throws Exception {
+        Long majorId = jdbcTemplate.queryForObject(
+                "SELECT id FROM major WHERE name = ?",
+                Long.class,
+                "计算机科学与技术"
+        );
+
+        mockMvc.perform(get("/api/majors/" + majorId + "/schools")
+                        .param("province", "浙江")
+                        .param("subjectType", "PHYSICS"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").isArray())
+                .andExpect(jsonPath("$[0].universityName").isNotEmpty())
+                .andExpect(jsonPath("$[0].cutoffScore").isNumber());
     }
 
     @Test
@@ -713,6 +839,14 @@ class RecommendationControllerTest {
                                 }
                                 """))
                 .andExpect(status().isOk())
+                .andExpect(jsonPath("$.score").value(618))
+                .andExpect(jsonPath("$.subjectType").value("PHYSICS"))
+                .andExpect(jsonPath("$.examProvince").value("浙江"));
+
+        mockMvc.perform(get("/api/auth/profile")
+                        .header("Authorization", "Bearer " + loginResponse.get("token").asText()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.username").value("freshuser"))
                 .andExpect(jsonPath("$.score").value(618))
                 .andExpect(jsonPath("$.subjectType").value("PHYSICS"))
                 .andExpect(jsonPath("$.examProvince").value("浙江"));

@@ -77,10 +77,6 @@ public class MajorQueryService {
                 province,
                 subjectType
         );
-        if (schools.isEmpty()) {
-            // 指定省份无数据时回退全量（录取线数据集中在湖南/浙江）
-            schools = majorAdmissionCutoffMapper.findSchoolsByMajorName(major.getName(), null, subjectType);
-        }
         // 传入分数/位次时计算录取概率（与查大学/详情同一套 ProbabilityService 规则）
         if (score != null || (providedRank != null && providedRank > 0)) {
             RankResolution rank = probabilityService.resolveRank(province, subjectType, score, providedRank);

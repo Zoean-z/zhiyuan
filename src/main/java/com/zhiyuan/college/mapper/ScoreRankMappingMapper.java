@@ -27,7 +27,7 @@ public interface ScoreRankMappingMapper extends BaseMapper<ScoreRankMapping> {
                                                          @Param("score") Integer score);
 
     @Select("""
-            SELECT score, rank_value AS rankValue
+            SELECT score, rank_value AS rankValue, segment_count AS segmentCount
             FROM score_rank_mapping
             WHERE province = #{province}
               AND subject_type = #{subjectType}

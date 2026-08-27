@@ -1,11 +1,11 @@
 <script setup>
-import { Search, TrendCharts } from "@element-plus/icons-vue";
-import { computed, onMounted, ref } from "vue";
+import { Search } from "@element-plus/icons-vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import GkHeader from "../components/GkHeader.vue";
 import GkSchoolLogo from "../components/GkSchoolLogo.vue";
 import GkSidePanel from "../components/GkSidePanel.vue";
-import { profile } from "../utils/examProfile";
+import { profile, subjectType } from "../utils/examProfile";
 
 const router = useRouter();
 const schools = ref([]);
@@ -36,7 +36,7 @@ async function fetchSchools() {
   loading.value = true;
   try {
     const examProvince = profile.province || "";
-    const base = `/api/universities?size=100&examProvince=${encodeURIComponent(examProvince)}`;
+    const base = `/api/universities?size=100&withDataOnly=true&examProvince=${encodeURIComponent(examProvince)}&subjectType=${encodeURIComponent(subjectType.value)}`;
     const first = await (await fetch(base + "&page=1")).json();
     const total = Number(first.total || 0);
     const pages = Math.max(1, Math.ceil(total / 100));
@@ -54,12 +54,9 @@ async function fetchSchools() {
 }
 
 onMounted(fetchSchools);
+watch([() => profile.province, subjectType], fetchSchools);
 
-// 计划趋势示意：基于计划数生成稳定 4 年序列（非数据库字段）
-function trendBars(school) {
-  const base = school.planCount || 100;
-  return [0, 1, 2, 3].map((i) => Math.max(20, base - 12 * (3 - i)));
-}
+const dataYears = computed(() => [...new Set(schools.value.map((school) => school.admissionYear).filter(Boolean))].sort((a, b) => b - a));
 
 const filtered = computed(() => {
   const kw = keyword.value.trim();
@@ -99,11 +96,9 @@ function askPlan(school) {
         <section class="gk-page__content">
           <div class="gk-filter">
             <div class="gk-filter__row">
-              <span class="gk-filter__label">年份</span>
-              <button type="button" class="gk-filter__opt is-active">2026</button>
-              <button type="button" class="gk-filter__opt">2025</button>
-              <button type="button" class="gk-filter__opt">2024</button>
-              <span class="gk-filter__label gk-filter__label--gap">位置</span>
+              <span class="gk-filter__label">数据年份</span>
+              <span>{{ dataYears.length ? dataYears.join(" / ") : "暂无" }}</span>
+              <span class="gk-filter__label gk-filter__label--gap">院校位置</span>
               <button
                 v-for="p in SCHOOL_PROVINCES"
                 :key="p"
@@ -167,7 +162,7 @@ function askPlan(school) {
               <div class="gk-enroll__stats">
                 <div class="gk-enroll__stat">
                   <b>{{ school.planCount ?? "—" }}</b>
-                  <span>26招生计划/人</span>
+                  <span>招生计划/人</span>
                 </div>
                 <div class="gk-enroll__stat">
                   <b>{{ school.majorCount ?? "—" }}</b>
@@ -176,17 +171,6 @@ function askPlan(school) {
                 <div class="gk-enroll__stat">
                   <b>{{ school.cutoffScore ?? "—" }}</b>
                   <span>参考最低分</span>
-                </div>
-                <div class="gk-enroll__trend" title="计划趋势">
-                  <el-icon><TrendCharts /></el-icon>
-                  <div class="gk-enroll__bars">
-                    <i
-                      v-for="(bar, bi) in trendBars(school)"
-                      :key="bi"
-                      :style="{ height: `${Math.min(100, (bar / school.planCount) * 100)}%` }"
-                      :class="{ 'is-last': bi === 3 }"
-                    ></i>
-                  </div>
                 </div>
               </div>
               <button class="gk-school__action" type="button" @click="askPlan(school)">查看计划 &gt;</button>

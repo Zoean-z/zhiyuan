@@ -46,6 +46,12 @@ public class MajorAdmissionCutoff {
     @TableField("data_kind")
     private String dataKind;
 
+    @TableField("calibration_source")
+    private String calibrationSource;
+
+    @TableField("simulation_rule")
+    private String simulationRule;
+
     public Long getId() {
         return id;
     }
@@ -148,5 +154,21 @@ public class MajorAdmissionCutoff {
 
     public void setDataKind(String dataKind) {
         this.dataKind = dataKind;
+    }
+
+    public String getCalibrationSource() {
+        return calibrationSource;
+    }
+
+    public void setCalibrationSource(String calibrationSource) {
+        this.calibrationSource = calibrationSource;
+    }
+
+    public String getSimulationRule() {
+        return simulationRule;
+    }
+
+    public void setSimulationRule(String simulationRule) {
+        this.simulationRule = simulationRule;
     }
 }

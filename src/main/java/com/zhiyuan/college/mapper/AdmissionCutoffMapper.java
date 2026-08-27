@@ -23,9 +23,24 @@ public interface AdmissionCutoffMapper extends BaseMapper<AdmissionCutoff> {
                    c.province,
                    c.subject_type AS subjectType,
                    c.cutoff_score AS cutoffScore,
-                   c.min_rank AS minRank
+                   c.min_rank AS minRank,
+                   source_cutoff.data_kind AS dataKind,
+                   source_cutoff.calibration_source AS calibrationSource,
+                   source_cutoff.simulation_rule AS simulationRule
             FROM admission_cutoff c
             JOIN university u ON c.university_id = u.id
+            LEFT JOIN major_admission_cutoff source_cutoff ON source_cutoff.id = (
+                SELECT m.id
+                FROM major_admission_cutoff m
+                WHERE m.university_id = c.university_id
+                  AND m.admission_year = c.admission_year
+                  AND m.province = c.province
+                  AND m.subject_type = c.subject_type
+                ORDER BY CASE WHEN m.cutoff_score = c.cutoff_score THEN 0 ELSE 1 END,
+                         m.cutoff_score ASC,
+                         m.id ASC
+                LIMIT 1
+            )
             WHERE c.province = #{province}
               AND c.subject_type = #{subjectType}
               AND c.admission_year = (
@@ -99,14 +114,29 @@ public interface AdmissionCutoffMapper extends BaseMapper<AdmissionCutoff> {
                                         @Param("admissionYear") Integer admissionYear);
 
     @Select("""
-            SELECT id, university_id AS universityId, admission_year AS admissionYear,
-                   province, subject_type AS subjectType,
-                   cutoff_score AS cutoffScore, min_rank AS minRank
-            FROM admission_cutoff
-            WHERE university_id = #{universityId}
-              AND province = #{province}
-              AND subject_type = #{subjectType}
-            ORDER BY admission_year DESC
+            SELECT c.id, c.university_id AS universityId, c.admission_year AS admissionYear,
+                   c.province, c.subject_type AS subjectType,
+                   c.cutoff_score AS cutoffScore, c.min_rank AS minRank,
+                   source_cutoff.data_kind AS dataKind,
+                   source_cutoff.calibration_source AS calibrationSource,
+                   source_cutoff.simulation_rule AS simulationRule
+            FROM admission_cutoff c
+            LEFT JOIN major_admission_cutoff source_cutoff ON source_cutoff.id = (
+                SELECT m.id
+                FROM major_admission_cutoff m
+                WHERE m.university_id = c.university_id
+                  AND m.admission_year = c.admission_year
+                  AND m.province = c.province
+                  AND m.subject_type = c.subject_type
+                ORDER BY CASE WHEN m.cutoff_score = c.cutoff_score THEN 0 ELSE 1 END,
+                         m.cutoff_score ASC,
+                         m.id ASC
+                LIMIT 1
+            )
+            WHERE c.university_id = #{universityId}
+              AND c.province = #{province}
+              AND c.subject_type = #{subjectType}
+            ORDER BY c.admission_year DESC
             LIMIT 3
             """)
     List<AdmissionCutoff> findHistoryByUniversityAndProvinceSubject(@Param("universityId") Long universityId,
@@ -116,7 +146,10 @@ public interface AdmissionCutoffMapper extends BaseMapper<AdmissionCutoff> {
     @Select("""
             SELECT ac.id, ac.university_id AS universityId, ac.admission_year AS admissionYear,
                    ac.province, ac.subject_type AS subjectType,
-                   ac.cutoff_score AS cutoffScore, ac.min_rank AS minRank
+                   ac.cutoff_score AS cutoffScore, ac.min_rank AS minRank,
+                   source_cutoff.data_kind AS dataKind,
+                   source_cutoff.calibration_source AS calibrationSource,
+                   source_cutoff.simulation_rule AS simulationRule
             FROM admission_cutoff ac
             JOIN (
                 SELECT university_id, MAX(admission_year) AS latest_year
@@ -126,6 +159,18 @@ public interface AdmissionCutoffMapper extends BaseMapper<AdmissionCutoff> {
                 GROUP BY university_id
             ) latest ON latest.university_id = ac.university_id
                     AND latest.latest_year = ac.admission_year
+            LEFT JOIN major_admission_cutoff source_cutoff ON source_cutoff.id = (
+                SELECT m.id
+                FROM major_admission_cutoff m
+                WHERE m.university_id = ac.university_id
+                  AND m.admission_year = ac.admission_year
+                  AND m.province = ac.province
+                  AND m.subject_type = ac.subject_type
+                ORDER BY CASE WHEN m.cutoff_score = ac.cutoff_score THEN 0 ELSE 1 END,
+                         m.cutoff_score ASC,
+                         m.id ASC
+                LIMIT 1
+            )
             WHERE ac.province = #{province}
               AND ac.subject_type = #{subjectType}
             """)

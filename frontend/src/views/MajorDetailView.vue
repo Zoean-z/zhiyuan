@@ -5,7 +5,7 @@ import { useRoute, useRouter } from "vue-router";
 import GkHeader from "../components/GkHeader.vue";
 import GkSchoolLogo from "../components/GkSchoolLogo.vue";
 import GkSidePanel from "../components/GkSidePanel.vue";
-import { profile, subjectType } from "../utils/examProfile";
+import { profile, rank, subjectType } from "../utils/examProfile";
 import { strategyOf } from "../utils/scoreModel";
 import hotIcon from "../assets/gk_hot.png";
 
@@ -75,6 +75,7 @@ async function load(id) {
       if (profile.province) params.set("province", profile.province);
       if (subjectType.value) params.set("subjectType", subjectType.value);
       if (profile.score) params.set("score", profile.score);
+      if (rank.value) params.set("userRank", rank.value);
       const qs = params.toString();
       const res = await fetch(`/api/majors/${major.value.id}/schools${qs ? `?${qs}` : ""}`);
       const list = (await res.json()) || [];
@@ -89,8 +90,8 @@ async function load(id) {
 }
 
 watch(
-  () => [route.params.id, route.query.tab],
-  async ([id, tab]) => {
+  () => [route.params.code, route.query.tab, profile.province, subjectType.value, profile.score, rank.value],
+  async ([code, tab]) => {
     const t = TABS.find((x) => x.key === tab);
     activeTab.value = t ? t.key : "intro";
     page.value = 1;
@@ -100,7 +101,7 @@ watch(
     featureFilter.value = "不限";
     sortKey.value = "默认排序";
     scope.value = "全部科类";
-    await load(id);
+    await load(code);
   },
   { immediate: true }
 );
@@ -112,6 +113,16 @@ const popularity = computed(() =>
 );
 
 const offeringCount = computed(() => offeringSchools.value.length || major.value?.openSchoolCount || 0);
+
+const cutoffDataNote = computed(() => {
+  if (!offeringSchools.value.length) {
+    return "当前省份和科类暂无录取数据，未使用其他省份数据兜底。";
+  }
+  if (offeringSchools.value.some((school) => school.dataKind === "SIMULATED")) {
+    return "以上为已入库的比赛验证数据，仅用于功能验证；志愿填报请以省考试院公布为准。";
+  }
+  return "以上为后端已入库录取数据；志愿填报请以省考试院公布为准。";
+});
 
 const provinces = computed(() => ["不限", ...Array.from(new Set(offeringSchools.value.map((s) => s.province)))]);
 const types = computed(() => ["不限", ...Array.from(new Set(offeringSchools.value.map((s) => (s.schoolType || "").replace("类", ""))))]);
@@ -385,7 +396,7 @@ const scoreBands = computed(() =>
                 </tr>
               </tbody>
             </table>
-            <p class="gkd-note">以上为基于公开数据的参考推算，志愿填报请以省考试院公布为准。</p>
+            <p class="gkd-note">{{ cutoffDataNote }}</p>
             <button type="button" class="gkd-cta" @click="askPredict">输入分数，问小智精准预测 &gt;</button>
           </div>
 

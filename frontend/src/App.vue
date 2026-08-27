@@ -1,10 +1,11 @@
 <script setup>
 import { ElMessage, ElMessageBox } from "element-plus";
-import { computed, onMounted, provide, reactive, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, provide, reactive, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import {
   buildPlanItemKey,
   buildGroupedFromResult,
+  AUTH_UPDATED_EVENT,
   clearStoredAuth,
   groupByStrategy,
   isUserProfileComplete,
@@ -14,6 +15,7 @@ import {
   saveStoredAuth,
   subjectTypeLabel
 } from "./utils/recommendation";
+import { syncFromAuth } from "./utils/examProfile";
 import { UI_TEXT, createHttpError, normalizeUserError } from "./utils/ui";
 
 const router = useRouter();
@@ -587,6 +589,23 @@ function fillProfileFromUser() {
   profileForm.examProvince = user.examProvince || "";
 }
 
+function storeAuthenticatedResponse(data) {
+  const user = { ...(data || {}) };
+  const token = user.token || auth.value?.token;
+  delete user.token;
+  auth.value = { token, user };
+  saveStoredAuth(auth.value);
+  return user;
+}
+
+function handleStoredAuthUpdated(event) {
+  auth.value = event?.detail ?? readStoredAuth();
+  if (!auth.value?.user) return;
+  syncFromAuth();
+  fillScoreFromUser();
+  fillProfileFromUser();
+}
+
 function resetPlanDialog() {
   planDetail.value = null;
   planResultJson.value = "";
@@ -712,11 +731,10 @@ async function login() {
       body: JSON.stringify({ username: loginForm.username, password: loginForm.password })
     });
 
-    auth.value = { token: data.token, user: data };
-    saveStoredAuth(auth.value);
+    const user = storeAuthenticatedResponse(data);
     fillScoreFromUser();
     fillProfileFromUser();
-    await router.replace(resolvePostAuthTarget(data));
+    await router.replace(resolvePostAuthTarget(user));
     ElMessage.success(UI_TEXT.success.login);
   } catch (ex) {
     applyError(ex, UI_TEXT.failure.login);
@@ -746,12 +764,11 @@ async function register() {
       body: JSON.stringify(payload)
     });
 
-    auth.value = { token: data.token, user: data };
-    saveStoredAuth(auth.value);
+    const user = storeAuthenticatedResponse(data);
     authMode.value = "login";
     fillScoreFromUser();
     fillProfileFromUser();
-    await router.replace(resolvePostAuthTarget(data));
+    await router.replace(resolvePostAuthTarget(user));
     ElMessage.success(UI_TEXT.success.register);
   } catch (ex) {
     applyError(ex, UI_TEXT.failure.register);
@@ -779,12 +796,11 @@ async function completeProfile() {
         examProvince: profileForm.examProvince
       })
     });
-    auth.value = { token: data.token, user: data };
-    saveStoredAuth(auth.value);
+    const user = storeAuthenticatedResponse(data);
     fillScoreFromUser();
     fillProfileFromUser();
     profileForm.confirmed = false;
-    await router.replace(resolvePostAuthTarget(data));
+    await router.replace(resolvePostAuthTarget(user));
     ElMessage.success("报考信息已保存");
   } catch (ex) {
     applyError(ex, "报考信息保存失败");
@@ -1281,9 +1297,15 @@ provide("workspace", {
 });
 
 onMounted(async () => {
+  window.addEventListener(AUTH_UPDATED_EVENT, handleStoredAuthUpdated);
+  syncFromAuth();
   loadMetaOptions();
   fillScoreFromUser();
   fillProfileFromUser();
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener(AUTH_UPDATED_EVENT, handleStoredAuthUpdated);
 });
 
 watch(() => scoreForm.recommendationMode, (mode) => {

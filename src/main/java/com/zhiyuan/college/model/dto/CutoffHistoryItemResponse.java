@@ -5,6 +5,9 @@ public record CutoffHistoryItemResponse(Integer admissionYear,
                                         String subjectType,
                                         Integer cutoffScore,
                                         Integer minRank,
+                                        String dataKind,
+                                        String calibrationSource,
+                                        String simulationRule,
                                         Integer scoreDelta,
                                         Integer rankDelta) {
 }

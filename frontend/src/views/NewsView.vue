@@ -4,7 +4,7 @@ import { useRouter } from "vue-router";
 import { CaretRight } from "@element-plus/icons-vue";
 import GkHeader from "../components/GkHeader.vue";
 import GkSidePanel from "../components/GkSidePanel.vue";
-import { NEWS_ARTICLES, NEWS_TAGS, viewsOf } from "../utils/newsData";
+import { NEWS_ARTICLES, NEWS_TAGS } from "../utils/newsData";
 
 const router = useRouter();
 const activeTag = ref("全部");
@@ -74,7 +74,6 @@ function tagCls(tag) {
                   <div class="gk-news__meta">
                     <span>{{ a.source }}</span>
                     <span>{{ a.dateFull }}</span>
-                    <span>阅读 {{ viewsOf(a.id).toLocaleString("zh-CN") }}</span>
                   </div>
                 </div>
                 <el-icon class="gk-news__arrow"><CaretRight /></el-icon>

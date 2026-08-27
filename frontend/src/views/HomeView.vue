@@ -4,17 +4,17 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import GkHeader from "../components/GkHeader.vue";
 import GkSchoolLogo from "../components/GkSchoolLogo.vue";
-import { MAJORS } from "../utils/exploreData";
 import { NEWS_TAGS, newsById } from "../utils/newsData";
-import { strategyOf } from "../utils/scoreModel";
 import {
   ENTRANT_TYPES,
   SECOND_SUBJECTS,
   confirmProfile,
   isReady,
-  percent,
   profile,
   rank,
+  rankError,
+  rankLoading,
+  rankMappingYear,
   score,
   setFirstSubject,
   setScore,
@@ -41,7 +41,7 @@ const SLIDES = [
   {
     kicker: "模拟报志愿",
     title: "冲稳保 · 三档智能定位",
-    desc: "输入分数与选科，即刻测算可冲击、较稳妥、可保底的院校数量与位次区间",
+    desc: "输入分数与选科，查询一分一段位次及后端返回的冲稳保院校数量",
     primaryText: "智能选大学",
     primaryTo: { path: "/choose" },
     ghostText: "看一分一段",
@@ -68,15 +68,21 @@ async function fetchSchools() {
   if (loading.value) return;
   loading.value = true;
   try {
-    const scoreVal = score.value == null ? "" : score.value;
-    const rankVal = rank.value == null ? "" : rank.value;
-    const base = `/api/universities?size=100&score=${scoreVal}&userRank=${rankVal}`;
-    const first = await (await fetch(base + "&page=1")).json();
+    const params = new URLSearchParams({
+      examProvince: profile.province,
+      subjectType: subjectType.value,
+      size: "100",
+      page: "1"
+    });
+    if (score.value != null) params.set("score", String(score.value));
+    if (rank.value != null) params.set("userRank", String(rank.value));
+    const first = await (await fetch(`/api/universities?${params.toString()}`)).json();
     const total = Number(first.total || 0);
     const pages = Math.max(1, Math.ceil(total / 100));
     const all = [...(first.items || [])];
     for (let p = 2; p <= Math.min(pages, 15); p++) {
-      const pageData = await (await fetch(base + `&page=${p}`)).json();
+      params.set("page", String(p));
+      const pageData = await (await fetch(`/api/universities?${params.toString()}`)).json();
       all.push(...(pageData.items || []));
     }
     schools.value = all;
@@ -95,6 +101,7 @@ onMounted(() => {
   }, 5000);
 });
 onBeforeUnmount(() => window.clearInterval(slideTimer));
+watch([score, rank, subjectType, () => profile.province], fetchSchools);
 
 /* ── 模拟报志愿面板 ──
  * 【修复】右上角「普通类/艺术类」原来是两个 <span>，根本点不了；现在是真按钮。
@@ -113,16 +120,17 @@ const simStats = computed(() => {
   const buckets = { rush: 0, safe: 0, guard: 0 };
   schools.value.forEach((school) => {
     const detail = school.probability;
-    if (!detail || detail.probability == null) return;
-    const key = strategyOf(detail.probability).key;
+    if (!detail || detail.probability == null || !detail.strategy) return;
+    const key = {
+      RUSH: "rush",
+      SAFE: "safe",
+      GUARANTEE: "guard"
+    }[String(detail.strategy).toUpperCase()];
     if (buckets[key] != null) buckets[key] += 1;
   });
   return {
     score: score.value,
     rank: rank.value,
-    rankLow: Math.round(rank.value * 0.985),
-    rankHigh: Math.round(rank.value * 1.015),
-    pct: percent.value,
     ...buckets
   };
 });
@@ -167,11 +175,31 @@ const QUICK_ENTRIES = [
 ];
 
 /* ── 热门院校 ── */
-const SCHOOL_TABS = computed(() => ["全部", ...new Set(schools.value.map((s) => s.tags).filter(Boolean))]);
+const SCHOOL_TAB_ORDER = ["985", "211", "双一流", "综合类", "理工类", "师范类", "财经类"];
+
+function tagsOfSchool(school) {
+  const tags = String(school.tags || "")
+    .split("|")
+    .map((tag) => tag.trim())
+    .filter(Boolean);
+  const type = String(school.schoolType || "").trim();
+  if (type) tags.push(type.endsWith("类") ? type : `${type}类`);
+  if (school.is985) tags.push("985");
+  if (school.is211) tags.push("211");
+  if (school.isDoubleFirstClass) tags.push("双一流");
+  return [...new Set(tags)];
+}
+
+const SCHOOL_TABS = computed(() => [
+  "全部",
+  ...SCHOOL_TAB_ORDER.filter((tag) => schools.value.some((school) => tagsOfSchool(school).includes(tag)))
+]);
 const schoolTab = ref("全部");
 const schoolOffset = ref(0);
 const hotSchools = computed(() => {
-  const list = schoolTab.value === "全部" ? schools.value : schools.value.filter((s) => (s.tags || "").includes(schoolTab.value));
+  const list = schoolTab.value === "全部"
+    ? schools.value
+    : schools.value.filter((school) => tagsOfSchool(school).includes(schoolTab.value));
   const take = Math.min(8, list.length);
   const out = [];
   for (let i = 0; i < take; i += 1) {
@@ -187,35 +215,9 @@ function shuffleSchools() {
   schoolOffset.value += 8;
 }
 
-/* ── 热门专业 ── */
-const MAJOR_LEVEL_TABS = ["本科", "专科"];
-const majorLevelTab = ref("本科");
-const CATEGORY_COLORS = {
-  工学: ["#3b82f6", "#e8f1fe"],
-  理学: ["#06b6d4", "#e3f8fb"],
-  医学: ["#10b981", "#e6f8f1"],
-  文学: ["#ec4899", "#fdeaf4"],
-  经济学: ["#f59e0b", "#fdf3e0"],
-  法学: ["#ff6600", "#fff0e5"],
-  管理学: ["#8b5cf6", "#f1ecfe"],
-  default: ["#6b7280", "#f3f4f6"]
-};
-const hotMajors = computed(() => {
-  const level = majorLevelTab.value === "本科" ? 0 : 1;
-  return [...MAJORS]
-    .filter((m) => m.level === level)
-    .sort((a, b) => (a.hot || 999) - (b.hot || 999))
-    .slice(0, 5);
-});
-
-/* ── 院校热度 ── */
-const heatList = computed(() =>
-  schools.value.slice(0, 5).map((school, i) => ({
-    name: school.name,
-    id: school.id,
-    hot: (9.9 - i * 0.86).toFixed(1)
-  }))
-);
+function schoolTagSummary(school) {
+  return tagsOfSchool(school).slice(0, 3).join(" · ") || "—";
+}
 
 /* ── 高考资讯（全站只保留这一处，侧边栏与首页「热点资讯」已删） ──
  * 真实资讯源：中国教育在线 gaokao.eol.cn，站内详情页 */
@@ -324,15 +326,14 @@ const newsRest = computed(() => newsList.value.slice(1));
           <div v-if="simStats" class="gk-hp__sim-chart">
             <div class="gk-hp__sim-chart-top">
               <strong>{{ simStats.score }}<i>分</i></strong>
-              <span>位次约 {{ simStats.rankLow.toLocaleString() }}–{{ simStats.rankHigh.toLocaleString() }} 名</span>
+              <span v-if="simStats.rank != null">位次约 {{ simStats.rank.toLocaleString() }} 名</span>
+              <span v-else>{{ rankLoading ? "正在查询位次" : "暂无位次数据" }}</span>
             </div>
-            <div class="gk-hp__sim-bar">
-              <div :style="{ width: `${simStats.pct}%` }" />
-            </div>
-            <p>{{ profile.province }}{{ profile.firstSubject }}类 · 超过本省 {{ simStats.pct }}% 考生</p>
+            <p v-if="simStats.rank != null">{{ profile.province }}{{ profile.firstSubject }}类 · {{ rankMappingYear || "最新" }}年一分一段</p>
+            <p v-else>{{ rankError || `${profile.province}${profile.firstSubject}类暂无位次数据` }}</p>
           </div>
           <div v-else class="gk-hp__sim-chart gk-hp__sim-chart--empty">
-            <p>{{ scoreTip ? "请先输入 100–750 之间的高考分数" : "输入分数后，自动测算位次区间与冲稳保院校数量" }}</p>
+            <p>{{ scoreTip ? "请先输入 100–750 之间的高考分数" : "输入分数后，查询位次与后端冲稳保院校数量" }}</p>
           </div>
 
           <div class="gk-hp__sim-stats">
@@ -356,10 +357,10 @@ const newsRest = computed(() => newsList.value.slice(1));
         </button>
       </nav>
 
-      <!-- ③ 热门院校 -->
+      <!-- ③ 院校库 -->
       <section class="gk-hp__card gk-hp__schools">
         <header class="gk-hp__card-head">
-          <h3>热门院校</h3>
+          <h3>院校浏览</h3>
           <div class="gk-hp__head-right">
             <div class="gk-hp__seg">
               <button
@@ -389,69 +390,14 @@ const newsRest = computed(() => newsList.value.slice(1));
             <GkSchoolLogo :school="school" />
             <span class="gk-hp__school-copy">
               <strong>{{ school.name }}</strong>
-              <em>{{ school.tags || "—" }}</em>
+              <em>{{ schoolTagSummary(school) }}</em>
             </span>
             <span class="gk-hp__school-more">院校详情 &gt;</span>
           </button>
         </div>
       </section>
 
-      <!-- ④ 热门专业 + 院校热度 -->
-      <section class="gk-hp__row">
-        <div class="gk-hp__card">
-          <header class="gk-hp__card-head">
-            <h3>热门专业</h3>
-            <div class="gk-hp__head-right">
-              <div class="gk-hp__seg">
-                <button
-                  v-for="tab in MAJOR_LEVEL_TABS"
-                  :key="tab"
-                  type="button"
-                  :class="{ 'is-active': majorLevelTab === tab }"
-                  @click="majorLevelTab = tab"
-                >
-                  {{ tab }}
-                </button>
-              </div>
-              <span class="gk-hp__more" @click="router.push('/majors')">更多 &gt;</span>
-            </div>
-          </header>
-          <ul class="gk-hp__majors">
-            <li v-for="major in hotMajors" :key="major.code">
-              <button type="button" @click="router.push(`/majors/${major.code}`)">
-                <span
-                  class="gk-hp__major-badge"
-                  :style="{ color: (CATEGORY_COLORS[major.category] || CATEGORY_COLORS.default)[0], background: (CATEGORY_COLORS[major.category] || CATEGORY_COLORS.default)[1] }"
-                >
-                  {{ major.name.slice(0, 1) }}
-                </span>
-                <span class="gk-hp__major-copy">
-                  <strong>{{ major.name }}</strong>
-                  <em>{{ major.category }} · {{ major.duration }} · 毕业年薪 {{ major.salary }}</em>
-                </span>
-                <span class="gk-hp__major-count">{{ major.schoolCount }} 所院校开设</span>
-              </button>
-            </li>
-          </ul>
-        </div>
-
-        <aside class="gk-hp__card gk-hp__heat">
-          <header class="gk-hp__card-head">
-            <h3>院校热度</h3>
-            <span class="gk-hp__more" @click="router.push('/rank')">更多 &gt;</span>
-          </header>
-          <ol class="gk-hp__heat-list">
-            <li v-for="(item, i) in heatList" :key="item.name" @click="item.id && router.push(`/schools/${item.id}`)">
-              <span class="gk-hp__heat-no" :class="`gk-hp__heat-no--${i < 3 ? 'top' : 'rest'}`">{{ i + 1 }}</span>
-              <GkSchoolLogo v-if="item.id" :school="{ id: item.id, name: item.name }" size="mini" />
-              <span class="gk-hp__heat-name">{{ item.name }}</span>
-              <span class="gk-hp__heat-val"><i /><b>{{ item.hot }}w</b></span>
-            </li>
-          </ol>
-        </aside>
-      </section>
-
-      <!-- ⑤ 高考资讯（全站唯一一处） -->
+      <!-- ④ 高考资讯（全站唯一一处） -->
       <section class="gk-hp__card gk-hp__news gk-hp__row--last">
         <header class="gk-hp__card-head">
           <h3>高考资讯</h3>

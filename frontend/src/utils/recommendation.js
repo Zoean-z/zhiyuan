@@ -8,6 +8,15 @@ export const RECOMMENDATION_MODE_OPTIONS = [
   { value: "MAJOR_FIRST", label: "专业优先" }
 ];
 
+export const AUTH_UPDATED_EVENT = "zhiyuan-auth-updated";
+
+function emitAuthUpdated(auth) {
+  if (typeof window === "undefined" || typeof window.dispatchEvent !== "function") return;
+  const EventConstructor = window.CustomEvent || globalThis.CustomEvent;
+  if (typeof EventConstructor !== "function") return;
+  window.dispatchEvent(new EventConstructor(AUTH_UPDATED_EVENT, { detail: auth }));
+}
+
 export function readStoredAuth() {
   try {
     return JSON.parse(localStorage.getItem("zhiyuan_auth") || "null");
@@ -18,10 +27,35 @@ export function readStoredAuth() {
 
 export function saveStoredAuth(auth) {
   localStorage.setItem("zhiyuan_auth", JSON.stringify(auth));
+  emitAuthUpdated(auth);
 }
 
 export function clearStoredAuth() {
   localStorage.removeItem("zhiyuan_auth");
+  emitAuthUpdated(null);
+}
+
+export async function refreshStoredAuthProfile(fetchImpl = fetch) {
+  const storedAuth = readStoredAuth();
+  if (!storedAuth?.token) return null;
+
+  const response = await fetchImpl("/api/auth/profile", {
+    method: "GET",
+    headers: { Authorization: `Bearer ${storedAuth.token}` }
+  });
+  if (!response.ok) {
+    if (response.status === 401) clearStoredAuth();
+    throw new Error(`Failed to refresh authenticated profile (${response.status})`);
+  }
+
+  const user = await response.json();
+  const refreshed = {
+    token: user?.token || storedAuth.token,
+    user: { ...user, token: undefined }
+  };
+  delete refreshed.user.token;
+  saveStoredAuth(refreshed);
+  return refreshed;
 }
 
 export function isUserProfileComplete(user) {
@@ -111,10 +145,7 @@ export function normalizeItem(item, fallbackStrategy) {
   const minRank = pickValue(item, ["minRank", "minimumRank"]);
   const rankGap = pickValue(item, ["rankGap"]);
   const riskScore = pickValue(item, ["riskScore"]);
-  const storedProbability = pickValue(item, ["admissionProbability", "probability", "chance"]);
-  const admissionProbability = storedProbability == null && riskScore != null
-    ? Math.max(0, Math.min(100, 100 - Number(riskScore)))
-    : storedProbability;
+  const admissionProbability = pickValue(item, ["admissionProbability", "probability", "chance"]);
   const schoolTagModel = normalizeSchoolTags(item);
   return {
     recommendationMode,

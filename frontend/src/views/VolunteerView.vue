@@ -13,7 +13,6 @@ import {
   SECOND_SUBJECTS,
   confirmProfile,
   isReady,
-  percent,
   profile,
   rank,
   score,
@@ -102,7 +101,8 @@ function customizePlan() {
     return;
   }
   confirmProfile();
-  const q = `我是${profile.province}${profile.entrantType === "art" ? "艺术类" : "普通类"}考生，${profile.degreeType}${profile.batch}，选科${subjectsText.value}，${score.value}分（全省位次约${rank.value}名，超过${percent.value}%考生），请生成 45 个志愿位的冲稳保涨度方案`;
+  const rankText = rank.value == null ? "暂无位次数据" : `全省位次约${rank.value}名`;
+  const q = `我是${profile.province}${profile.entrantType === "art" ? "艺术类" : "普通类"}考生，${profile.degreeType}${profile.batch}，选科${subjectsText.value}，${score.value}分（${rankText}），请生成 45 个志愿位的冲稳保涨度方案`;
   router.push({ path: "/agent", query: { q } });
 }
 
@@ -244,7 +244,8 @@ function goPlans() {
                 <div class="mnz-field">
                   <span class="mnz-field__label">对应位次</span>
                   <div class="mnz-rank">
-                    <template v-if="isReady">{{ rank.toLocaleString("en-US") }}<i>名</i></template>
+                    <template v-if="rank != null">{{ rank.toLocaleString("en-US") }}<i>名</i></template>
+                    <template v-else-if="isReady">—<i>暂无数据</i></template>
                     <template v-else>—<i>先填分数</i></template>
                   </div>
                 </div>
@@ -262,7 +263,7 @@ function goPlans() {
 
               <p v-if="isReady" class="mnz-form__summary">
                 {{ profile.province }} · {{ profile.firstSubject }}类 · {{ subjectsText }} · {{ score }} 分
-                · 位次约 <b>{{ rank.toLocaleString() }}</b> · 超过本省 <b>{{ percent }}%</b> 考生
+                · <template v-if="rank != null">位次约 <b>{{ rank.toLocaleString() }}</b></template><template v-else>暂无位次数据</template>
               </p>
               <p v-if="scoreError" class="mnz-form__error">{{ scoreError }}</p>
 
@@ -294,12 +295,11 @@ function goPlans() {
               <div class="mnz-vfill__heading">
                 <h3>② 选院校专业·填 45 个志愿位</h3>
                 <span>
-                  {{ profile.province }} · {{ profile.firstSubject }}类 · {{ score }} 分 · 位次约 {{ rank.toLocaleString() }}
+                  {{ profile.province }} · {{ profile.firstSubject }}类 · {{ score }} 分 · {{ rank == null ? "暂无位次数据" : `位次约 ${rank.toLocaleString()}` }}
                   · {{ profile.batch }}
                 </span>
               </div>
               <div class="mnz-vfill__ops">
-                <button type="button" class="mnz-vfill__op" @click="sheetRef && sheetRef.smartFill()">一键智能填充</button>
                 <button type="button" class="mnz-vfill__op mnz-vfill__op--ghost" @click="goDiagnose">防掉档诊断</button>
               </div>
             </div>

@@ -129,6 +129,21 @@ public class AuthService {
         );
     }
 
+    public LoginResponse currentProfile(String token) {
+        UserAccount user = validateToken(token);
+        if (user == null) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid or expired token");
+        }
+        return new LoginResponse(
+                token,
+                user.getUsername(),
+                user.getScore(),
+                user.getSubjectType(),
+                user.getExamProvince(),
+                user.getRole()
+        );
+    }
+
     public UserAccount validateToken(String token) {
         if (isBlacklisted(token)) {
             return null;

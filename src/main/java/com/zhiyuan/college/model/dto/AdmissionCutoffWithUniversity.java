@@ -17,6 +17,9 @@ public class AdmissionCutoffWithUniversity {
     private String subjectType;
     private Integer cutoffScore;
     private Integer minRank;
+    private String dataKind;
+    private String calibrationSource;
+    private String simulationRule;
 
     public Long getId() {
         return id;
@@ -136,5 +139,29 @@ public class AdmissionCutoffWithUniversity {
 
     public void setMinRank(Integer minRank) {
         this.minRank = minRank;
+    }
+
+    public String getDataKind() {
+        return dataKind;
+    }
+
+    public void setDataKind(String dataKind) {
+        this.dataKind = dataKind;
+    }
+
+    public String getCalibrationSource() {
+        return calibrationSource;
+    }
+
+    public void setCalibrationSource(String calibrationSource) {
+        this.calibrationSource = calibrationSource;
+    }
+
+    public String getSimulationRule() {
+        return simulationRule;
+    }
+
+    public void setSimulationRule(String simulationRule) {
+        this.simulationRule = simulationRule;
     }
 }

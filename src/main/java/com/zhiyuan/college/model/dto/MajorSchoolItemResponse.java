@@ -19,6 +19,9 @@ public class MajorSchoolItemResponse {
     private Integer admissionYear;
     private String cutoffProvince;
     private String subjectType;
+    private String dataKind;
+    private String calibrationSource;
+    private String simulationRule;
     private ProbabilityBreakdownResponse probability;
 
     public MajorSchoolItemResponse() {
@@ -134,6 +137,30 @@ public class MajorSchoolItemResponse {
 
     public void setSubjectType(String subjectType) {
         this.subjectType = subjectType;
+    }
+
+    public String getDataKind() {
+        return dataKind;
+    }
+
+    public void setDataKind(String dataKind) {
+        this.dataKind = dataKind;
+    }
+
+    public String getCalibrationSource() {
+        return calibrationSource;
+    }
+
+    public void setCalibrationSource(String calibrationSource) {
+        this.calibrationSource = calibrationSource;
+    }
+
+    public String getSimulationRule() {
+        return simulationRule;
+    }
+
+    public void setSimulationRule(String simulationRule) {
+        this.simulationRule = simulationRule;
     }
 
     public ProbabilityBreakdownResponse getProbability() {

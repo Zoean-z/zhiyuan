@@ -1,13 +1,13 @@
 <script setup>
 import { computed, onMounted, ref, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
-import { Delete, Bottom, Top, CircleCheckFilled, WarningFilled, InfoFilled, Promotion, StarFilled } from "@element-plus/icons-vue";
+import { Delete, Bottom, Top, Promotion } from "@element-plus/icons-vue";
 import { useRouter } from "vue-router";
 import GkSchoolLogo from "./GkSchoolLogo.vue";
 import {
-  SEGMENTS, TOTAL, normalizeSchoolLike, readCurrentSheet, strategyOf, writeCurrentSheet
+  SEGMENTS, TOTAL, normalizeSchoolLike, readCurrentSheet, segmentOfIndex, writeCurrentSheet
 } from "../utils/volunteerCore";
-import { normalizeSubjectType, rankOfScore, scoreOfRank } from "../utils/scoreModel";
+import { normalizeSubjectType } from "../utils/scoreModel";
 
 const props = defineProps({
   profile: { type: Object, required: true },
@@ -32,7 +32,9 @@ async function fetchSchools() {
   loadingSchools.value = true;
   try {
     const params = new URLSearchParams({
-      examProvince: props.profile.province || "湖南",
+      examProvince: props.profile.province,
+      subjectType: normalizeSubjectType(props.profile.firstSubject || props.profile.subjects?.[0] || props.profile.subjectType),
+      withDataOnly: "true",
       size: "100"
     });
     /* 关键：把考生分数/位次传给后端 → 每所大学算出真实概率 → 冲/稳/保计数有数据 */
@@ -63,7 +65,17 @@ async function fetchSchools() {
 async function loadSchoolMajors(id) {
   if (majorCache.value[id]) return;
   try {
-    const resp = await fetch(`/api/universities/${id}`);
+    const params = new URLSearchParams({
+      examProvince: props.profile.province,
+      subjectType: normalizeSubjectType(props.profile.firstSubject || props.profile.subjects?.[0] || props.profile.subjectType)
+    });
+    if (props.profile.score != null && Number(props.profile.score) > 0) {
+      params.set("score", String(Number(props.profile.score)));
+    }
+    if (myRank.value != null && Number(myRank.value) > 0) {
+      params.set("userRank", String(Number(myRank.value)));
+    }
+    const resp = await fetch(`/api/universities/${id}?${params.toString()}`);
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const d = await resp.json();
     majorCache.value = { ...majorCache.value, [id]: (d.majors || []).map((m) => m.majorName).filter(Boolean) };
@@ -92,8 +104,6 @@ function normalizeProbability(prob) {
 function probabilityText(prob) {
   const value = normalizeProbability(prob);
   if (value == null) return "待测";
-  if (value <= 0) return "<1%";
-  if (value >= 96) return "96%+";
   return `${value}%`;
 }
 function compareProbability(a, b) {
@@ -106,32 +116,20 @@ function compareProbability(a, b) {
 }
 const segStats = computed(() => {
   const stat = { rush: 0, safe: 0, guard: 0, unknown: 0 };
-  slots.value.forEach((s) => {
+  slots.value.forEach((s, index) => {
     if (!s) return;
-    const key = strategyOf(s.prob).key;
+    const key = segmentOfIndex(index).key;
     if (key in stat) stat[key] += 1;
     else stat.unknown += 1;
   });
   return stat;
 });
 
-/* ===== 位次换算（与首页同源） ===== */
-/**
- * 【修复】原先这两个函数是拍脑袋的幂函数 780000 * (1 - score/760)^1.6，
- * 与首页、志愿填报表单、查大学里的公式全部不一致（同一分数四个位次）。
- * 现在统一走 scoreModel（分省份 + 分科类的一分一段模型）。
- */
-const modelOpts = computed(() => ({
-  province: props.profile.province,
-  subjectType: normalizeSubjectType(props.profile.subjects?.[0] || props.profile.subjectType)
-}));
-function rankOf(score) {
-  return rankOfScore(score, modelOpts.value);
-}
-function scoreForRank(rank) {
-  return scoreOfRank(rank, modelOpts.value);
-}
-const myRank = computed(() => Number(props.profile.rank || rankOf(props.profile.score)));
+/* 位次只接受共享档案已经从后端解析出的值，不在组件内换算。 */
+const myRank = computed(() => {
+  const value = Number(props.profile.rank);
+  return Number.isFinite(value) && value > 0 ? value : null;
+});
 
 /* ===== 模拟填报：院校卡片数据（后端真实录取线/概率） ===== */
 const pickStrategy = ref("all");
@@ -140,50 +138,33 @@ const sortBy = ref("概率");
 const pickQuery = ref("");
 const lineBounds = computed(() => {
   const lines = schools.value.map((s) => s.cutoffScore).filter((v) => v != null);
-  if (!lines.length) return [300, 700];
-  return [Math.min(...lines) - 20, Math.max(...lines) + 20];
+  if (!lines.length) return null;
+  return [Math.min(...lines), Math.max(...lines)];
 });
-const scoreRange = ref([...lineBounds.value]);
+const scoreRange = ref([0, 0]);
 watch(lineBounds, (b) => {
-  scoreRange.value = [...b];
-});
+  scoreRange.value = b ? [...b] : [0, 0];
+}, { immediate: true });
+
+function backendStrategy(probability) {
+  const key = String(probability?.strategy || "").toUpperCase();
+  const view = {
+    RUSH: { key: "rush", label: "冲刺" },
+    SAFE: { key: "safe", label: "稳妥" },
+    GUARANTEE: { key: "guard", label: "保底" }
+  }[key];
+  return view ? { ...view, label: probability.strategyLabel || view.label } : { key: "unknown", label: "待测" };
+}
 
 function schoolFacts(school) {
   const prob = school.probability?.probability ?? null;
-  const strategy = strategyOf(prob);
-  const myScore = Number(props.profile.score || 0);
-  const years = school.cutoffScore == null
-    ? []
-    : (() => {
-        const line = school.cutoffScore;
-        const cutoffRank = school.minRank;
-        const gap = myRank.value != null && cutoffRank != null ? myRank.value - cutoffRank : null;
-        const equiv = cutoffRank != null ? scoreForRank(cutoffRank) : null;
-        const diff = equiv != null ? equiv - myScore : null;
-        return [{
-          year: school.admissionYear || "近年",
-          source: "backend",
-          line,
-          cutoffRank,
-          gap,
-          gapText: gap == null ? "位次待测" : gap > 0
-            ? `靠前 ${gap.toLocaleString("zh-CN")} 名`
-            : `落后 ${(-gap).toLocaleString("zh-CN")} 名`,
-          equiv,
-          diff,
-          diffText: diff == null ? "分数待测" : diff >= 0 ? `高 ${diff} 分` : `低 ${-diff} 分`
-        }];
-      })();
-  /* 纯净度：专业越多越杂（组内冷热均衡度越低），映射 2-5 星 */
+  const strategy = backendStrategy(school.probability);
   const majorCount = school.majorCount ?? 0;
-  const purity = majorCount === 0 ? null : Math.max(2, Math.min(5, 5 - Math.floor(majorCount / 4)));
   return {
     school,
     prob,
     strategy,
     line: school.cutoffScore ?? null,
-    years,
-    purity,
     majorList: majorCache.value[school.id] || [],
     majorCount
   };
@@ -192,7 +173,7 @@ function schoolFacts(school) {
 const pickTypes = computed(() => ["全部", ...new Set(schools.value.map((s) => s.schoolType).filter(Boolean))]);
 
 const filteredFacts = computed(() => {
-  let list = schools.value.map(schoolFacts).filter((f) => f.line != null && f.line >= scoreRange.value[0] && f.line <= scoreRange.value[1]);
+  let list = schools.value.map(schoolFacts).filter((f) => f.line != null && (!lineBounds.value || (f.line >= scoreRange.value[0] && f.line <= scoreRange.value[1])));
   if (pickType.value !== "全部") list = list.filter((f) => f.school.schoolType === pickType.value);
   const q = pickQuery.value.trim();
   if (q) list = list.filter((f) => f.school.name.includes(q) || (f.school.province || "").includes(q));
@@ -203,7 +184,7 @@ const filteredFacts = computed(() => {
   return list;
 });
 const pickCounts = computed(() => {
-  const list = schools.value.map(schoolFacts).filter((f) => f.line != null && f.line >= scoreRange.value[0] && f.line <= scoreRange.value[1]);
+  const list = schools.value.map(schoolFacts).filter((f) => f.line != null && (!lineBounds.value || (f.line >= scoreRange.value[0] && f.line <= scoreRange.value[1])));
   return {
     all: list.length,
     rush: list.filter((f) => f.strategy.key === "rush").length,
@@ -223,6 +204,10 @@ function inSheet(facts) {
 }
 function addFromPick(facts) {
   const segKey = facts.strategy.key;
+  if (segKey === "unknown") {
+    ElMessage.warning("该院校暂无后端冲稳保结论，不能自动分配志愿段");
+    return;
+  }
   const seg = SEGMENTS.find((s) => s.key === segKey) || SEGMENTS[1];
   let target = -1;
   for (let i = seg.range[0]; i < seg.range[1]; i += 1) {
@@ -242,12 +227,17 @@ function addFromPick(facts) {
     schoolName: facts.school.name,
     majorNames: facts.majorList.slice(0, 3),
     adjust: true,
-    prob: facts.prob
+    prob: facts.prob,
+    minRank: facts.school.minRank ?? null,
+    schoolSource: "backend",
+    majorSource: facts.majorList.length ? "backend" : null,
+    probabilitySource: facts.prob == null ? null : "backend",
+    dataSource: "backend"
   };
   ElMessage.success(`已加入第 ${target + 1} 志愿位（${seg.label}）`);
 }
 function askAbout(facts) {
-  router.push({ path: "/agent", query: { q: `帮我分析${facts.school.name}：我现在${props.profile.score}分，页面判断为${facts.strategy.label}，参考概率${probabilityText(facts.prob)}，近三年参考线为${facts.years.map((y) => y.line).join("/")}。请说明数据局限，并分析是否适合放进志愿表。` } });
+  router.push({ path: "/agent", query: { q: `帮我分析${facts.school.name}：我现在${props.profile.score}分，后端返回${facts.strategy.label}，参考概率${probabilityText(facts.prob)}，${facts.school.admissionYear || "当前"}年最低分为${facts.line ?? "暂无"}。请说明数据局限，并分析是否适合放进志愿表。` } });
 }
 
 /* 下拉可选项 = 后端院校库 + 已填的外部院校（来自推荐结果投放） */
@@ -281,13 +271,24 @@ function setSchool(slot, schoolId) {
     slot.schoolName = "";
     slot.majorNames = [];
     slot.prob = null;
+    slot.minRank = null;
+    slot.schoolSource = null;
+    slot.majorSource = null;
+    slot.probabilitySource = null;
+    slot.dataSource = null;
     return;
   }
   const school = schoolOptions.value.find((s) => s.id === schoolId) || null;
+  const backendSchool = school ? schools.value.find((item) => item.id === school.id) || null : null;
   slot.schoolId = school ? school.id : null;
   slot.schoolName = school ? school.name : "";
   slot.majorNames = [];
-  slot.prob = school ? probOfHere(school) : 0;
+  slot.prob = backendSchool ? probOfHere(backendSchool) : null;
+  slot.minRank = backendSchool?.minRank ?? null;
+  slot.schoolSource = backendSchool ? "backend" : null;
+  slot.majorSource = null;
+  slot.probabilitySource = slot.prob == null ? null : "backend";
+  slot.dataSource = backendSchool ? "backend" : null;
 }
 
 function schoolOf(slot) {
@@ -318,34 +319,6 @@ function onDrop(to) {
   dragIdx.value = -1;
 }
 
-/* ===== 智能填充 ===== */
-function smartFill() {
-  if (filledCount.value >= TOTAL) {
-    ElMessage.info("志愿表已填满");
-    return;
-  }
-  const ranked = schools.value.map((s) => ({ school: s, prob: probOfHere(s) }))
-    .filter((item) => normalizeProbability(item.prob) != null)
-    .sort((a, b) => compareProbability(b.prob, a.prob));
-  // 按段投放：冲→1-15 位、稳→16-30 位、保→31-45 位，段内从段首依次填
-  const groups = [
-    { seg: SEGMENTS[0], picks: ranked.filter((r) => r.prob < 45).slice(0, 6) }, // 冲：概率最接近45%的一批
-    { seg: SEGMENTS[1], picks: ranked.filter((r) => r.prob >= 45 && r.prob < 75).slice(0, 8) }, // 稳
-    { seg: SEGMENTS[2], picks: ranked.filter((r) => r.prob >= 75).slice(0, 6) } // 保
-  ];
-  let filledTotal = 0;
-  groups.forEach(({ seg, picks }) => {
-    let p = 0;
-    for (let i = seg.range[0]; i < seg.range[1] && p < picks.length; i++) {
-      if (slots.value[i]) continue;
-      const pick = picks[p++];
-      slots.value[i] = { schoolId: pick.school.id, schoolName: pick.school.name, majorNames: [], adjust: true, prob: pick.prob };
-      filledTotal += 1;
-    }
-  });
-  ElMessage.success(`已智能填充 ${filledTotal} 个志愿，可继续手动调整`);
-}
-
 /* ===== 智能排序：已填志愿按录取概率升序（冲→稳→保）重排 ===== */
 function smartSort() {
   const filled = slots.value.filter(Boolean);
@@ -369,7 +342,7 @@ async function exportSheet() {
   }
   const header = ["序号", "院校名称", "录取概率", "策略", "专业", "服从调剂"];
   const rows = slots.value.map((s, i) =>
-    s ? [i + 1, s.schoolName, probabilityText(s.prob), strategyOf(s.prob).label, (s.majorNames || []).join("、"), s.adjust ? "是" : "否"] : null
+    s ? [i + 1, s.schoolName, probabilityText(s.prob), segmentOfIndex(i).label, (s.majorNames || []).join("、"), s.adjust ? "是" : "否"] : null
   ).filter(Boolean);
   const text = [header, ...rows].map((r) => r.join("\t")).join("\n");
   try {
@@ -412,7 +385,7 @@ function persistSheets() {
 
 function saveSheet() {
   if (!filledCount.value) {
-    ElMessage.warning("志愿表为空，先填写或智能填充后再保存");
+    ElMessage.warning("志愿表为空，请先手动选择院校后再保存");
     return;
   }
   const now = new Date();
@@ -447,15 +420,29 @@ function removeSheet(id) {
 }
 
 /* profile 分数变化时，院校库概率同步刷新（后端已按分数/位次算好） */
+watch(
+  () => [props.profile.province, props.profile.firstSubject, props.profile.subjectType, props.profile.score, props.profile.rank],
+  () => {
+    majorCache.value = {};
+    fetchSchools();
+  }
+);
+
 watch(() => props.profile.score, () => {
   slots.value.forEach((s) => {
     if (!s?.schoolId) return;
     const matched = schools.value.find((x) => x.id === s.schoolId);
-    if (matched) s.prob = probOfHere(matched);
+    if (matched) {
+      s.prob = probOfHere(matched);
+      s.minRank = matched.minRank ?? null;
+      s.schoolSource = "backend";
+      s.probabilitySource = s.prob == null ? null : "backend";
+      s.dataSource = "backend";
+    }
   });
 });
 
-defineExpose({ smartFill, smartSort });
+defineExpose({ smartSort });
 </script>
 
 <template>
@@ -473,7 +460,7 @@ defineExpose({ smartFill, smartSort });
     <!-- ════════ 模拟填报：院校选择 ════════ -->
     <template v-if="activeTab === 'pick'">
       <div class="mnz-pick__ctrl">
-        <div class="mnz-pick__score">
+        <div v-if="lineBounds" class="mnz-pick__score">
           <span class="mnz-pick__score-label">只看推荐分数</span>
           <el-slider
             v-model="scoreRange"
@@ -531,19 +518,6 @@ defineExpose({ smartFill, smartSort });
           <div class="mnz-pcard__main">
             <div class="mnz-pcard__title">
               <h4>{{ f.school.name }}<span>[{{ String(f.school.id).padStart(2, "0") }}组]</span></h4>
-              <el-tooltip
-                content="纯净度：院校招生专业组内的专业冷热均衡程度。星级越高表示组内专业方向越集中（越“纯”），调剂风险越小；专业越多越杂，星级越低。点击展开可查看该校全部可填专业。"
-                placement="top"
-              >
-                <span
-                  class="mnz-pcard__purity"
-                  @click.stop="toggleExpand(f.school.id)"
-                >
-                  纯净度
-                  <i v-for="n in 5" :key="n" :class="{ 'is-on': f.purity != null && n <= Math.round(f.purity) }">★</i>
-                  <em>{{ f.purity == null ? "暂无" : f.purity }}</em>
-                </span>
-              </el-tooltip>
               <span class="mnz-pcard__disc">{{ f.disciplines }}</span>
             </div>
 
@@ -552,13 +526,11 @@ defineExpose({ smartFill, smartSort });
             </div>
 
             <div class="mnz-pcard__years">
-              <div v-for="y in f.years" :key="y.year" class="mnz-pcard__year">
-                <header>{{ y.year }}年{{ y.source === "backend" ? "录取数据" : "模型参考" }}</header>
-                <p><label>{{ y.source === "backend" ? "最低分" : "参考分" }}</label><b>{{ y.line }} 分</b></p>
-                <p><label>{{ y.source === "backend" ? "最低位次" : "参考位次" }}</label><b>{{ y.cutoffRank.toLocaleString("zh-CN") }} 名</b></p>
-                <p><label>比我位次</label><span class="mnz-pcard__gap" :class="y.gap > 0 ? 'is-ahead' : 'is-behind'">{{ y.gapText }}</span></p>
-                <p><label>等效分</label><b>{{ y.equiv }} 分</b></p>
-                <p><label>等效分差</label><span :class="y.diff >= 0 ? 'is-ahead' : 'is-behind'">{{ y.diffText }}</span></p>
+              <div class="mnz-pcard__year">
+                <header>{{ f.school.admissionYear || "当前" }}年{{ f.school.dataKind === "SIMULATED" ? "比赛验证数据" : "录取数据" }}</header>
+                <p><label>最低分</label><b>{{ f.line }} 分</b></p>
+                <p><label>最低位次</label><b>{{ f.school.minRank == null ? "暂无" : `${f.school.minRank.toLocaleString("zh-CN")} 名` }}</b></p>
+                <p><label>来源说明</label><span>{{ f.school.calibrationSource || "后端暂未提供" }}</span></p>
               </div>
             </div>
 
@@ -621,7 +593,6 @@ defineExpose({ smartFill, smartSort });
               {{ m === "detail" ? "详细模式" : "表格模式" }}
             </button>
           </div>
-          <button type="button" class="mnz-vsheet__op mnz-vsheet__op--fill" @click="smartFill">智能填充</button>
           <button type="button" class="mnz-vsheet__op" @click="smartSort">智能排序</button>
           <button type="button" class="mnz-vsheet__op" @click="exportSheet">导出</button>
           <button type="button" class="mnz-vsheet__op" @click="clearAll">清空</button>
@@ -658,7 +629,7 @@ defineExpose({ smartFill, smartSort });
                 {{ r.slot.schoolName }}
               </td>
               <td>
-                <span class="mnz-table__prob" :class="strategyOf(r.slot.prob).key"><em>录取率</em> {{ probabilityText(r.slot.prob) }}</span>
+                <span class="mnz-table__prob" :class="segmentOfIndex(r.idx - 1).key"><em>录取率</em> {{ probabilityText(r.slot.prob) }}</span>
               </td>
               <td class="mnz-table__majors">{{ (r.slot.majorNames || []).join("、") || "—" }}</td>
               <td>{{ r.slot.adjust ? "是" : "否" }}</td>
@@ -669,7 +640,7 @@ defineExpose({ smartFill, smartSort });
               </td>
             </tr>
             <tr v-if="!tableRows.length">
-              <td colspan="6" class="mnz-table__empty">暂未添加志愿，可切换「详细模式」逐位填报，或使用智能填充</td>
+              <td colspan="6" class="mnz-table__empty">暂未添加志愿，可切换「详细模式」逐位填报</td>
             </tr>
           </tbody>
         </table>
@@ -731,7 +702,7 @@ defineExpose({ smartFill, smartSort });
                 {{ slots[seg.range[0] + n - 1].adjust ? "服从调剂" : "不服从" }}
               </button>
 
-              <span class="mnz-vrow__prob" :class="strategyOf(slots[seg.range[0] + n - 1].prob).key">
+              <span class="mnz-vrow__prob" :class="seg.key">
                 <em>录取率</em>
                 {{ probabilityText(slots[seg.range[0] + n - 1].prob) }}
               </span>

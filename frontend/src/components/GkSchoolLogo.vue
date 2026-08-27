@@ -1,5 +1,6 @@
 <script setup>
-import { ref, watch } from "vue";
+import { computed, ref, watch } from "vue";
+import { resolveSchoolLogoId, schoolNameOf } from "../utils/schoolLogoMap";
 
 const props = defineProps({
   school: { type: Object, required: true },
@@ -7,9 +8,11 @@ const props = defineProps({
 });
 
 const failed = ref(false);
+const schoolName = computed(() => schoolNameOf(props.school));
+const logoId = computed(() => resolveSchoolLogoId(props.school));
 
 watch(
-  () => props.school?.id,
+  logoId,
   () => {
     failed.value = false;
   }
@@ -18,7 +21,7 @@ watch(
 
 <template>
   <span class="gk-school__logo" :class="size ? `gk-school__logo--${size}` : ''">
-    <img v-if="!failed" :src="`/logos/${props.school.id}.jpg`" :alt="props.school.name" loading="lazy" @error="failed = true" />
-    <template v-else>{{ props.school.name.slice(0, 1) }}</template>
+    <img v-if="logoId && !failed" :src="`/logos/${logoId}.jpg`" :alt="schoolName" loading="lazy" @error="failed = true" />
+    <template v-else>{{ schoolName.slice(0, 1) || "校" }}</template>
   </span>
 </template>

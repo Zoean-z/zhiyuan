@@ -44,7 +44,7 @@ public class MajorController {
         return majorQueryService.schoolsOfMajor(
                 majorId,
                 province,
-                subjectType == null ? null : subjectType.name(),
+                subjectType == null ? null : subjectType.getDbValue(),
                 score,
                 userRank
         );

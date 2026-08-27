@@ -1,12 +1,11 @@
 <script setup>
 import { ArrowLeft } from "@element-plus/icons-vue";
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import GkHeader from "../components/GkHeader.vue";
 import GkSchoolLogo from "../components/GkSchoolLogo.vue";
 import GkSidePanel from "../components/GkSidePanel.vue";
-import { strategyOf } from "../utils/scoreModel";
-import { isReady, profile, rank, score, syncFromAuth } from "../utils/examProfile";
+import { isReady, profile, rank, score, subjectType, syncFromAuth } from "../utils/examProfile";
 
 /**
  * 院校详情页：数据源改为后端 /api/universities/{id}（真实数据库，
@@ -41,9 +40,13 @@ async function fetchDetail() {
   const id = route.params.id;
   loading.value = true;
   try {
-    const scoreVal = score.value == null ? "" : score.value;
-    const rankVal = rank.value == null ? "" : rank.value;
-    const resp = await fetch(`/api/universities/${id}?score=${scoreVal}&userRank=${rankVal}`);
+    const params = new URLSearchParams({
+      examProvince: profile.province,
+      subjectType: subjectType.value
+    });
+    if (score.value != null) params.set("score", String(score.value));
+    if (rank.value != null) params.set("userRank", String(rank.value));
+    const resp = await fetch(`/api/universities/${id}?${params.toString()}`);
     if (!resp.ok) throw new Error("HTTP " + resp.status);
     detailData.value = await resp.json();
   } catch (ex) {
@@ -59,6 +62,8 @@ onMounted(() => {
   fetchDetail();
   loadMajorMap();
 });
+
+watch([() => route.params.id, score, rank, subjectType, () => profile.province], fetchDetail);
 
 const school = computed(() => detailData.value);
 const probability = computed(() => detailData.value?.probability || null);
@@ -93,16 +98,18 @@ const levelTags = computed(() => {
 });
 
 const strategy = computed(() => {
-  if (!detail.value) return null;
-  if (detail.value.probability != null) return strategyOf(detail.value.probability);
-  if (isReady.value && detail.value.cutoffScore != null && detail.value.rankGap != null && detail.value.rankGap < 0) {
-    return { key: "risk", label: "险", full: "风险" };
-  }
-  return null;
+  if (!detail.value || detail.value.probability == null || !detail.value.strategy) return null;
+  const key = String(detail.value.strategy).toUpperCase();
+  const view = {
+    RUSH: { key: "rush", label: "冲", full: "冲刺" },
+    SAFE: { key: "safe", label: "稳", full: "稳妥" },
+    GUARANTEE: { key: "guard", label: "保", full: "保底" }
+  }[key];
+  if (!view) return null;
+  return { ...view, label: detail.value.strategyLabel || view.label };
 });
 const displayProbability = computed(() => {
-  if (detail.value?.probability != null) return String(detail.value.probability);
-  return "<1";
+  return detail.value?.probability == null ? null : String(detail.value.probability);
 });
 
 const planRows = computed(() => majors.value.slice(0, 8));
@@ -242,7 +249,7 @@ function scoreGapLine(detailValue) {
                 <div><dt>院校特色</dt><dd>{{ (school.schoolTags || []).join(" / ") || "—" }}</dd></div>
               </dl>
               <p class="gkd-note">
-                数据说明：录取线与概率来自后端数据库真实数据（位次差 75% + 分差 25% 加权，与
+                数据说明：录取线来自比赛验证数据，概率按位次差 75% + 分差 25% 加权，与
                 <code>RecommendationPolicyService</code> 同一套口径）。概率是参考不是保证，受招生计划、报考热度与专业组差异影响。
               </p>
             </section>
@@ -262,7 +269,7 @@ function scoreGapLine(detailValue) {
                 </thead>
                 <tbody>
                   <tr v-for="row in history" :key="row.year">
-                    <td>{{ row.year }} <i class="gkd-tag-real">真实</i></td>
+                    <td>{{ row.year }} <i class="gkd-tag-real">比赛验证</i></td>
                     <td><b>{{ row.score }}</b></td>
                     <td>{{ fmt(row.minRank) }}</td>
                     <td>
@@ -272,7 +279,7 @@ function scoreGapLine(detailValue) {
                       <span v-else class="gkd-muted">未填分数</span>
                     </td>
                     <td>
-                      <span v-if="isReady && row.minRank != null" :class="row.minRank - rank >= 0 ? 'gkd-up' : 'gkd-down'">
+                      <span v-if="rank != null && row.minRank != null" :class="row.minRank - rank >= 0 ? 'gkd-up' : 'gkd-down'">
                         {{ row.minRank - rank >= 0 ? "靠前" : "落后" }} {{ fmt(Math.abs(row.minRank - rank)) }} 名
                       </span>
                       <span v-else-if="isReady" class="gkd-muted">位次待测</span>
@@ -285,7 +292,7 @@ function scoreGapLine(detailValue) {
                 </tbody>
               </table>
               <p class="gkd-note">
-                数据来源为后端数据库录取线；位次比分数更可靠：各年题目难度不同，分数会潮起潮落，但位次直接反映你在全省的相对位置。
+                数据来源为后端比赛验证录取线；位次用于辅助比较，不代表最终录取结果。
               </p>
             </section>
 

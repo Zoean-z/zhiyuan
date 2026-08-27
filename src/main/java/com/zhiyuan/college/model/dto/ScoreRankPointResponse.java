@@ -7,6 +7,7 @@ public class ScoreRankPointResponse {
 
     private Integer score;
     private Integer rankValue;
+    private Integer segmentCount;
 
     public ScoreRankPointResponse() {
     }
@@ -14,6 +15,12 @@ public class ScoreRankPointResponse {
     public ScoreRankPointResponse(Integer score, Integer rankValue) {
         this.score = score;
         this.rankValue = rankValue;
+    }
+
+    public ScoreRankPointResponse(Integer score, Integer rankValue, Integer segmentCount) {
+        this.score = score;
+        this.rankValue = rankValue;
+        this.segmentCount = segmentCount;
     }
 
     public Integer getScore() {
@@ -30,5 +37,13 @@ public class ScoreRankPointResponse {
 
     public void setRankValue(Integer rankValue) {
         this.rankValue = rankValue;
+    }
+
+    public Integer getSegmentCount() {
+        return segmentCount;
+    }
+
+    public void setSegmentCount(Integer segmentCount) {
+        this.segmentCount = segmentCount;
     }
 }

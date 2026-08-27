@@ -53,6 +53,8 @@ CREATE TABLE major_admission_cutoff (
   duration_years INT NULL,
   tuition_per_year INT NULL,
   data_kind VARCHAR(16) NOT NULL DEFAULT 'SIMULATED',
+  calibration_source VARCHAR(500) NULL,
+  simulation_rule VARCHAR(1000) NULL,
   CONSTRAINT fk_major_cutoff_university FOREIGN KEY (university_id) REFERENCES university(id),
   CONSTRAINT fk_major_cutoff_major FOREIGN KEY (major_id) REFERENCES major(id)
 );
@@ -64,6 +66,7 @@ CREATE TABLE score_rank_mapping (
   subject_type VARCHAR(16) NOT NULL,
   score INT NOT NULL,
   rank_value INT NOT NULL,
+  segment_count INT,
   CONSTRAINT uk_rank_mapping UNIQUE (mapping_year, province, subject_type, score)
 );
 

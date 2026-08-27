@@ -26,7 +26,7 @@ import {
   segmentOfIndex,
   strategyOf,
   writeCurrentSheet
-} from "./volunteerCore";
+} from "./volunteerCore.js";
 
 /** 前端段 key → 后端 strategy 枚举 */
 export const SEG_TO_BACKEND = { rush: "rush", safe: "safe", guard: "guarantee" };
@@ -52,14 +52,22 @@ export function sheetToPlanItems(slots) {
   const items = [];
   list.forEach((slot, index) => {
     if (!slot || !slot.schoolName) return;
+    const trustedSchool = slot.schoolSource === "backend" || slot.schoolSource === "plan";
     const seg = segmentOfIndex(index);
-    const majors = (slot.majorNames || []).filter(Boolean);
+    const trustedMajors = slot.majorSource === "backend" || slot.majorSource === "plan";
+    const majors = trustedMajors ? (slot.majorNames || []).filter(Boolean) : [];
+    const probability = slot.probabilitySource === "backend" && slot.prob != null && Number.isFinite(Number(slot.prob))
+      ? Number(slot.prob)
+      : null;
+    const minRank = slot.dataSource === "backend" && slot.minRank != null && Number.isFinite(Number(slot.minRank))
+      ? Number(slot.minRank)
+      : null;
     items.push({
       universityName: slot.schoolName,
-      universityId: slot.schoolId ?? null,
+      universityId: trustedSchool ? slot.schoolId ?? null : null,
       majorName: majors.length ? majors.join("、") : "院校志愿",
-      admissionProbability: slot.prob == null ? null : Number(slot.prob),
-      minRank: slot.minRank ?? null,
+      admissionProbability: probability,
+      minRank,
       strategy: SEG_TO_BACKEND[seg.key] || "safe",
       volunteerIndex: index + 1,
       adjust: slot.adjust !== false
@@ -82,16 +90,20 @@ export function planItemsToSheet(items) {
     if (!name) return;
     const school = normalizeSchoolLike({ id: item.universityId, name });
     const prob = item.admissionProbability == null ? null : Number(item.admissionProbability);
+    const majors = item.majorName && item.majorName !== "院校志愿"
+      ? String(item.majorName).split(/[、,，]/).filter(Boolean)
+      : [];
     const slot = {
       schoolId: school.id,
       schoolName: name,
       prob,
       minRank: item.minRank ?? null,
-      majorNames:
-        item.majorName && item.majorName !== "院校志愿"
-          ? String(item.majorName).split(/[、,，]/).filter(Boolean)
-          : [],
-      adjust: item.adjust !== false
+      majorNames: majors,
+      adjust: item.adjust !== false,
+      schoolSource: "plan",
+      majorSource: majors.length ? "plan" : null,
+      probabilitySource: null,
+      dataSource: null
     };
     const fixed = Number(item.volunteerIndex) - 1;
     if (Number.isInteger(fixed) && fixed >= 0 && fixed < TOTAL && !slots[fixed]) {

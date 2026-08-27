@@ -1,0 +1,27 @@
+{
+  "initialized_at": "2026-08-26T23:00:32+08:00",
+  "last_action": "resume",
+  "last_updated": "2026-08-27T09:42:56+08:00",
+  "recent_files": [
+    "docker-compose.yml",
+    "frontend/package.json",
+    "frontend/src/App.vue",
+    "frontend/src/components/GkHeader.vue",
+    "frontend/src/components/GkSchoolLogo.vue",
+    "frontend/src/components/MajorPickDialog.vue",
+    "frontend/src/components/VolunteerSheet.vue",
+    "frontend/src/main.js",
+    "frontend/src/styles.css",
+    "frontend/src/utils/examProfile.js",
+    "frontend/src/utils/planSync.js",
+    "frontend/src/utils/recommendation.js",
+    "frontend/src/utils/volunteerCore.js",
+    "frontend/src/views/ChooseView.vue",
+    "frontend/src/views/HomeView.vue",
+    "frontend/src/views/MajorDetailView.vue",
+    "frontend/src/views/RecommendationView.vue",
+    "frontend/src/views/SchoolDetailView.vue",
+    "frontend/src/views/SchoolsView.vue",
+    "frontend/src/views/SegmentsView.vue"
+  ]
+}

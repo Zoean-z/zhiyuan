@@ -19,6 +19,7 @@ services:
       - ./sql/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
       - ./sql/data.sql:/docker-entrypoint-initdb.d/02-data.sql:ro
       - ./sql/upgrade-20260822-unique-keys.sql:/docker-entrypoint-initdb.d/03-upgrade-unique-keys.sql:ro
+      - ./sql/init-competition-admission-cutoffs.sql:/docker-entrypoint-initdb.d/04-competition-admission-cutoffs.sql:ro
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-p${MYSQL_ROOT_PASSWORD:-zhiyuan_root_2026}"]
       interval: 10s
@@ -113,6 +114,9 @@ services:
       DB_NAME: ${DB_NAME:-college_recommendation}
       DB_USER: ${DB_USER:-zhiyuan}
       DB_PASSWORD: ${DB_PASSWORD:-zhiyuan123}
+      # MySQL already initializes schema + seed data through docker-entrypoint-initdb.d.
+      # Prevent Spring Boot from replaying the destructive schema.sql on every start.
+      DB_SCHEMA_INIT_MODE: never
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}

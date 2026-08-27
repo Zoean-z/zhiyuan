@@ -200,11 +200,6 @@ export const NEWS_ARTICLES = [
 
 export const NEWS_TAGS = ["全部", "录取", "志愿", "资讯"];
 
-// 浏览量：按 id 确定性派生（12,800 ~ 21,700 区间）
-export function viewsOf(id) {
-  return 12800 + (id * 7) % 8900;
-}
-
 export function newsById(id) {
   return NEWS_ARTICLES.find((a) => String(a.id) === String(id)) || null;
 }

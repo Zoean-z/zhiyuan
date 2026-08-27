@@ -4,7 +4,7 @@ import { useRoute, useRouter } from "vue-router";
 import { CaretRight, Link as LinkIcon } from "@element-plus/icons-vue";
 import GkHeader from "../components/GkHeader.vue";
 import GkSidePanel from "../components/GkSidePanel.vue";
-import { NEWS_ARTICLES, newsById, viewsOf } from "../utils/newsData";
+import { NEWS_ARTICLES, newsById } from "../utils/newsData";
 
 const route = useRoute();
 const router = useRouter();
@@ -55,7 +55,6 @@ function tagCls(tag) {
               <span class="gk-nd__tag" :class="tagCls(article.tag)">{{ article.tag }}</span>
               <span>来源：{{ article.source }}（中国教育在线）</span>
               <span>{{ article.dateFull }}</span>
-              <span>阅读 {{ viewsOf(article.id).toLocaleString("zh-CN") }}</span>
               <a
                 class="gk-nd__origin"
                 :href="article.url"

@@ -7,5 +7,8 @@ public record UniversityMajorItemResponse(String majorName,
                                           Integer planCount,
                                           Integer durationYears,
                                           Integer tuitionPerYear,
+                                          String dataKind,
+                                          String calibrationSource,
+                                          String simulationRule,
                                           ProbabilityBreakdownResponse probability) {
 }

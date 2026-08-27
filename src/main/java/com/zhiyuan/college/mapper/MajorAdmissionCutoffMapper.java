@@ -37,7 +37,10 @@ public interface MajorAdmissionCutoffMapper extends BaseMapper<MajorAdmissionCut
                    m.plan_count AS planCount,
                    m.admission_year AS admissionYear,
                    m.province AS cutoffProvince,
-                   m.subject_type AS subjectType
+                   m.subject_type AS subjectType,
+                   m.data_kind AS dataKind,
+                   m.calibration_source AS calibrationSource,
+                   m.simulation_rule AS simulationRule
             FROM major_admission_cutoff m
             JOIN university u ON u.id = m.university_id
             WHERE m.major_name = #{majorName}
@@ -94,7 +97,10 @@ public interface MajorAdmissionCutoffMapper extends BaseMapper<MajorAdmissionCut
                    m.province,
                    m.subject_type AS subjectType,
                    m.cutoff_score AS cutoffScore,
-                   m.min_rank AS minRank
+                   m.min_rank AS minRank,
+                   m.data_kind AS dataKind,
+                   m.calibration_source AS calibrationSource,
+                   m.simulation_rule AS simulationRule
             FROM major_admission_cutoff m
             JOIN university u ON m.university_id = u.id
             LEFT JOIN major maj ON maj.id = m.major_id
@@ -200,7 +206,9 @@ public interface MajorAdmissionCutoffMapper extends BaseMapper<MajorAdmissionCut
                    province, subject_type AS subjectType,
                    cutoff_score AS cutoffScore, min_rank AS minRank,
                    plan_count AS planCount, duration_years AS durationYears,
-                   tuition_per_year AS tuitionPerYear, data_kind AS dataKind
+                   tuition_per_year AS tuitionPerYear, data_kind AS dataKind,
+                   calibration_source AS calibrationSource,
+                   simulation_rule AS simulationRule
             FROM major_admission_cutoff
             WHERE university_id = #{universityId}
               AND province = #{province}

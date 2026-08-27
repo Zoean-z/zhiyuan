@@ -190,6 +190,9 @@ public class UniversityQueryService {
                     cutoff == null ? null : cutoff.getAdmissionYear(),
                     cutoff == null ? null : cutoff.getCutoffScore(),
                     cutoff == null ? null : cutoff.getMinRank(),
+                    cutoff == null ? null : cutoff.getDataKind(),
+                    cutoff == null ? null : cutoff.getCalibrationSource(),
+                    cutoff == null ? null : cutoff.getSimulationRule(),
                     planCount,
                     majorCount,
                     probability
@@ -245,6 +248,9 @@ public class UniversityQueryService {
                     current.getSubjectType(),
                     current.getCutoffScore(),
                     current.getMinRank(),
+                    current.getDataKind(),
+                    current.getCalibrationSource(),
+                    current.getSimulationRule(),
                     scoreDelta,
                     rankDelta
             ));
@@ -302,6 +308,9 @@ public class UniversityQueryService {
                     row.getPlanCount(),
                     row.getDurationYears(),
                     row.getTuitionPerYear(),
+                    row.getDataKind(),
+                    row.getCalibrationSource(),
+                    row.getSimulationRule(),
                     majorProbability
             ));
         }

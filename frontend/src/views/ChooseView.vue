@@ -5,13 +5,11 @@ import { useRoute, useRouter } from "vue-router";
 import GkHeader from "../components/GkHeader.vue";
 import GkSchoolLogo from "../components/GkSchoolLogo.vue";
 import GkSidePanel from "../components/GkSidePanel.vue";
-import { strategyOf } from "../utils/scoreModel";
 import {
   FIRST_SUBJECTS,
   SECOND_SUBJECTS,
   isReady,
   patchProfile,
-  percent,
   profile,
   rank,
   score,
@@ -23,8 +21,8 @@ import {
 } from "../utils/examProfile";
 
 /**
- * 智能选大学：数据源为后端 /api/universities（80 所精选大学 + 真实湖南录取线 + 概率拆解）。
- * 概率/类型筛选、排序均在真实数据上生效；点击卡片进入院校详情（数据库真实 id）。
+ * 智能选大学：数据源为后端 /api/universities（80 所精选大学 + 比赛验证录取线 + 概率拆解）。
+ * 概率/类型筛选、排序均在后端数据上生效；点击卡片进入院校详情（数据库 id）。
  */
 
 const router = useRouter();
@@ -53,15 +51,16 @@ onMounted(() => {
 });
 
 /* 分数/科类变化 → 重新拉取（后端实时重算概率） */
-watch([score, subjectType], () => fetchSchools());
+watch([score, rank, subjectType, () => profile.province], () => fetchSchools());
 
 async function fetchSchools() {
   loading.value = true;
   loadError.value = "";
   try {
     const params = new URLSearchParams({
-      examProvince: profile.province || "湖南",
-      subjectType: subjectType.value === "历史" ? "HISTORY" : "PHYSICS",
+      examProvince: profile.province,
+      subjectType: subjectType.value,
+      withDataOnly: "true",
       size: "100"
     });
     if (score.value != null && Number(score.value) > 0) params.set("score", String(Number(score.value)));
@@ -71,22 +70,22 @@ async function fetchSchools() {
     const data = await resp.json();
     schools.value = (data.items || []).map((s) => {
       const prob = s.probability?.probability ?? null;
-      const strategy = prob != null ? strategyOf(prob) : null;
-      // 已设分数但位次/分差远低于院校线 → 极低概率（不再显示"待测"）
-      const below = isReady.value && s.cutoffScore != null && score.value != null
-        && (Number(score.value) - s.cutoffScore) < -20;
+      const backendStrategy = String(s.probability?.strategy || "").toUpperCase();
+      const strategy = {
+        RUSH: { key: "rush", label: "冲", probabilityLabel: "概率小" },
+        SAFE: { key: "safe", label: "稳", probabilityLabel: "概率中" },
+        GUARANTEE: { key: "guard", label: "保", probabilityLabel: "概率大" }
+      }[backendStrategy] || null;
       return {
         ...s,
         minScore: s.cutoffScore,
         minRank: s.minRank,
         probability: prob,
-        probText: prob != null ? `${prob}%` : (below ? "<1%" : "待测算"),
+        probText: prob != null ? `${prob}%` : "待测算",
         rankGap: s.probability?.rankGap ?? null,
         scoreGap: s.probability?.scoreGap ?? null,
-        strategyKey: strategy?.key ?? (below ? "risk" : "unknown"),
-        prob: prob != null
-          ? (prob >= 75 ? "概率大" : prob >= 45 ? "概率中" : "概率小")
-          : (below ? "概率小" : "待测算")
+        strategyKey: strategy?.key ?? "unknown",
+        prob: strategy?.probabilityLabel || "待测算"
       };
     });
   } catch (ex) {
@@ -105,7 +104,7 @@ const results = computed(() => {
   let list = schools.value;
   if (probability.value !== "全部") list = list.filter((item) => item.prob === probability.value);
   if (typeFilter.value !== "全部") list = list.filter((item) => item.schoolType === typeFilter.value);
-  const probNum = (i) => i.probability ?? (i.probText === "<1%" ? 0 : -1);
+  const probNum = (i) => i.probability ?? -1;
   if (sortKey.value === "概率") list = [...list].sort((a, b) => probNum(b) - probNum(a));
   else list = [...list].sort((a, b) => (b.minScore ?? -1) - (a.minScore ?? -1));
   return list;
@@ -116,7 +115,7 @@ function onScoreInput(event) {
 }
 
 function probClass(item) {
-  if (item.probability == null && item.probText !== "<1%") return "is-unknown";
+  if (item.probability == null) return "is-unknown";
   if (item.prob === "概率大") return "is-high";
   if (item.prob === "概率中") return "is-mid";
   return "is-low";
@@ -248,8 +247,10 @@ function goAgentPlan() {
           </div>
 
           <p v-if="isReady" class="gk-page__meta">
-            {{ profile.province }} · {{ profile.firstSubject }}类 {{ score }} 分 · 位次约
-            <b>{{ rank.toLocaleString() }}</b>（超过 {{ percent }}% 考生）· 匹配到
+            {{ profile.province }} · {{ profile.firstSubject }}类 {{ score }} 分 ·
+            <template v-if="rank != null">位次约 <b>{{ rank.toLocaleString() }}</b> ·</template>
+            <template v-else>暂无位次数据 ·</template>
+            匹配到
             <b>{{ results.length }}</b> 所院校
           </p>
 
@@ -290,12 +291,12 @@ function goAgentPlan() {
           <div v-else class="gk-choose__placeholder">
             <p class="gk-choose__ph-title">概率是怎么算出来的？</p>
             <p class="gk-choose__ph-desc">
-              ① 先用一分一段曲线（浙江为省考试院 2025/2026 年真实一分一段表）把你的分数换成全省位次；
+              ① 先用当前省份、科类的一分一段数据把你的分数换成全省位次；
               ② 拿你的位次与院校最低位次相减得到「位次差」，分数与最低分相减得到「分差」；
               ③ 两个差值分段换算成概率后，按 位次 75% + 分数 25% 加权（与后端
               <code>RecommendationPolicyService</code> 完全一致）；
               ④ ≥75% 为保底、≥55% 为稳妥、≥35% 为冲击，低于 35% 判为高风险。
-              录取线：浙江为 2026 年一段平行投档真实数据，其余省份为按浙江真实位次百分位换算的估算值。
+              当前院校线为比赛验证数据，只在对应省份和科类有覆盖时参与测算。
             </p>
             <p class="gk-choose__ph-desc">填入高考分数后，匹配结果会立即显示并随分数实时更新。</p>
           </div>

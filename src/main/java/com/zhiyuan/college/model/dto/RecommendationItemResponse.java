@@ -29,6 +29,9 @@ public class RecommendationItemResponse {
     private Integer riskScore;
     private List<String> matchReasons;
     private String explanation;
+    private String dataKind;
+    private String calibrationSource;
+    private String simulationRule;
 
     public RecommendationItemResponse() {
     }
@@ -208,6 +211,18 @@ public class RecommendationItemResponse {
         return explanation;
     }
 
+    public String getDataKind() {
+        return dataKind;
+    }
+
+    public String getCalibrationSource() {
+        return calibrationSource;
+    }
+
+    public String getSimulationRule() {
+        return simulationRule;
+    }
+
     public void setRecommendationMode(RecommendationMode recommendationMode) {
         this.recommendationMode = recommendationMode;
     }
@@ -298,5 +313,17 @@ public class RecommendationItemResponse {
 
     public void setExplanation(String explanation) {
         this.explanation = explanation;
+    }
+
+    public void setDataKind(String dataKind) {
+        this.dataKind = dataKind;
+    }
+
+    public void setCalibrationSource(String calibrationSource) {
+        this.calibrationSource = calibrationSource;
+    }
+
+    public void setSimulationRule(String simulationRule) {
+        this.simulationRule = simulationRule;
     }
 }

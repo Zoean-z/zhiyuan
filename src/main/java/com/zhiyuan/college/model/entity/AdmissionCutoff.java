@@ -28,6 +28,15 @@ public class AdmissionCutoff {
     @TableField("min_rank")
     private Integer minRank;
 
+    @TableField(exist = false)
+    private String dataKind;
+
+    @TableField(exist = false)
+    private String calibrationSource;
+
+    @TableField(exist = false)
+    private String simulationRule;
+
     public Long getId() {
         return id;
     }
@@ -82,5 +91,29 @@ public class AdmissionCutoff {
 
     public void setMinRank(Integer minRank) {
         this.minRank = minRank;
+    }
+
+    public String getDataKind() {
+        return dataKind;
+    }
+
+    public void setDataKind(String dataKind) {
+        this.dataKind = dataKind;
+    }
+
+    public String getCalibrationSource() {
+        return calibrationSource;
+    }
+
+    public void setCalibrationSource(String calibrationSource) {
+        this.calibrationSource = calibrationSource;
+    }
+
+    public String getSimulationRule() {
+        return simulationRule;
+    }
+
+    public void setSimulationRule(String simulationRule) {
+        this.simulationRule = simulationRule;
     }
 }

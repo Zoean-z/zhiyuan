@@ -19,6 +19,12 @@ INSERT INTO admission_cutoff (university_id, admission_year, province, subject_t
 (6, 2025, '浙江', '历史', 600, 32000),
 (5, 2025, '江苏', '物理', 612, 20000);
 
+INSERT INTO admission_cutoff (university_id, admission_year, province, subject_type, cutoff_score, min_rank) VALUES
+(1, 2025, '湖南', '历史', 646, 1500),
+(2, 2025, '湖南', '历史', 612, 12000),
+(4, 2025, '湖南', '历史', 590, 28000),
+(5, 2025, '湖南', '历史', 575, 42000);
+
 INSERT INTO major_admission_cutoff (university_id, major_name, admission_year, province, subject_type, cutoff_score, min_rank) VALUES
 (1, '计算机科学与技术', 2025, '浙江', '物理', 660, 4500),
 (2, '计算机科学与技术', 2025, '浙江', '物理', 618, 24000),
@@ -33,6 +39,16 @@ INSERT INTO major_admission_cutoff (university_id, major_name, admission_year, p
 (4, '法学', 2025, '浙江', '历史', 592, NULL),
 (6, '护理学', 2025, '浙江', '历史', 590, NULL);
 
+INSERT INTO major_admission_cutoff (
+  university_id, major_name, admission_year, province, subject_type,
+  cutoff_score, min_rank, data_kind, calibration_source, simulation_rule
+) VALUES
+(1, '法学', 2025, '湖南', '历史', 646, 1500, 'SIMULATED', '基于现有湖南物理比赛验证数据校准', '历史分 = 物理演示分 - 固定偏移'),
+(2, '法学', 2025, '湖南', '历史', 618, 9000, 'SIMULATED', '基于现有湖南物理比赛验证数据校准', '历史分 = 物理演示分 - 固定偏移'),
+(2, '工商管理', 2025, '湖南', '历史', 612, 12000, 'SIMULATED', '基于现有湖南物理比赛验证数据校准', '历史分 = 物理演示分 - 固定偏移'),
+(4, '法学', 2025, '湖南', '历史', 590, 28000, 'SIMULATED', '基于现有湖南物理比赛验证数据校准', '历史分 = 物理演示分 - 固定偏移'),
+(5, '汉语言文学', 2025, '湖南', '历史', 575, 42000, 'SIMULATED', '基于现有湖南物理比赛验证数据校准', '历史分 = 物理演示分 - 固定偏移');
+
 INSERT INTO major (name)
 SELECT DISTINCT major_name
 FROM major_admission_cutoff;
@@ -44,11 +60,19 @@ SET major_id = (
     WHERE m.name = major_admission_cutoff.major_name
 );
 
-INSERT INTO score_rank_mapping (mapping_year, province, subject_type, score, rank_value) VALUES
-(2025, '浙江', '物理', 620, 26000),
-(2025, '浙江', '物理', 630, 22000),
-(2025, '浙江', '物理', 610, 31000),
-(2025, '江苏', '物理', 620, 26000);
+INSERT INTO score_rank_mapping (mapping_year, province, subject_type, score, rank_value, segment_count) VALUES
+(2025, '浙江', '物理', 620, 26000, 500),
+(2025, '浙江', '物理', 630, 22000, 400),
+(2025, '浙江', '物理', 610, 31000, 600),
+(2025, '江苏', '物理', 620, 26000, 500);
+
+INSERT INTO score_rank_mapping (mapping_year, province, subject_type, score, rank_value, segment_count) VALUES
+(2025, '湖南', '历史', 650, 1200, 80),
+(2025, '湖南', '历史', 646, 1500, 75),
+(2025, '湖南', '历史', 618, 9000, 260),
+(2025, '湖南', '历史', 612, 12000, 310),
+(2025, '湖南', '历史', 590, 28000, 520),
+(2025, '湖南', '历史', 575, 42000, 680);
 
 INSERT INTO users (id, username, password, score, subject_type, exam_province, role) VALUES
 (1, 'testuser', '123456', NULL, NULL, NULL, 'USER');

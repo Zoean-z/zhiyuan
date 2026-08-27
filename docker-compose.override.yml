@@ -1,0 +1,6 @@
+# 本地部署验证用：MySQL 容器已通过 docker-entrypoint-initdb.d 初始化库表，
+# 关闭 Spring Boot 启动时重复执行 schema.sql（其 DROP 顺序与外键冲突会导致启动失败）。
+services:
+  backend:
+    environment:
+      DB_SCHEMA_INIT_MODE: never

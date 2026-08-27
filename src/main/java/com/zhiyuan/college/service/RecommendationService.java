@@ -73,6 +73,22 @@ public class RecommendationService {
         Integer userRank = scoreRankMappingService.resolveUserRank(
                 request.getProvince(), request.getSubjectType().getDbValue(), request.getScore());
 
+        if (cutoffs.isEmpty()) {
+            String provinceLabel = request.getProvince() == null || request.getProvince().isBlank()
+                    ? "当前省份"
+                    : request.getProvince();
+            return new RecommendationResponse(
+                    UUID.randomUUID().toString(),
+                    RecommendationMode.SCHOOL_FIRST,
+                    userRank,
+                    List.of(),
+                    List.of(),
+                    List.of(),
+                    provinceLabel + "暂无" + request.getSubjectType().getDbValue() + "类院校录取数据，暂时无法生成学校优先推荐。",
+                    List.of("请切换到已有比赛验证数据的省份和科类后重试。")
+            );
+        }
+
         List<RecommendationItemResponse> rush = new ArrayList<>();
         List<RecommendationItemResponse> safe = new ArrayList<>();
         List<RecommendationItemResponse> guarantee = new ArrayList<>();
@@ -111,6 +127,9 @@ public class RecommendationService {
                     null,
                     null
             );
+            item.setDataKind(cutoff.getDataKind());
+            item.setCalibrationSource(cutoff.getCalibrationSource());
+            item.setSimulationRule(cutoff.getSimulationRule());
             switch (decision.strategy()) {
                 case RUSH -> rush.add(item);
                 case SAFE -> safe.add(item);
@@ -192,6 +211,9 @@ public class RecommendationService {
                     null,
                     null
             );
+            item.setDataKind(cutoff.getDataKind());
+            item.setCalibrationSource(cutoff.getCalibrationSource());
+            item.setSimulationRule(cutoff.getSimulationRule());
             switch (decision.strategy()) {
                 case RUSH -> rush.add(item);
                 case SAFE -> safe.add(item);

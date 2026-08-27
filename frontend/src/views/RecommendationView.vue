@@ -83,6 +83,16 @@ const displayedRecommendationMode = computed(() => {
   return latestRecommendationMode.value
     || scoreForm.recommendationMode;
 });
+const majorPickProvince = computed(() => {
+  if (activeMode.value === "score") return scoreForm.province || "";
+  return latestResult.value?.parsed?.candidateProvince
+    || latestResult.value?.parsed?.province
+    || "";
+});
+const majorPickSubjectType = computed(() => {
+  if (activeMode.value === "score") return scoreForm.subjectType || "";
+  return latestResult.value?.parsed?.subjectType || "";
+});
 const currentSubjectLabel = computed(() => SUBJECT_OPTIONS.find((item) => item.value === scoreForm.subjectType)?.label || "");
 const scoreRankSummary = computed(() => {
   const meta = latestRankMeta.value;
@@ -256,7 +266,8 @@ function formatRank(value) {
       v-model:visible="majorPickVisible"
       :item="majorPickItem"
       :strategy="majorPickStrategy"
-      :user-score="scoreRankSummary ? Number(scoreRankSummary.score) : null"
+      :province="majorPickProvince"
+      :subject-type="majorPickSubjectType"
     />
   </div>
 </template>

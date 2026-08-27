@@ -46,9 +46,9 @@ class ScoreRankControllerTest {
     @Test
     void curve_shouldReturnPointsFromService() {
         List<ScoreRankPointResponse> points = List.of(
-                new ScoreRankPointResponse(610, 31000),
-                new ScoreRankPointResponse(620, 26000),
-                new ScoreRankPointResponse(630, 22000)
+                new ScoreRankPointResponse(610, 31000, 600),
+                new ScoreRankPointResponse(620, 26000, 500),
+                new ScoreRankPointResponse(630, 22000, 400)
         );
         when(scoreRankMappingService.getLatestCurve("浙江", "历史")).thenReturn(points);
         when(scoreRankMappingService.getLatestMappingYear("浙江", "历史")).thenReturn(2025);
@@ -60,6 +60,7 @@ class ScoreRankControllerTest {
         assertEquals(2025, response.mappingYear());
         assertEquals(3, response.pointCount());
         assertEquals(points, response.points());
+        assertEquals(500, response.points().get(1).getSegmentCount());
     }
 
     @Test

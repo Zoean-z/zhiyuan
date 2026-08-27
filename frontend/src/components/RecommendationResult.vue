@@ -45,9 +45,6 @@ const keyword = ref("");
 const userScore = computed(() => {
   const score = props.rankMeta?.score;
   if (score != null && score !== "") return Number(score);
-  const first = rushList.value[0] || safeList.value[0] || guaranteeList.value[0];
-  const s = normalizeItem(first || {});
-  if (s.cutoffScore != null && s.scoreGap != null) return Number(s.cutoffScore) - Number(s.scoreGap);
   return null;
 });
 const userRank = computed(() => {
@@ -76,9 +73,7 @@ function sortList(list) {
   const sorted = [...list];
   const probOf = (item) => {
     const p = pickValue(item, ["admissionProbability", "probability", "chance"]);
-    if (p != null) return Number(p);
-    const risk = pickValue(item, ["riskScore"]);
-    return risk != null ? 100 - Number(risk) : 50;
+    return p == null ? -Number.MAX_SAFE_INTEGER : Number(p);
   };
   const cutoffOf = (item) => {
     const c = pickValue(item, ["cutoffScore", "cutoff", "lastYearCutoff"]);

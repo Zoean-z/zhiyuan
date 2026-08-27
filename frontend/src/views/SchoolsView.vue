@@ -5,7 +5,6 @@ import { useRoute, useRouter } from "vue-router";
 import GkHeader from "../components/GkHeader.vue";
 import GkSchoolLogo from "../components/GkSchoolLogo.vue";
 import GkSidePanel from "../components/GkSidePanel.vue";
-import { strategyOf } from "../utils/scoreModel";
 import { isReady, profile, rank, score, subjectType, syncFromAuth } from "../utils/examProfile";
 import searchIcon from "../assets/gk_search_icon.png";
 
@@ -34,15 +33,22 @@ async function fetchSchools() {
   if (loading.value) return;
   loading.value = true;
   try {
-    const scoreVal = score.value == null ? "" : score.value;
-    const rankVal = rank.value == null ? "" : rank.value;
-    const base = `/api/universities?size=100&score=${scoreVal}&userRank=${rankVal}`;
-    const first = await (await fetch(base + "&page=1")).json();
+    const params = new URLSearchParams({
+      examProvince: profile.province,
+      subjectType: subjectType.value,
+      withDataOnly: "true",
+      size: "100"
+    });
+    if (score.value != null) params.set("score", String(score.value));
+    if (rank.value != null) params.set("userRank", String(rank.value));
+    params.set("page", "1");
+    const first = await (await fetch(`/api/universities?${params.toString()}`)).json();
     const total = Number(first.total || 0);
     const pages = Math.max(1, Math.ceil(total / 100));
     const all = [...(first.items || [])];
     for (let p = 2; p <= Math.min(pages, 15); p++) {
-      const pageData = await (await fetch(base + `&page=${p}`)).json();
+      params.set("page", String(p));
+      const pageData = await (await fetch(`/api/universities?${params.toString()}`)).json();
       all.push(...(pageData.items || []));
     }
     schools.value = all;
@@ -93,19 +99,24 @@ async function applyMajor(name) {
     return;
   }
   try {
-    const list = await (await fetch(`/api/majors/${major.id}/schools`)).json();
+    const params = new URLSearchParams({
+      province: profile.province,
+      subjectType: subjectType.value
+    });
+    if (score.value != null) params.set("score", String(score.value));
+    if (rank.value != null) params.set("userRank", String(rank.value));
+    const list = await (await fetch(`/api/majors/${major.id}/schools?${params.toString()}`)).json();
     majorSchoolIds.value = new Set((list || []).map((s) => s.universityId));
   } catch (e) {
     majorSchoolIds.value = null;
   }
 }
 
-/**
- * 【修复】原来这里的录取概率是 `42 + (school.id * 37) % 52`，
- * 完全与考生分数无关，所以「这里面的概率是啥」根本解释不了。
- * 现在：没填分数就不显示概率（引导填分数），填了就按
- * 「位次差 75% + 分差 25%」的后端同款算法算，并把依据写在 tooltip 里。
- */
+watch([score, rank, subjectType, () => profile.province], () => {
+  fetchSchools();
+  if (majorFilter.value !== "不限") applyMajor(majorFilter.value);
+});
+
 function minScoreOf(school) {
   return school.cutoffScore ?? null;
 }
@@ -113,21 +124,23 @@ function probOfSchool(school) {
   return school.probability || null;
 }
 
-/**
- * 徽章模型：有概率 → 保/稳/冲/险四档；已设分数但位次落后超 3000 名、
- * 分差低于线超 10 分（模型的可测算下界）→ 直接判「险 <1%」，
- * 对齐 gaokao.cn「难 1%」红徽章的呈现，而不是显示成空态。
- */
 function badgeOf(school) {
   const detail = probOfSchool(school);
-  if (detail && detail.probability != null) {
-    const seg = strategyOf(detail.probability);
-    return { detail, key: seg.key, label: seg.label, value: `${detail.probability}%`, flame: seg.key === "rush" || seg.key === "risk" };
-  }
-  if (isReady.value && detail && detail.cutoffScore != null && detail.rankGap != null && detail.rankGap < 0) {
-    return { detail, key: "risk", label: "险", value: "<1%", flame: true };
-  }
-  return null;
+  if (!detail || detail.probability == null || !detail.strategy) return null;
+  const key = String(detail.strategy).toUpperCase();
+  const view = {
+    RUSH: { key: "rush", label: "冲" },
+    SAFE: { key: "safe", label: "稳" },
+    GUARANTEE: { key: "guard", label: "保" }
+  }[key];
+  if (!view) return null;
+  return {
+    detail,
+    ...view,
+    label: detail.strategyLabel || view.label,
+    value: `${detail.probability}%`,
+    flame: view.key === "rush"
+  };
 }
 
 function probTip(school) {
@@ -136,9 +149,6 @@ function probTip(school) {
   const minRankText = detail.minRank == null ? "—" : detail.minRank.toLocaleString();
   const base = `${detail.admissionYear || "近年"} 最低分 ${detail.cutoffScore}分 / 最低位次 ${minRankText}（后端录取数据）`;
   if (detail.probability == null) {
-    if (isReady.value && detail.rankGap != null && detail.rankGap < 0) {
-      return `${base}；你位次落后 ${Math.abs(detail.rankGap).toLocaleString()} 名，超出可测算范围，录取概率极低（<1%）`;
-    }
     return `${base}（设置高考分数后可测算录取概率）`;
   }
   const rankText = detail.rankGap == null
@@ -306,7 +316,7 @@ function goProfile() {
               <div class="gks-score" :class="{ 'is-empty': !isReady }">
                 <template v-if="isReady">
                   <span class="gks-score__info">
-                    {{ profile.province }} · {{ profile.firstSubject }}类 · <b>{{ score }} 分</b> · 位次约 {{ rank.toLocaleString() }}
+                    {{ profile.province }} · {{ profile.firstSubject }}类 · <b>{{ score }} 分</b> · {{ rank == null ? "暂无位次数据" : `位次约 ${rank.toLocaleString()}` }}
                   </span>
                   <button class="gks-score__edit" type="button" @click="goProfile">修改</button>
                 </template>
@@ -370,9 +380,9 @@ function goProfile() {
             <li v-if="!filtered.length" class="gks-empty">没有符合条件的院校，试试放宽筛选条件</li>
           </ul>
 
-          <!-- 数据来源与测算方法：把「概率怎么算 / 数据从哪来 / 根据在哪」写在明面上 -->
+          <!-- 数据来源与测算方法 -->
           <details class="gks-source">
-            <summary>数据来源与测算方法<i>概率怎么算的？数据是真实的吗？点开看依据</i></summary>
+            <summary>数据来源与测算方法<i>查看当前数据口径与概率依据</i></summary>
             <div class="gks-source__body">
               <div class="gks-source__block">
                 <h4>① 录取概率怎么算？</h4>
@@ -384,19 +394,19 @@ function goProfile() {
               <div class="gks-source__block">
                 <h4>② 数据从哪里来？</h4>
                 <ul>
-                  <li><b>浙江一分一段 / 投档线</b>：浙江省教育考试院 2025、2026 年普通类一分一段表与一段平行投档分数线（真实数据，卡片徽章 tooltip 会标注来源）</li>
+                  <li><b>当前录取线</b>：使用已入库的比赛验证数据，院校线按同校专业最低分聚合，仅用于功能验证</li>
                   <li><b>院校排名</b>：软科 2025 中国大学排名、校友会 2026 中国大学排名（艾瑞深研究院）</li>
                   <li><b>保研率</b>：各校 2024 / 2025 届毕业生就业质量报告</li>
                   <li><b>硕博点</b>：各校研究生院一级学科硕士点 / 博士点统计</li>
                   <li><b>联盟标签</b>：C9、华东五校、中坚九校、国防七子、建筑老八校、四大工学院、电气四虎、机械五虎（社会通行口径）</li>
-                  <li><b>外省录取线</b>：以该校在浙江的真实最低位次百分位、按该省考生规模换算，属<b>估算值</b>（tooltip 标注「估算」）</li>
+                  <li><b>数据覆盖</b>：只在当前省份和科类有数据时展示，不用其他省份数据补算</li>
                   <li><b>招生计划 / 专业组计划数</b>：演示值，仅供参考</li>
                 </ul>
               </div>
               <div class="gks-source__block">
                 <h4>③ 判断逻辑</h4>
                 <p>
-                  录取线取用优先级：<b>后端数据库真实数据 → 内置官方投档线（浙江 2026）→ 真实位次百分位换算的估算值</b>；每个数字都能追溯到来源。
+                  录取线直接读取后端当前省份、科类的比赛验证数据，不在前端生成或跨省换算。
                   概率反映的是「以你的位次相对该校去年门槛的历史位置」，受招生计划增减、报考热度、专业组差异影响，是参考不是保证。
                 </p>
               </div>

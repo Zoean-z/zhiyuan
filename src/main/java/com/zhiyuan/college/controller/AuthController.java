@@ -7,6 +7,7 @@ import com.zhiyuan.college.model.dto.RegisterRequest;
 import com.zhiyuan.college.service.auth.AuthService;
 import jakarta.validation.Valid;
 import java.util.Map;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -41,6 +42,12 @@ public class AuthController {
             @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authHeader,
             @Valid @RequestBody ProfileCompletionRequest request) {
         return authService.completeProfile(extractBearerToken(authHeader), request);
+    }
+
+    @GetMapping("/profile")
+    public LoginResponse currentProfile(
+            @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authHeader) {
+        return authService.currentProfile(extractBearerToken(authHeader));
     }
 
     @PostMapping("/logout")

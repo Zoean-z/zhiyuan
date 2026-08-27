@@ -5,6 +5,8 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.never;
@@ -146,6 +148,23 @@ class RecommendationServiceTest {
         assertEquals("summary-3", response.getSummary());
         assertEquals(List.of("tip-1"), response.getTips());
         verify(recommendationCacheService).cacheRecommendation(eq(request), any(RecommendationResponse.class));
+    }
+
+    @Test
+    void recommend_shouldExplainWhenProvinceHasNoSchoolCutoffCoverage() {
+        RecommendationRequest request = buildSchoolFirstRequest();
+        when(recommendationCacheService.getRecommendation(request)).thenReturn(null);
+        when(admissionCutoffMapper.findLatestByProvinceAndSubject("浙江", "物理")).thenReturn(List.of());
+        when(scoreRankMappingService.resolveUserRank("浙江", "物理", 620)).thenReturn(26000);
+
+        RecommendationResponse response = recommendationService.recommend(request);
+
+        assertEquals(0, response.getRush().size());
+        assertEquals(0, response.getSafe().size());
+        assertEquals(0, response.getGuarantee().size());
+        assertEquals("浙江暂无物理类院校录取数据，暂时无法生成学校优先推荐。", response.getSummary());
+        assertEquals(List.of("请切换到已有比赛验证数据的省份和科类后重试。"), response.getTips());
+        verify(aiExplanationService, never()).buildSummary(any(), anyInt(), any(), anyBoolean());
     }
 
     private RecommendationRequest buildSchoolFirstRequest() {
