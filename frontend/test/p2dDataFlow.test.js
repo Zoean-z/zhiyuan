@@ -4,7 +4,11 @@ import test from "node:test";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { normalizeItem } from "../src/utils/recommendation.js";
+import {
+  isExtremelyLowProbability,
+  normalizeItem,
+  probabilityDisplayValue
+} from "../src/utils/recommendation.js";
 
 const currentDir = dirname(fileURLToPath(import.meta.url));
 
@@ -15,6 +19,18 @@ async function source(path) {
 test("recommendation normalization never derives probability from risk score", () => {
   assert.equal(normalizeItem({ riskScore: 18 }).admissionProbability, null);
   assert.equal(normalizeItem({ riskScore: 18, admissionProbability: 82 }).admissionProbability, 82);
+});
+
+test("only the backend explicit extremely-low state is displayed as zero", () => {
+  const extremelyLow = {
+    probability: null,
+    recommended: false,
+    explanation: "差距超出模型可测算区间，视为极低概率。"
+  };
+  assert.equal(isExtremelyLowProbability(extremelyLow), true);
+  assert.equal(probabilityDisplayValue(extremelyLow), 0);
+  assert.equal(probabilityDisplayValue({ probability: null, explanation: "请先设置分数" }), null);
+  assert.equal(probabilityDisplayValue({ probability: 37, recommended: true }), 37);
 });
 
 test("P2-D university pages use the shared province without a Hunan fallback", async () => {
@@ -44,9 +60,14 @@ test("P2-D probability badges consume backend strategy instead of local threshol
     assert.doesNotMatch(content, /["']<1%?["']/);
   }
   assert.match(schools, /detail\.strategy/);
+  assert.match(schools, /label:\s*["']概率极低["'].*value:\s*["']0%["']/s);
   assert.match(detail, /detail\.value\.strategy/);
+  assert.match(detail, /full:\s*["']概率极低["']/);
   assert.match(choose, /probability\?\.strategy/);
+  assert.match(choose, /extremelyLow\s*\?\s*["']0%["']\s*:\s*["']待测["']/);
   assert.match(sheet, /probability\?\.strategy/);
+  assert.match(sheet, /prob == null \|\| prob === ["']["']\) return null/);
+  assert.match(sheet, /isExtremelyLowProbability\(detail\)\s*\?\s*["']0%["']\s*:\s*["']待测["']/);
 });
 
 test("volunteer flow contains no smart fill, purity, or fabricated history", async () => {

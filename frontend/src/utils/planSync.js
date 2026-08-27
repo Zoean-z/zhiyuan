@@ -56,7 +56,7 @@ export function sheetToPlanItems(slots) {
     const seg = segmentOfIndex(index);
     const trustedMajors = slot.majorSource === "backend" || slot.majorSource === "plan";
     const majors = trustedMajors ? (slot.majorNames || []).filter(Boolean) : [];
-    const probability = (slot.probabilitySource === "backend" || slot.probabilitySource === "plan")
+    const probability = slot.probabilitySource === "backend"
       && slot.prob != null && Number.isFinite(Number(slot.prob))
       ? Number(slot.prob)
       : null;
@@ -103,8 +103,7 @@ export function planItemsToSheet(items) {
       adjust: item.adjust !== false,
       schoolSource: "plan",
       majorSource: majors.length ? "plan" : null,
-      /* 云端方案自带的概率来自后端结果存档，如实标注为 plan，导出时不再丢失 */
-      probabilitySource: prob == null ? null : "plan",
+      probabilitySource: null,
       dataSource: null
     };
     const fixed = Number(item.volunteerIndex) - 1;

@@ -6,6 +6,7 @@ import GkHeader from "../components/GkHeader.vue";
 import GkSchoolLogo from "../components/GkSchoolLogo.vue";
 import GkSidePanel from "../components/GkSidePanel.vue";
 import { isReady, profile, rank, score, subjectType, syncFromAuth } from "../utils/examProfile";
+import { isExtremelyLowProbability, probabilityDisplayValue } from "../utils/recommendation";
 
 /**
  * 院校详情页：数据源改为后端 /api/universities/{id}（真实数据库，
@@ -97,7 +98,9 @@ const levelTags = computed(() => {
   return [s.is985 ? "985" : "", s.is211 ? "211" : "", s.isDoubleFirstClass ? "双一流" : ""].filter(Boolean);
 });
 
+const extremelyLow = computed(() => isExtremelyLowProbability(detail.value));
 const strategy = computed(() => {
+  if (extremelyLow.value) return { key: "unknown", label: "概率极低", full: "概率极低" };
   if (!detail.value || detail.value.probability == null || !detail.value.strategy) return null;
   const key = String(detail.value.strategy).toUpperCase();
   const view = {
@@ -109,7 +112,8 @@ const strategy = computed(() => {
   return { ...view, label: detail.value.strategyLabel || view.label };
 });
 const displayProbability = computed(() => {
-  return detail.value?.probability == null ? null : String(detail.value.probability);
+  const value = probabilityDisplayValue(detail.value);
+  return value == null ? null : String(value);
 });
 
 const planRows = computed(() => majors.value.slice(0, 8));
@@ -188,8 +192,8 @@ function scoreGapLine(detailValue) {
                       {{ scoreGapLine(detail) }}
                       <b>{{ detail.scoreGap == null ? "待测" : Math.abs(detail.scoreGap) }}</b> 分（权重 25%）
                     </li>
-                    <li v-if="detail.probability == null && isReady">
-                      位次落后超出可测算范围，按 <b>&lt;1%</b> 极低概率处理
+                    <li v-if="extremelyLow">
+                      {{ detail.explanation || "差距超出模型可测算区间，概率极低" }}
                     </li>
                   </ul>
                 </template>
@@ -200,7 +204,7 @@ function scoreGapLine(detailValue) {
                   <p class="gkd-prob__hint">分数在登录时确定，可在志愿填报页的高考信息中修改，全站同步生效</p>
                   <button class="gkd-prob__cta" type="button" @click="goProfile">去设置高考信息</button>
                 </template>
-                <button v-if="strategy" class="gkd-prob__cta" type="button" @click="goFill">加入志愿填报</button>
+                <button v-if="strategy && !extremelyLow" class="gkd-prob__cta" type="button" @click="goFill">加入志愿填报</button>
               </aside>
             </header>
 

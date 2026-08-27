@@ -5796,6 +5796,10 @@ body {
   color: #ff6600;
 }
 
+.gk-choose__rate.is-unknown b {
+  color: #8b95a5;
+}
+
 .gk-choose__prob {
   flex-shrink: 0;
   padding: 4px 12px;
@@ -7255,6 +7259,15 @@ body {
 .gks-prob.is-risk:hover {
   box-shadow: 0 4px 14px rgba(229, 72, 77, 0.25);
 }
+.gks-prob.is-unknown {
+  background: #f1f3f5;
+}
+.gks-prob.is-unknown b {
+  color: #8b95a5;
+}
+.gks-prob.is-unknown:hover {
+  box-shadow: 0 4px 14px rgba(139, 149, 165, 0.24);
+}
 
 .gks-empty {
   padding: 40px 20px;
@@ -7771,6 +7784,17 @@ body {
 .gkd-badge.is-难 {
   color: #ff5639;
   background: #ffd4cc;
+}
+
+.gkd-prob__row b.is-unknown {
+  background: #98a2b3;
+}
+.gkd-prob__row em.is-unknown {
+  color: #8b95a5;
+}
+.gkd-badge.is-unknown {
+  color: #667085;
+  background: #eef0f3;
 }
 
 .gkd-pager {
@@ -10969,7 +10993,7 @@ body {
 .mnz-pcard__shield.is-rush{background:linear-gradient(180deg,#ff8a3c,#f24f13)}
 .mnz-pcard__shield.is-safe{background:linear-gradient(180deg,#5ab8ff,#1877f0)}
 .mnz-pcard__shield.is-guard{background:linear-gradient(180deg,#4cc98a,#1c8f5e)}
-/* 差距过大（后端不给出概率）：灰色盾牌，与三段冲稳保区分 */
+/* 后端明确判定概率极低且不给出数字：灰色盾牌，与三段冲稳保区分 */
 .mnz-pcard__shield.is-unknown{background:linear-gradient(180deg,#98a2b3,#667085)}
 .mnz-pcard__shield b{font-size:13px;font-weight:800;line-height:1.1}
 .mnz-pcard__shield i{font-size:11px;font-style:normal;opacity:.92;margin-top:1px}
@@ -11638,6 +11662,15 @@ body {
 .gkd-hero .gkd-prob.is-risk {
   background: #fff7f7;
   border-color: #f6c6c8;
+}
+.gkd-hero .gkd-prob.is-unknown {
+  background: #f3f4f6;
+  border-color: #d8dde5;
+}
+.gkd-hero .gkd-prob.is-unknown .gkd-prob__seg {
+  color: #667085;
+  background: #e7e9ed;
+  border-color: #d0d5dd;
 }
 .gkd-prob__seg {
   display: inline-block;

@@ -6,7 +6,7 @@ import GkHeader from "../components/GkHeader.vue";
 import GkSchoolLogo from "../components/GkSchoolLogo.vue";
 import GkSidePanel from "../components/GkSidePanel.vue";
 import { profile, rank, subjectType } from "../utils/examProfile";
-import { strategyOf } from "../utils/scoreModel";
+import { isExtremelyLowProbability, probabilityDisplayValue } from "../utils/recommendation";
 import hotIcon from "../assets/gk_hot.png";
 
 const route = useRoute();
@@ -151,8 +151,17 @@ const pagedSchools = computed(() =>
 );
 
 function probOf(school) {
-  const p = school.probability?.probability;
-  const tag = strategyOf(p);
+  const detail = school.probability;
+  const p = probabilityDisplayValue(detail);
+  if (isExtremelyLowProbability(detail)) {
+    return { p: 0, label: "概率极低", cls: "unknown" };
+  }
+  const key = String(detail?.strategy || "").toUpperCase();
+  const tag = {
+    RUSH: { key: "冲", full: detail?.strategyLabel || "冲刺" },
+    SAFE: { key: "稳", full: detail?.strategyLabel || "稳妥" },
+    GUARANTEE: { key: "保", full: detail?.strategyLabel || "保底" }
+  }[key] || { key: "unknown", full: "待测" };
   return {
     p,
     label: p == null ? "待测" : tag.full,

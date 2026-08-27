@@ -69,6 +69,23 @@ export function isUserProfileComplete(user) {
   );
 }
 
+/**
+ * 后端会对差距超出模型区间的院校保留概率明细，但拒绝给出具体数字。
+ * 只有这个明确判定才映射为 0%；普通的 null 仍表示尚未测算或数据不足。
+ */
+export function isExtremelyLowProbability(detail) {
+  if (!detail || detail.probability != null || detail.recommended !== false) return false;
+  const explanation = String(detail.explanation || "");
+  return explanation.includes("极低概率") || explanation.includes("超出模型可测算区间");
+}
+
+export function probabilityDisplayValue(detail) {
+  if (detail?.probability != null && detail.probability !== "" && Number.isFinite(Number(detail.probability))) {
+    return Number(detail.probability);
+  }
+  return isExtremelyLowProbability(detail) ? 0 : null;
+}
+
 export function pickValue(obj, keys) {
   for (const key of keys) {
     if (obj && obj[key] !== undefined && obj[key] !== null && obj[key] !== "") {

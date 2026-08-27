@@ -8,6 +8,7 @@ import {
   SEGMENTS, TOTAL, normalizeSchoolLike, readCurrentSheet, segmentOfIndex, writeCurrentSheet
 } from "../utils/volunteerCore";
 import { normalizeSubjectType } from "../utils/scoreModel";
+import { isExtremelyLowProbability } from "../utils/recommendation";
 
 const props = defineProps({
   profile: { type: Object, required: true },
@@ -150,12 +151,12 @@ watch(slots, (val) => writeCurrentSheet(val.map((s) => (s ? { ...s } : null))), 
 const filledCount = computed(() => slots.value.filter(Boolean).length);
 const progress = computed(() => Math.round((filledCount.value / TOTAL) * 100));
 function normalizeProbability(prob) {
+  if (prob == null || prob === "") return null;
   return Number.isFinite(Number(prob)) ? Number(prob) : null;
 }
-function probabilityText(prob) {
+function probabilityText(prob, detail = null) {
   const value = normalizeProbability(prob);
-  /* 概率为空 ≠ 未测算：后端对差距超出模型区间的院校返回 null（极低概率不给数字） */
-  if (value == null) return "差距过大";
+  if (value == null) return isExtremelyLowProbability(detail) ? "0%" : "待测";
   return `${value}%`;
 }
 function compareProbability(a, b) {
@@ -205,7 +206,8 @@ function backendStrategy(probability) {
     SAFE: { key: "safe", label: "稳妥" },
     GUARANTEE: { key: "guard", label: "保底" }
   }[key];
-  return view ? { ...view, label: probability.strategyLabel || view.label } : { key: "unknown", label: "差距过大" };
+  if (view) return { ...view, label: probability.strategyLabel || view.label };
+  return { key: "unknown", label: isExtremelyLowProbability(probability) ? "概率极低" : "待测" };
 }
 
 function schoolFacts(school) {
@@ -215,6 +217,7 @@ function schoolFacts(school) {
   return {
     school,
     prob,
+    extremelyLow: isExtremelyLowProbability(school.probability),
     strategy,
     line: school.cutoffScore ?? null,
     majorList: majorCache.value[school.id] || [],
@@ -257,7 +260,9 @@ function inSheet(facts) {
 function addFromPick(facts) {
   const segKey = facts.strategy.key;
   if (segKey === "unknown") {
-    ElMessage.warning("与该校差距超出模型可测算区间（低于录取线较多），不适合放入志愿表");
+    ElMessage.warning(facts.extremelyLow
+      ? "与该校差距超出模型可测算区间（概率极低），不适合放入志愿表"
+      : "请先完善高考信息，测算录取概率后再加入志愿表");
     return;
   }
   const seg = SEGMENTS.find((s) => s.key === segKey) || SEGMENTS[1];
@@ -289,7 +294,7 @@ function addFromPick(facts) {
   ElMessage.success(`已加入第 ${target + 1} 志愿位（${seg.label}）`);
 }
 function askAbout(facts) {
-  router.push({ path: "/agent", query: { q: `帮我分析${facts.school.name}：我现在${props.profile.score}分，后端返回${facts.strategy.label}，参考概率${probabilityText(facts.prob)}，${facts.school.admissionYear || "当前"}年最低分为${facts.line ?? "暂无"}。请说明数据局限，并分析是否适合放进志愿表。` } });
+  router.push({ path: "/agent", query: { q: `帮我分析${facts.school.name}：我现在${props.profile.score}分，后端返回${facts.strategy.label}，参考概率${probabilityText(facts.prob, facts.school.probability)}，${facts.school.admissionYear || "当前"}年最低分为${facts.line ?? "暂无"}。请说明数据局限，并分析是否适合放进志愿表。` } });
 }
 
 /* 下拉可选项 = 后端院校库 + 已填的外部院校（来自推荐结果投放） */
@@ -548,7 +553,7 @@ defineExpose({ smartSort });
           <div class="mnz-pcard__badge">
             <GkSchoolLogo :school="f.school" size="sm" class="mnz-pcard__logo" />
             <span class="mnz-pcard__shield" :class="`is-${f.strategy.key}`" :title="f.school.probability?.explanation || '低于该校录取线较多，模型不给出具体概率'">
-              <b>{{ probabilityText(f.prob) }}</b>
+              <b>{{ probabilityText(f.prob, f.school.probability) }}</b>
               <i>{{ f.strategy.label }}</i>
             </span>
           </div>

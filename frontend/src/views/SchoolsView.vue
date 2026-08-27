@@ -6,6 +6,7 @@ import GkHeader from "../components/GkHeader.vue";
 import GkSchoolLogo from "../components/GkSchoolLogo.vue";
 import GkSidePanel from "../components/GkSidePanel.vue";
 import { isReady, profile, rank, score, subjectType, syncFromAuth } from "../utils/examProfile";
+import { isExtremelyLowProbability, probabilityDisplayValue } from "../utils/recommendation";
 import searchIcon from "../assets/gk_search_icon.png";
 
 const router = useRouter();
@@ -126,6 +127,9 @@ function probOfSchool(school) {
 
 function badgeOf(school) {
   const detail = probOfSchool(school);
+  if (isExtremelyLowProbability(detail)) {
+    return { detail, key: "unknown", label: "概率极低", value: "0%", flame: false };
+  }
   if (!detail || detail.probability == null || !detail.strategy) return null;
   const key = String(detail.strategy).toUpperCase();
   const view = {
@@ -149,6 +153,9 @@ function probTip(school) {
   const minRankText = detail.minRank == null ? "—" : detail.minRank.toLocaleString();
   const base = `${detail.admissionYear || "近年"} 最低分 ${detail.cutoffScore}分 / 最低位次 ${minRankText}（后端录取数据）`;
   if (detail.probability == null) {
+    if (isExtremelyLowProbability(detail)) {
+      return `${base}；${detail.explanation || "差距超出模型可测算区间，概率极低"}`;
+    }
     return `${base}（设置高考分数后可测算录取概率）`;
   }
   const rankText = detail.rankGap == null
@@ -192,7 +199,7 @@ const filtered = computed(() => {
   if (sortKey.value === "分数由高到低") sorted.sort((a, b) => (minScoreOf(b) ?? -1) - (minScoreOf(a) ?? -1));
   else if (sortKey.value === "分数由低到高") sorted.sort((a, b) => (minScoreOf(a) ?? Number.MAX_SAFE_INTEGER) - (minScoreOf(b) ?? Number.MAX_SAFE_INTEGER));
   else if (sortKey.value === "录取概率由高到低" && isReady.value) {
-    sorted.sort((a, b) => (probOfSchool(b)?.probability ?? -1) - (probOfSchool(a)?.probability ?? -1));
+    sorted.sort((a, b) => (probabilityDisplayValue(probOfSchool(b)) ?? -1) - (probabilityDisplayValue(probOfSchool(a)) ?? -1));
   }
   return sorted;
 });

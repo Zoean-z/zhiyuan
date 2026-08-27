@@ -19,6 +19,7 @@ import {
   syncFromAuth,
   toggleSecondSubject
 } from "../utils/examProfile";
+import { isExtremelyLowProbability } from "../utils/recommendation";
 
 /**
  * 智能选大学：数据源为后端 /api/universities（80 所精选大学 + 比赛验证录取线 + 概率拆解）。
@@ -70,25 +71,25 @@ async function fetchSchools() {
     const data = await resp.json();
     schools.value = (data.items || []).map((s) => {
       const prob = s.probability?.probability ?? null;
+      const extremelyLow = isExtremelyLowProbability(s.probability);
       const backendStrategy = String(s.probability?.strategy || "").toUpperCase();
       const strategy = {
         RUSH: { key: "rush", label: "冲", probabilityLabel: "概率小" },
         SAFE: { key: "safe", label: "稳", probabilityLabel: "概率中" },
         GUARANTEE: { key: "guard", label: "保", probabilityLabel: "概率大" }
       }[backendStrategy] || null;
-      /* 概率为空 ≠ 未测算：后端对「低于线 10 分以上且位次落后 3000+」的院校不给数字（差距超出模型区间），
-         如实展示而不是让用户误以为系统没算 */
       return {
         ...s,
         minScore: s.cutoffScore,
         minRank: s.minRank,
         probability: prob,
-        probText: prob != null ? `${prob}%` : "差距过大",
-        probHint: s.probability?.explanation || "低于该校录取线较多，模型不给出具体概率",
+        extremelyLow,
+        probText: prob != null ? `${prob}%` : extremelyLow ? "0%" : "待测",
+        probHint: s.probability?.explanation || "设置高考信息后可测算录取概率",
         rankGap: s.probability?.rankGap ?? null,
         scoreGap: s.probability?.scoreGap ?? null,
         strategyKey: strategy?.key ?? "unknown",
-        prob: strategy?.probabilityLabel || "差距过大"
+        prob: strategy?.probabilityLabel || (extremelyLow ? "概率极低" : "待测")
       };
     });
   } catch (ex) {
@@ -107,7 +108,7 @@ const results = computed(() => {
   let list = schools.value;
   if (probability.value !== "全部") list = list.filter((item) => item.prob === probability.value);
   if (typeFilter.value !== "全部") list = list.filter((item) => item.schoolType === typeFilter.value);
-  const probNum = (i) => i.probability ?? -1;
+  const probNum = (i) => i.probability ?? (i.extremelyLow ? 0 : -1);
   if (sortKey.value === "概率") list = [...list].sort((a, b) => probNum(b) - probNum(a));
   else list = [...list].sort((a, b) => (b.minScore ?? -1) - (a.minScore ?? -1));
   return list;
@@ -118,7 +119,7 @@ function onScoreInput(event) {
 }
 
 function probClass(item) {
-  if (item.probability == null) return "is-unknown";
+  if (item.extremelyLow || item.probability == null) return "is-unknown";
   if (item.prob === "概率大") return "is-high";
   if (item.prob === "概率中") return "is-mid";
   return "is-low";
@@ -273,7 +274,7 @@ function goAgentPlan() {
               <div class="gk-choose__nums">
                 <p><b>{{ item.minScore == null ? "暂无" : item.minScore }}</b><span>最低分</span></p>
                 <p><b>{{ item.minRank == null ? "待测" : item.minRank.toLocaleString() }}</b><span>最低位次</span></p>
-                <p class="gk-choose__rate" :title="item.probHint">
+                <p class="gk-choose__rate" :class="{ 'is-unknown': item.extremelyLow }" :title="item.probHint">
                   <b>{{ item.probText }}</b><span>录取概率</span>
                 </p>
               </div>
