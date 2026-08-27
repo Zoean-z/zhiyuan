@@ -19,11 +19,11 @@ const router = useRouter();
 /* ===== 模块切换：模拟填报（选校） / 志愿表（参考 mnzy.gaokao.cn 双模块） ===== */
 const activeTab = ref(props.initialTab === "sheet" ? "sheet" : "pick");
 
-/* ===== 院校库：后端 /api/universities（80 所精选大学 + 录取线/概率） ===== */
+/* ===== 院校库：后端 /api/universities（80 所精选大学 + 录取线/概率，admissionBatch 区分本/专批次） ===== */
 const schools = ref([]);
 const loadingSchools = ref(false);
-/* 专业下拉选项：后端专业目录（88 个专业） */
-const majorOptions = ref([]);
+/* 专业目录：含 degreeType，用于「填报批次」区分本科/专科专业 */
+const majorCatalog = ref([]);
 /* 每所大学开设专业（按需加载：展开"可填专业"时拉详情） */
 const majorCache = ref({});
 
@@ -37,6 +37,10 @@ async function fetchSchools() {
       withDataOnly: "true",
       size: "100"
     });
+    /* 批次维度：本科批只出本科院校、专科批只出专科院校（后端按 university.tier 过滤） */
+    if (props.profile.batch) {
+      params.set("admissionBatch", props.profile.batch);
+    }
     /* 关键：把考生分数/位次传给后端 → 每所大学算出真实概率 → 冲/稳/保计数有数据 */
     if (props.profile.score != null && Number(props.profile.score) > 0) {
       params.set("score", String(Number(props.profile.score)));
@@ -48,6 +52,7 @@ async function fetchSchools() {
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const data = await resp.json();
     schools.value = data.items || [];
+    syncSlotsFromSchools();
   } catch (ex) {
     console.error("加载院校库失败", ex);
   } finally {
@@ -55,13 +60,53 @@ async function fetchSchools() {
   }
   try {
     const data = await (await fetch("/api/majors")).json();
-    majorOptions.value = (data.majors || []).map((m) => m.name);
+    majorCatalog.value = data.majors || [];
   } catch (ex) {
     console.error("加载专业目录失败", ex);
   }
 }
 
-/* 展开"可填专业"时按需加载该校专业列表（详情接口含 majors） */
+/**
+ * 院校库刷新后统一重算已填志愿位的概率/最低位次。
+ * 只在接口成功返回时执行：志愿位保留后端事实，不做任何前端推算；
+ * 不在新院校库里的历史志愿位（如切换批次前填的）保留原值不动。
+ */
+function syncSlotsFromSchools() {
+  slots.value.forEach((slot) => {
+    if (!slot?.schoolId) return;
+    const matched = schools.value.find((x) => x.id === slot.schoolId);
+    if (!matched) return;
+    slot.prob = probOfHere(matched);
+    slot.minRank = matched.minRank ?? null;
+    slot.schoolSource = "backend";
+    slot.probabilitySource = slot.prob == null ? null : "backend";
+    slot.dataSource = "backend";
+  });
+}
+
+/* 批次 → 专业层次过滤。目录 degreeType==='专科' 视为专科专业；
+   院校详情专业没有目录归属时按学制判断（3 年=专科），学制与目录都未知时保守视为本科。 */
+function isVocationalMajor(name, durationYears) {
+  const years = Number(durationYears);
+  if (Number.isFinite(years) && years > 0) return years <= 3;
+  return majorCatalog.value.some((m) => m.name === name && m.degreeType === "专科");
+}
+function matchesBatchMajor(name, durationYears) {
+  const batch = props.profile.batch;
+  if (!batch) return true;
+  const vocational = isVocationalMajor(name, durationYears);
+  return batch === "专科批" ? vocational : !vocational;
+}
+/* 志愿位的专业下拉：按批次只出对应层次的专业 */
+const majorOptions = computed(() => {
+  const names = majorCatalog.value.map((m) => m.name).filter(Boolean);
+  const filtered = props.profile.batch
+    ? names.filter((name) => (props.profile.batch === "专科批" ? isVocationalMajor(name) : !isVocationalMajor(name)))
+    : names;
+  return [...new Set(filtered)];
+});
+
+/* 展开"可填专业"时按需加载该校专业列表（详情接口含 majors），按批次过滤本/专层次 */
 async function loadSchoolMajors(id) {
   if (majorCache.value[id]) return;
   try {
@@ -78,7 +123,13 @@ async function loadSchoolMajors(id) {
     const resp = await fetch(`/api/universities/${id}?${params.toString()}`);
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const d = await resp.json();
-    majorCache.value = { ...majorCache.value, [id]: (d.majors || []).map((m) => m.majorName).filter(Boolean) };
+    majorCache.value = {
+      ...majorCache.value,
+      [id]: (d.majors || [])
+        .filter((m) => matchesBatchMajor(m.majorName, m.durationYears))
+        .map((m) => m.majorName)
+        .filter(Boolean)
+    };
   } catch (ex) {
     console.error("加载专业列表失败", ex);
     majorCache.value = { ...majorCache.value, [id]: [] };
@@ -103,7 +154,8 @@ function normalizeProbability(prob) {
 }
 function probabilityText(prob) {
   const value = normalizeProbability(prob);
-  if (value == null) return "待测";
+  /* 概率为空 ≠ 未测算：后端对差距超出模型区间的院校返回 null（极低概率不给数字） */
+  if (value == null) return "差距过大";
   return `${value}%`;
 }
 function compareProbability(a, b) {
@@ -153,7 +205,7 @@ function backendStrategy(probability) {
     SAFE: { key: "safe", label: "稳妥" },
     GUARANTEE: { key: "guard", label: "保底" }
   }[key];
-  return view ? { ...view, label: probability.strategyLabel || view.label } : { key: "unknown", label: "待测" };
+  return view ? { ...view, label: probability.strategyLabel || view.label } : { key: "unknown", label: "差距过大" };
 }
 
 function schoolFacts(school) {
@@ -205,7 +257,7 @@ function inSheet(facts) {
 function addFromPick(facts) {
   const segKey = facts.strategy.key;
   if (segKey === "unknown") {
-    ElMessage.warning("该院校暂无后端冲稳保结论，不能自动分配志愿段");
+    ElMessage.warning("与该校差距超出模型可测算区间（低于录取线较多），不适合放入志愿表");
     return;
   }
   const seg = SEGMENTS.find((s) => s.key === segKey) || SEGMENTS[1];
@@ -419,28 +471,14 @@ function removeSheet(id) {
   ElMessage.success("已删除方案");
 }
 
-/* profile 分数变化时，院校库概率同步刷新（后端已按分数/位次算好） */
+/* 考生档案（省份/科类/分数/位次/批次）变化 → 院校库整体重查，查完由 syncSlotsFromSchools 统一刷新志愿位概率 */
 watch(
-  () => [props.profile.province, props.profile.firstSubject, props.profile.subjectType, props.profile.score, props.profile.rank],
+  () => [props.profile.province, props.profile.firstSubject, props.profile.subjectType, props.profile.score, props.profile.rank, props.profile.batch],
   () => {
     majorCache.value = {};
     fetchSchools();
   }
 );
-
-watch(() => props.profile.score, () => {
-  slots.value.forEach((s) => {
-    if (!s?.schoolId) return;
-    const matched = schools.value.find((x) => x.id === s.schoolId);
-    if (matched) {
-      s.prob = probOfHere(matched);
-      s.minRank = matched.minRank ?? null;
-      s.schoolSource = "backend";
-      s.probabilitySource = s.prob == null ? null : "backend";
-      s.dataSource = "backend";
-    }
-  });
-});
 
 defineExpose({ smartSort });
 </script>
@@ -509,7 +547,7 @@ defineExpose({ smartSort });
           <!-- 盾形概率徽章 + 校徽 -->
           <div class="mnz-pcard__badge">
             <GkSchoolLogo :school="f.school" size="sm" class="mnz-pcard__logo" />
-            <span class="mnz-pcard__shield" :class="`is-${f.strategy.key}`">
+            <span class="mnz-pcard__shield" :class="`is-${f.strategy.key}`" :title="f.school.probability?.explanation || '低于该校录取线较多，模型不给出具体概率'">
               <b>{{ probabilityText(f.prob) }}</b>
               <i>{{ f.strategy.label }}</i>
             </span>
@@ -559,7 +597,7 @@ defineExpose({ smartSort });
             >
               {{ inSheet(f) ? "已添加" : "添加" }}
             </button>
-            <span class="mnz-pcard__seg-name">{{ f.strategy.label }}段推荐</span>
+            <span class="mnz-pcard__seg-name">{{ f.strategy.key === "unknown" ? "不建议填报" : `${f.strategy.label}段推荐` }}</span>
           </div>
         </article>
 

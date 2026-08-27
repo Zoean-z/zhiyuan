@@ -76,16 +76,19 @@ async function fetchSchools() {
         SAFE: { key: "safe", label: "稳", probabilityLabel: "概率中" },
         GUARANTEE: { key: "guard", label: "保", probabilityLabel: "概率大" }
       }[backendStrategy] || null;
+      /* 概率为空 ≠ 未测算：后端对「低于线 10 分以上且位次落后 3000+」的院校不给数字（差距超出模型区间），
+         如实展示而不是让用户误以为系统没算 */
       return {
         ...s,
         minScore: s.cutoffScore,
         minRank: s.minRank,
         probability: prob,
-        probText: prob != null ? `${prob}%` : "待测算",
+        probText: prob != null ? `${prob}%` : "差距过大",
+        probHint: s.probability?.explanation || "低于该校录取线较多，模型不给出具体概率",
         rankGap: s.probability?.rankGap ?? null,
         scoreGap: s.probability?.scoreGap ?? null,
         strategyKey: strategy?.key ?? "unknown",
-        prob: strategy?.probabilityLabel || "待测算"
+        prob: strategy?.probabilityLabel || "差距过大"
       };
     });
   } catch (ex) {
@@ -270,7 +273,7 @@ function goAgentPlan() {
               <div class="gk-choose__nums">
                 <p><b>{{ item.minScore == null ? "暂无" : item.minScore }}</b><span>最低分</span></p>
                 <p><b>{{ item.minRank == null ? "待测" : item.minRank.toLocaleString() }}</b><span>最低位次</span></p>
-                <p class="gk-choose__rate">
+                <p class="gk-choose__rate" :title="item.probHint">
                   <b>{{ item.probText }}</b><span>录取概率</span>
                 </p>
               </div>
@@ -282,7 +285,7 @@ function goAgentPlan() {
                   {{ scoreGapText(item) }}
                 </span>
               </div>
-              <span class="gk-choose__prob" :class="probClass(item)">{{ item.prob }}</span>
+              <span class="gk-choose__prob" :class="probClass(item)" :title="item.probHint">{{ item.prob }}</span>
               <button class="gk-school__action" type="button" @click.stop="openSchool(item)">院校详情 &gt;</button>
             </li>
             <li v-if="!results.length" class="gk-school__empty">没有匹配的院校，试试放宽概率筛选</li>

@@ -10969,6 +10969,8 @@ body {
 .mnz-pcard__shield.is-rush{background:linear-gradient(180deg,#ff8a3c,#f24f13)}
 .mnz-pcard__shield.is-safe{background:linear-gradient(180deg,#5ab8ff,#1877f0)}
 .mnz-pcard__shield.is-guard{background:linear-gradient(180deg,#4cc98a,#1c8f5e)}
+/* 差距过大（后端不给出概率）：灰色盾牌，与三段冲稳保区分 */
+.mnz-pcard__shield.is-unknown{background:linear-gradient(180deg,#98a2b3,#667085)}
 .mnz-pcard__shield b{font-size:13px;font-weight:800;line-height:1.1}
 .mnz-pcard__shield i{font-size:11px;font-style:normal;opacity:.92;margin-top:1px}
 .mnz-pcard__main{flex:1;min-width:0}
