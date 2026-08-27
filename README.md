@@ -147,8 +147,11 @@ docker run -d --name zhiyuan-mysql `
 
 默认访问：
 - 应用首页：`http://localhost:8080`
-- Swagger UI：`http://localhost:8080/swagger-ui.html`
-- OpenAPI JSON：`http://localhost:8080/v3/api-docs`
+- 公共健康冒烟：`http://localhost:8080/api/meta/options`
+
+Swagger / OpenAPI 默认关闭。仅在可信开发环境同时设置
+`SPRINGDOC_API_DOCS_ENABLED=true`、`SPRINGDOC_SWAGGER_UI_ENABLED=true` 和
+`SECURITY_EXPOSE_API_DOCS=true` 后，才可访问 `/swagger-ui.html` 与 `/v3/api-docs`。
 
 本地默认关闭 RocketMQ，并通过同一任务处理器同步执行，便于开发和测试；`prod` profile 与 Docker Compose 默认开启 RocketMQ。
 
@@ -202,13 +205,13 @@ npm run dev:mock
 
 Mock 管理操作只保存在当前页面会话内存中，刷新页面后会恢复初始演示数据，不会连接或修改真实数据库。若浏览器保留了上一次登录状态，可先点击右上角“退出”，再使用对应演示账号登录。
 
-正式后端使用 `sql/data.sql` 初始化时，测试账号为：
+Docker Compose 使用全新 MySQL 数据卷并执行 `sql/data.sql` 后，测试账号为：
 - 普通用户：`testuser / 123456`
 - 管理员：`adminuser / 123456`
 
 生产环境不要保留示例密码。若不导入示例数据，可先注册普通账号，再由数据库管理员执行受控 SQL 将指定账号的 `role` 更新为 `ADMIN`。
 
-### 4. 构建前端并交给后端托管
+### 5. 构建前端并交给后端托管
 
 **重要：前端构建后需要将产物复制到 Spring Boot 的静态资源目录才能被正确加载。**
 
@@ -236,52 +239,152 @@ Copy-Item -Path ..\src\main\resources\static\assets\*.css -Destination ..\target
 
 ## Docker Compose 启动
 
-### 1. 准备环境变量
+这是推荐的首次部署方式。Dockerfile 会在镜像内构建 Vue 前端和 Spring Boot 后端，
+不需要在宿主机另外安装 Java、Node.js、Maven、MySQL、Redis 或 RocketMQ。
+
+### 1. 部署前提
+
+- Docker Engine 24+ 或 Docker Desktop
+- Docker Compose v2（命令为 `docker compose`，不是旧版 `docker-compose`）
+- Git
+- 建议至少预留 4 GB 可用内存和 8 GB 磁盘；首次构建需要访问 Docker Hub 和 Maven/npm 软件源
+- 服务器只需向公网放行应用端口，默认是 TCP 8080
+
+先确认工具可用：
 
 ```powershell
-Copy-Item .env.example .env
+docker version
+docker compose version
+git --version
 ```
 
-至少需要检查这些字段：
-- `MYSQL_ROOT_PASSWORD`
-- `DB_USER`
-- `DB_PASSWORD`
-- `AUTH_JWT_SECRET`
-- `QWEN_ENABLED`
-- `QWEN_API_KEY`
+### 2. 获取指定分支
 
-没有配置 AI Key 时保持 `QWEN_ENABLED=false`，系统仍可使用本地规则完成登录、推荐、志愿表和 Agent 基础工具流程；填入有效 Key 后再改为 `true`。
+```powershell
+git clone --branch codex/final-admin-integration --single-branch https://github.com/Zoean-z/zhiyuan.git
+Set-Location -LiteralPath .\zhiyuan
+```
 
-### 2. 启动整套服务
+Linux / macOS 将第二行替换为 `cd zhiyuan`。
+
+### 3. 准备环境变量
+
+```powershell
+Copy-Item -LiteralPath .env.example -Destination .env
+```
+
+Linux / macOS 使用 `cp .env.example .env`。`.env` 已被 Git 忽略，不要提交它。
+
+首次启动前必须修改：
+
+- `MYSQL_ROOT_PASSWORD`：MySQL 管理密码
+- `DB_PASSWORD`：应用数据库账号密码
+- `AUTH_JWT_SECRET`：JWT 签名密钥，解码后至少 32 字节
+
+可选项：
+
+- `SERVER_HOST_PORT`：宿主机访问端口，默认 `8080`
+- `QWEN_ENABLED` / `QWEN_API_KEY`：需要真实 AI 调用时才开启并填写
+- `SPRINGDOC_*` / `SECURITY_EXPOSE_API_DOCS`：仅可信开发环境临时开启接口文档
+
+PowerShell 生成 JWT 密钥：
+
+```powershell
+$jwtBytes = [byte[]]::new(48)
+[System.Security.Cryptography.RandomNumberGenerator]::Fill($jwtBytes)
+[Convert]::ToBase64String($jwtBytes)
+```
+
+Linux / macOS 可执行：
+
+```bash
+openssl rand -base64 48
+```
+
+把输出完整填入 `.env` 的 `AUTH_JWT_SECRET=` 后面。不要把真实密钥粘贴到日志、截图或提交记录中。
+没有配置 AI Key 时保持 `QWEN_ENABLED=false`；基础登录、推荐、志愿表和本地 Agent 工具仍可使用。
+
+### 4. 启动前校验
+
+```powershell
+docker compose config --quiet
+```
+
+命令无输出且退出码为 0 才继续。若提示 `AUTH_JWT_SECRET is required`，说明 `.env` 中的密钥仍为空；
+若提示端口已占用，修改 `.env` 中对应的 `*_HOST_PORT`，其中应用端口改 `SERVER_HOST_PORT`。
+
+### 5. 首次构建并启动
 
 ```powershell
 docker compose up -d --build
 ```
 
+首次启动会下载基础镜像、构建前后端，并在**空的** `mysql-data` 数据卷中依次执行：
+
+1. `sql/schema.sql`
+2. `sql/data.sql`
+3. `sql/upgrade-20260822-unique-keys.sql`
+4. `sql/init-competition-admission-cutoffs.sql`
+
+初始化完成前不要中断 MySQL。查看状态和日志：
+
+```powershell
+docker compose ps
+docker compose logs --tail=200 mysql
+docker compose logs --tail=200 backend
+```
+
+成功标准：`mysql`、`redis`、`rocketmq-nameserver`、`rocketmq-broker` 和 `backend`
+均为 `running`/`healthy`，`rocketmq-init` 为正常退出的 `exited (0)`。首次构建和初始化所需时间取决于网络与磁盘速度。
+
 默认宿主机端口：
+
 - 后端服务：`http://localhost:8080`
-- Swagger UI：`http://localhost:8080/swagger-ui.html`
 - MySQL：`localhost:3307`
 - Redis：`localhost:6380`
 - RocketMQ NameServer：`localhost:9876`
 - RocketMQ Broker：`localhost:10911`
 
 说明：
-- `mysql` 会自动执行 `sql/schema.sql` 和 `sql/data.sql`
-- `backend` 启动时会再次执行幂等 schema 校验，因此复用旧数据卷时也能补齐新增表和兼容字段
-- `backend` 默认使用 `prod` profile 启动
-- `backend` 会在 `mysql`、`redis` 和 RocketMQ Broker 健康后启动
-- Compose 会先初始化 RocketMQ 持久化卷权限，再启动 NameServer 与 Broker
-- 为避免和本机已有 MySQL / Redis 冲突，Compose 使用了单独宿主机端口映射
-- MySQL、Redis 和 RocketMQ 的宿主机端口默认只绑定 `127.0.0.1`，远程服务器只需要对外开放应用端口
-- `backend` 提供容器健康检查，可用 `docker compose ps` 确认状态为 `healthy`
 
-### 3. 远程服务器部署
+- Swagger / OpenAPI 默认关闭，不应把 `/swagger-ui.html` 当作部署健康检查
+- `backend` 在 Compose 中固定使用 `DB_SCHEMA_INIT_MODE=never`，不会重复执行 `schema.sql`
+- `docker-entrypoint-initdb.d` 只在 MySQL 数据卷为空时运行；复用旧卷不会自动重放新增或修改后的 SQL
+- `backend` 默认使用 `prod` profile，并在 MySQL、Redis 和 RocketMQ Broker 健康后启动
+- Compose 会先初始化 RocketMQ 持久化卷权限，再启动 NameServer 与 Broker
+- MySQL、Redis 和 RocketMQ 的宿主机端口只绑定 `127.0.0.1`，不需要向公网开放
+
+### 6. 首次部署验收
+
+PowerShell：
+
+```powershell
+$appBaseUri = 'http://127.0.0.1:8080'
+(Invoke-WebRequest -Uri "$appBaseUri/" -UseBasicParsing -TimeoutSec 15).StatusCode
+(Invoke-RestMethod -Uri "$appBaseUri/api/meta/options" -TimeoutSec 15) | ConvertTo-Json -Depth 4
+```
+
+Linux / macOS：
+
+```bash
+curl -fsS http://127.0.0.1:8080/ >/dev/null
+curl -fsS http://127.0.0.1:8080/api/meta/options
+```
+
+预期首页返回 HTTP 200，元数据接口返回省份与科类。全新演示库可用：
+
+- 普通用户：`testuser / 123456`
+- 管理员：`adminuser / 123456`
+
+两种账号都调用 `POST /api/auth/login`，前端根据响应中的 `USER` / `ADMIN` 角色进入不同页面。
+这些仅是比赛演示账号；公开或共享部署前必须删除、禁用或修改示例账号密码。
+
+### 7. 远程服务器部署
 
 服务器安装 Docker Engine 与 Compose 插件后执行：
 
 ```bash
-git clone <仓库地址> zhiyuan
+git clone --branch codex/final-admin-integration --single-branch https://github.com/Zoean-z/zhiyuan.git
 cd zhiyuan
 cp .env.example .env
 ```
@@ -289,31 +392,67 @@ cp .env.example .env
 编辑 `.env`，至少替换 `MYSQL_ROOT_PASSWORD`、`DB_PASSWORD` 和 `AUTH_JWT_SECRET`；需要真实 AI 对话时再填写 `QWEN_API_KEY` 并设置 `QWEN_ENABLED=true`。然后启动：
 
 ```bash
+docker compose config --quiet
 docker compose up -d --build
 docker compose ps
 docker compose logs --tail=200 backend
 ```
 
-直接访问 `http://服务器公网IP:8080`。云服务器安全组和系统防火墙只需放行 TCP 8080；MySQL、Redis、RocketMQ 不需要开放公网端口。已有域名时，可让 Nginx/Caddy 反向代理到 `127.0.0.1:8080` 并配置 HTTPS。
+直接访问 `http://服务器公网IP:8080`。若修改了 `SERVER_HOST_PORT`，访问端口也要相应修改。
+云服务器安全组和系统防火墙只需放行应用端口；MySQL、Redis、RocketMQ 不需要开放公网端口。
+已有域名时，可让 Nginx/Caddy 反向代理到 `127.0.0.1:8080` 并配置 HTTPS。
 
-更新部署：
+### 8. 更新部署
 
-```bash
-git pull
-docker compose up -d --build
+更新前先备份数据库：
+
+```powershell
+docker compose exec -T mysql sh -c 'mysqldump -uroot -p"$MYSQL_ROOT_PASSWORD" --single-transaction "$MYSQL_DATABASE"' > zhiyuan-backup.sql
 ```
 
-停止服务：
+然后拉取和重建：
+
+```powershell
+git pull
+docker compose config --quiet
+docker compose up -d --build
+docker compose ps
+```
+
+注意：`docker compose up -d --build` 不会在已有 `mysql-data` 卷中重新执行
+`docker-entrypoint-initdb.d`。如果新版本明确要求数据库升级，应先备份，再按该版本说明手动执行指定的
+`sql/upgrade-*.sql`，不能直接重放 `schema.sql` 或 `data.sql`。
+
+PowerShell 执行某个经过确认的升级脚本示例：
+
+```powershell
+Get-Content -LiteralPath .\sql\upgrade-20260822-unique-keys.sql -Raw -Encoding UTF8 |
+  docker compose exec -T mysql sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE"'
+```
+
+### 9. 停止、重启与查看日志
 
 ```powershell
 docker compose down
+docker compose up -d
+docker compose logs -f --tail=200 backend
 ```
 
-删除数据卷：
+`docker compose down` 会删除容器和默认网络，但保留数据卷。以下命令会永久删除数据库、Redis 和 RocketMQ 数据，
+仅允许在确认已有备份且确实要重置全新环境时使用：
 
 ```powershell
 docker compose down -v
 ```
+
+### 10. 首次部署常见失败
+
+- `AUTH_JWT_SECRET is required`：`.env` 未填写 JWT 密钥，重新生成后再执行配置校验
+- `port is already allocated`：修改 `.env` 中对应 `*_HOST_PORT`；Docker 部署的应用端口只改 `SERVER_HOST_PORT`
+- `backend` 一直不健康：先看 `docker compose logs --tail=200 backend`，再确认依赖服务均健康
+- MySQL 初始化报 SQL 错误：保留日志，不要反复执行 `up`；失败后的卷可能是半初始化状态，确认无业务数据后才能 `down -v` 重试
+- 修改 `.env` 中数据库密码后仍认证失败：MySQL 只在空卷首次创建账号；已有卷需要迁移账号密码，改 `.env` 不会自动修改库内账号
+- 页面仍是旧版本：确认 `backend` 镜像已重新构建，并用 `docker compose up -d --build backend` 替换运行容器
 
 ## 环境变量说明
 
@@ -474,7 +613,7 @@ AI 功能有本地降级机制，即使不配置 API Key，基础的意图识别
 **原因**：8080 端口已被其他程序占用。
 
 **解决**：
-修改 `.env` 中的 `SERVER_PORT` 和 `SERVER_HOST_PORT`，或停止占用端口的程序。
+Docker Compose 部署修改 `.env` 中的 `SERVER_HOST_PORT`；直接运行 JAR 时修改 `SERVER_PORT`。也可以停止占用端口的程序。
 
 ## 当前状态
 
