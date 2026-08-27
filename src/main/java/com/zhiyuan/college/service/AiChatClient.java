@@ -2,6 +2,8 @@ package com.zhiyuan.college.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.zhiyuan.college.model.dto.AiConnectionTestResponse;
+import com.zhiyuan.college.model.dto.AiRuntimeConfigRequest;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
@@ -30,11 +32,13 @@ public class AiChatClient {
 
     private static final Logger log = LoggerFactory.getLogger(AiChatClient.class);
 
-    private final RestClient restClient;
-    private final String model;
-    private final String provider;
+    private final RestClient.Builder restClientBuilder;
+    private final AiRuntimeConfigService runtimeConfigService;
+    private final AiRuntimeConfigService.ResolvedAiConfig staticConfig;
     private final int retryMaxAttempts;
     private final long retryBackoffMillis;
+    private final Integer connectTimeoutMillis;
+    private final Integer readTimeoutMillis;
 
     @Autowired
     private ObjectMapper objectMapper;
@@ -49,32 +53,30 @@ public class AiChatClient {
                         String model,
                         int retryMaxAttempts,
                         long retryBackoffMillis) {
-        this(builder, baseUrl, apiKey, model, retryMaxAttempts, retryBackoffMillis, null, null);
+        this.restClientBuilder = builder;
+        this.runtimeConfigService = null;
+        this.staticConfig = new AiRuntimeConfigService.ResolvedAiConfig(
+                "openai-compatible", baseUrl, model, apiKey);
+        this.retryMaxAttempts = Math.max(1, retryMaxAttempts);
+        this.retryBackoffMillis = Math.max(0, retryBackoffMillis);
+        this.connectTimeoutMillis = null;
+        this.readTimeoutMillis = null;
     }
 
     @Autowired
     public AiChatClient(RestClient.Builder builder,
-                        @Value("${ai.qwen.base-url}") String baseUrl,
-                        @Value("${ai.qwen.api-key}") String apiKey,
-                        @Value("${ai.qwen.model}") String model,
+                        AiRuntimeConfigService runtimeConfigService,
                         @Value("${ai.qwen.retry.max-attempts:3}") int retryMaxAttempts,
                         @Value("${ai.qwen.retry.backoff-millis:150}") long retryBackoffMillis,
                         @Value("${ai.qwen.timeout.connect-millis:5000}") Integer connectTimeoutMillis,
                         @Value("${ai.qwen.timeout.read-millis:30000}") Integer readTimeoutMillis) {
-        RestClient.Builder configuredBuilder = builder
-                .baseUrl(baseUrl)
-                .defaultHeader("Authorization", "Bearer " + apiKey)
-                .defaultHeader("Content-Type", MediaType.APPLICATION_JSON_VALUE);
-        if (connectTimeoutMillis != null && readTimeoutMillis != null) {
-            // Without explicit timeouts a hung provider keeps request threads busy forever.
-            configuredBuilder = configuredBuilder
-                    .requestFactory(buildRequestFactory(connectTimeoutMillis, readTimeoutMillis));
-        }
-        this.restClient = configuredBuilder.build();
-        this.model = model;
-        this.provider = "openai-compatible";
+        this.restClientBuilder = builder;
+        this.runtimeConfigService = runtimeConfigService;
+        this.staticConfig = null;
         this.retryMaxAttempts = Math.max(1, retryMaxAttempts);
         this.retryBackoffMillis = Math.max(0, retryBackoffMillis);
+        this.connectTimeoutMillis = connectTimeoutMillis;
+        this.readTimeoutMillis = readTimeoutMillis;
     }
 
     public String chat(String systemPrompt,
@@ -95,13 +97,15 @@ public class AiChatClient {
                        boolean jsonOutput,
                        Integer maxTokens,
                        Boolean thinking) {
+        AiRuntimeConfigService.ResolvedAiConfig config = resolveConfig();
+        RestClient restClient = buildRestClient(config);
         Map<String, Object> requestBody = buildRequestBody(
-                systemPrompt, userPrompt, temperature, jsonOutput, false, maxTokens, thinking);
+                config.model(), systemPrompt, userPrompt, temperature, jsonOutput, false, maxTokens, thinking);
 
         Exception lastFailure = null;
         for (int attempt = 1; attempt <= retryMaxAttempts; attempt++) {
             try {
-                return performChat(requestBody);
+                return performChat(restClient, requestBody);
             } catch (Exception ex) {
                 lastFailure = ex;
                 if (attempt >= retryMaxAttempts || !isRetryable(ex)) {
@@ -118,7 +122,7 @@ public class AiChatClient {
     }
 
     public String getModel() {
-        return model;
+        return resolveConfig().model();
     }
 
     /**
@@ -147,8 +151,10 @@ public class AiChatClient {
                            Integer maxTokens,
                            Boolean thinking,
                            Consumer<String> onChunk) {
+        AiRuntimeConfigService.ResolvedAiConfig config = resolveConfig();
+        RestClient restClient = buildRestClient(config);
         Map<String, Object> requestBody = buildRequestBody(
-                systemPrompt, userPrompt, temperature, jsonOutput, true, maxTokens, thinking);
+                config.model(), systemPrompt, userPrompt, temperature, jsonOutput, true, maxTokens, thinking);
         try {
             restClient.post()
                     .uri("/chat/completions")
@@ -194,10 +200,72 @@ public class AiChatClient {
     }
 
     public String getProvider() {
-        return provider;
+        return resolveConfig().provider();
     }
 
-    private Map<String, Object> buildRequestBody(String systemPrompt,
+    public AiConnectionTestResponse testConnection(AiRuntimeConfigRequest request) {
+        AiRuntimeConfigService.ResolvedAiConfig config = runtimeConfigService.resolveForTest(request);
+        if (config.apiKey() == null || config.apiKey().isBlank()) {
+            return new AiConnectionTestResponse(
+                    false, "未配置 API Key，请填写后再检测", config.provider(), config.model(), 0);
+        }
+
+        long startedAt = System.nanoTime();
+        Map<String, Object> requestBody = new LinkedHashMap<>();
+        requestBody.put("model", config.model());
+        requestBody.put("messages", List.of(
+                Map.of("role", "user", "content", "Reply OK.")
+        ));
+        requestBody.put("temperature", 0);
+        requestBody.put("max_tokens", 8);
+        try {
+            JsonNode response = buildRestClient(config, 5000, 15000).post()
+                    .uri("/chat/completions")
+                    .body(requestBody)
+                    .retrieve()
+                    .body(JsonNode.class);
+            JsonNode content = response == null
+                    ? null
+                    : response.path("choices").path(0).path("message").path("content");
+            if (content == null || content.isMissingNode() || content.isNull()) {
+                return connectionTestResult(false, "接口已响应，但返回格式不符合 OpenAI 兼容协议", config, startedAt);
+            }
+            return connectionTestResult(true, "连接成功，模型响应正常", config, startedAt);
+        } catch (RestClientResponseException ex) {
+            return connectionTestResult(
+                    false, connectionTestFailureMessage(ex.getStatusCode().value()), config, startedAt);
+        } catch (ResourceAccessException ex) {
+            return connectionTestResult(false, "连接失败：接口不可达或响应超时", config, startedAt);
+        } catch (Exception ex) {
+            log.warn("AI connection test failed for provider {}: {}", config.provider(), ex.getMessage());
+            return connectionTestResult(false, "连接失败：无法完成 OpenAI 兼容请求", config, startedAt);
+        }
+    }
+
+    private String connectionTestFailureMessage(int statusCode) {
+        return switch (statusCode) {
+            case 400 -> "请求被上游拒绝（HTTP 400），请检查模型名称或接口兼容性";
+            case 401, 403 -> "认证失败（HTTP " + statusCode + "），请检查 API Key 和账户权限";
+            case 404 -> "接口不存在（HTTP 404），请检查兼容接口地址";
+            case 429 -> "请求受限（HTTP 429），请检查额度或稍后重试";
+            default -> statusCode >= 500
+                    ? "上游服务异常（HTTP " + statusCode + "），请稍后重试"
+                    : "连接失败：上游返回 HTTP " + statusCode;
+        };
+    }
+
+    private AiConnectionTestResponse connectionTestResult(
+            boolean available,
+            String message,
+            AiRuntimeConfigService.ResolvedAiConfig config,
+            long startedAt) {
+        long latencyMillis = Math.max(0, (System.nanoTime() - startedAt) / 1_000_000);
+        return new AiConnectionTestResponse(
+                available, message, config.provider(), config.model(), latencyMillis);
+    }
+
+    private Map<String, Object> buildRequestBody(String model,
+                                                 String systemPrompt,
                                                  String userPrompt,
                                                  double temperature,
                                                  boolean jsonOutput,
@@ -224,6 +292,27 @@ public class AiChatClient {
         return requestBody;
     }
 
+    private AiRuntimeConfigService.ResolvedAiConfig resolveConfig() {
+        return runtimeConfigService == null ? staticConfig : runtimeConfigService.resolve();
+    }
+
+    private RestClient buildRestClient(AiRuntimeConfigService.ResolvedAiConfig config) {
+        return buildRestClient(config, connectTimeoutMillis, readTimeoutMillis);
+    }
+
+    private RestClient buildRestClient(AiRuntimeConfigService.ResolvedAiConfig config,
+                                       Integer connectTimeout,
+                                       Integer readTimeout) {
+        RestClient.Builder configuredBuilder = restClientBuilder.clone()
+                .baseUrl(config.baseUrl())
+                .defaultHeader("Authorization", "Bearer " + config.apiKey())
+                .defaultHeader("Content-Type", MediaType.APPLICATION_JSON_VALUE);
+        if (connectTimeout != null && readTimeout != null) {
+            configuredBuilder.requestFactory(buildRequestFactory(connectTimeout, readTimeout));
+        }
+        return configuredBuilder.build();
+    }
+
     private static ClientHttpRequestFactory buildRequestFactory(int connectTimeoutMillis, int readTimeoutMillis) {
         SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
         requestFactory.setConnectTimeout(Math.max(0, connectTimeoutMillis));
@@ -231,7 +320,7 @@ public class AiChatClient {
         return requestFactory;
     }
 
-    private String performChat(Map<String, Object> requestBody) {
+    private String performChat(RestClient restClient, Map<String, Object> requestBody) {
         JsonNode response = restClient.post()
                 .uri("/chat/completions")
                 .body(requestBody)

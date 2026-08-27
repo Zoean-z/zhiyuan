@@ -125,6 +125,15 @@ CREATE TABLE recommendation_task (
   CONSTRAINT uk_task_request_id UNIQUE (request_id)
 );
 
+CREATE TABLE ai_runtime_config (
+  id INT PRIMARY KEY,
+  provider VARCHAR(64) NOT NULL,
+  base_url VARCHAR(500) NOT NULL,
+  model VARCHAR(160) NOT NULL,
+  encrypted_api_key CLOB NULL,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE ai_parse_log (
   id BIGINT PRIMARY KEY AUTO_INCREMENT,
   task_id BIGINT NULL,

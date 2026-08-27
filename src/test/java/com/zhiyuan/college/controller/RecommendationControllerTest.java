@@ -924,6 +924,83 @@ class RecommendationControllerTest {
     }
 
     @Test
+    void aiConfig_shouldRequireAdminEncryptKeyAndNeverReturnPlaintext() throws Exception {
+        jdbcTemplate.update("DELETE FROM ai_runtime_config");
+        String userToken = loginAndGetToken("testuser", "123456", 620, "PHYSICS", "浙江");
+        String adminToken = loginAndGetToken("adminuser", "123456", null, null, null);
+        String plainKey = "sk-test-secret-9876";
+
+        try {
+            mockMvc.perform(get("/api/admin/ai-config")
+                            .header("Authorization", "Bearer " + userToken))
+                    .andExpect(status().isForbidden());
+
+            mockMvc.perform(post("/api/admin/ai-config/test")
+                            .header("Authorization", "Bearer " + userToken)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {
+                                      "provider":"openai-compatible",
+                                      "baseUrl":"https://ai.example.test/v1",
+                                      "model":"demo-model",
+                                      "apiKey":"test-key",
+                                      "clearApiKey":false
+                                    }
+                                    """))
+                    .andExpect(status().isForbidden());
+
+            mockMvc.perform(post("/api/admin/ai-config/test")
+                            .header("Authorization", "Bearer " + adminToken)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {
+                                      "provider":"openai-compatible",
+                                      "baseUrl":"not-a-valid-url",
+                                      "model":"demo-model",
+                                      "apiKey":"test-key",
+                                      "clearApiKey":false
+                                    }
+                                    """))
+                    .andExpect(status().isBadRequest());
+            Assertions.assertEquals(0, jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM ai_runtime_config", Integer.class));
+
+            mockMvc.perform(put("/api/admin/ai-config")
+                            .header("Authorization", "Bearer " + adminToken)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {
+                                      "provider":"openai-compatible",
+                                      "baseUrl":"https://ai.example.test/v1/",
+                                      "model":"demo-model",
+                                      "apiKey":"%s",
+                                      "clearApiKey":false
+                                    }
+                                    """.formatted(plainKey)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.baseUrl").value("https://ai.example.test/v1"))
+                    .andExpect(jsonPath("$.model").value("demo-model"))
+                    .andExpect(jsonPath("$.apiKeyConfigured").value(true))
+                    .andExpect(jsonPath("$.apiKeyMasked").value("••••9876"))
+                    .andExpect(jsonPath("$.apiKeySource").value("database"))
+                    .andExpect(jsonPath("$.apiKey").doesNotExist());
+
+            String encrypted = jdbcTemplate.queryForObject(
+                    "SELECT encrypted_api_key FROM ai_runtime_config WHERE id = 1", String.class);
+            Assertions.assertNotNull(encrypted);
+            Assertions.assertFalse(encrypted.contains(plainKey));
+
+            mockMvc.perform(get("/api/admin/ai-config")
+                            .header("Authorization", "Bearer " + adminToken))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.apiKeyMasked").value("••••9876"))
+                    .andExpect(jsonPath("$.apiKey").doesNotExist());
+        } finally {
+            jdbcTemplate.update("DELETE FROM ai_runtime_config");
+        }
+    }
+
+    @Test
     void adminUserEndpoints_shouldUseRealUserDataAndEnforceAccountSettings() throws Exception {
         jdbcTemplate.update("UPDATE users SET role = 'ADMIN', enabled = TRUE WHERE id = 3");
         jdbcTemplate.update("UPDATE users SET role = 'USER', enabled = TRUE WHERE id = 1");
