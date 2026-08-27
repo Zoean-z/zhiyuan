@@ -49,6 +49,16 @@ test("P2-D university pages use the shared province without a Hunan fallback", a
   assert.match(files[3], /withDataOnly:\s*["']true["']/);
 });
 
+test("exam province support only exposes Hunan and falls back from stale profiles", async () => {
+  const examProfile = await source("../src/utils/examProfile.js");
+
+  assert.match(examProfile, /export const PROVINCES = \["湖南"\];/);
+  assert.match(
+    examProfile,
+    /if \(!PROVINCES\.includes\(profile\.province\)\) profile\.province = DEFAULTS\.province;/
+  );
+});
+
 test("P2-D probability badges consume backend strategy instead of local thresholds", async () => {
   const schools = await source("../src/views/SchoolsView.vue");
   const detail = await source("../src/views/SchoolDetailView.vue");

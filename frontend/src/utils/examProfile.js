@@ -23,8 +23,8 @@ import { fetchRankLookup } from "./scoreRankApi.js";
 
 const STORAGE_KEY = "zhiyuan_exam_profile";
 
-/* 只保留有真实数据（院校线/专业线/一分一段）的省份；其余省份接口返回空，展示无意义 */
-export const PROVINCES = ["湖南", "浙江"];
+/* 只暴露当前具备完整院校线、专业线和一分一段覆盖的考试省份。 */
+export const PROVINCES = ["湖南"];
 export const FIRST_SUBJECTS = ["物理", "历史"];
 export const SECOND_SUBJECTS = ["化学", "生物", "政治", "地理"];
 export const BATCHES = ["本科批", "专科批"];
