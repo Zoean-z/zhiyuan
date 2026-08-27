@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, onMounted, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import GkHeader from "../components/GkHeader.vue";
 import VolunteerSheet from "../components/VolunteerSheet.vue";
@@ -43,7 +43,6 @@ const route = useRoute();
 
 /* ===== 两阶段：① 填考生信息 → ② 45 个志愿位填报器 ===== */
 const stage = ref("form");
-const sheetRef = ref(null);
 const scoreError = ref("");
 const savedCount = ref(0);
 
@@ -101,18 +100,6 @@ function customizePlan() {
   const rankText = rank.value == null ? "暂无位次数据" : `全省位次约${rank.value}名`;
   const q = `我是${profile.province}考生，${profile.batch}，选科${subjectsText.value}，${score.value}分（${rankText}），请生成 45 个志愿位的冲稳保涨度方案`;
   router.push({ path: "/agent", query: { q } });
-}
-
-async function goDiagnose() {
-  if (!isReady.value) {
-    scoreError.value = "请先填写高考分数，系统才能根据志愿表和录取概率完成防掉档诊断";
-    return;
-  }
-  confirmProfile();
-  stage.value = "sheet";
-  await nextTick();
-  sheetRef.value?.openDiagnosis();
-  window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
 function goPlans() {
@@ -251,7 +238,6 @@ function goPlans() {
                 <button type="button" @click="goPlans">
                   我的志愿方案<em v-if="savedCount">（进行中 {{ savedCount }} 个志愿）</em> &gt;
                 </button>
-                <button type="button" @click="goDiagnose">防掉档诊断 &gt;</button>
               </div>
             </div>
 
@@ -267,12 +253,8 @@ function goPlans() {
                   · {{ profile.batch }}
                 </span>
               </div>
-              <div class="mnz-vfill__ops">
-                <button type="button" class="mnz-vfill__op mnz-vfill__op--ghost" @click="goDiagnose">防掉档诊断</button>
-              </div>
             </div>
             <VolunteerSheet
-              ref="sheetRef"
               :profile="sheetProfile"
               :initial-tab="String(route.query.tab || 'pick')"
               :initial-view="String(route.query.view || 'detail')"
