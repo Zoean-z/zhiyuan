@@ -30,3 +30,20 @@ Thumbs.db
 
 # local secret backups
 .env.bak_*
+
+# ── 本地工作产物（不属于部署镜像的副本）────────────────
+tmp/**
+!tmp/
+!tmp/*.py
+!tmp/gaokao-compass/
+tmp/gaokao-compass/**
+!tmp/gaokao-compass/*.py
+tmp/db-backup-20260920/
+docs/competition/ppt/
+docs/competition/backup-20260920/
+ppt/
+frontend/src/rec-body.json
+frontend/src/rec-tmp.json
+frontend/src/components/HistoryView.vue.bak_20260829
+sql/data.sql.bak_20260829
+SESSION_STATE.md
