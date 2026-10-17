@@ -309,7 +309,7 @@ public class UniversityQueryService {
 
         items.sort(buildComparator(sort));
 
-        // 计算结果缓存：排序后的全量 items 与分页无关，翻页/重复访问零成本。
+        // 计算结果缓存：排序后的全量 items 与分页无关，重复访问跳过 SQL 和概率计算（列表组装仍需执行）。
         // TTL 短（3 分钟），数据导入后自动过期；容量超限整体清空（防膨胀）。
         String cacheKey = String.join("|",
                 String.valueOf(examProvince), String.valueOf(subjectType), String.valueOf(schoolProvince),
