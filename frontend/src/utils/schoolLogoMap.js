@@ -4,7 +4,7 @@
  * a verified match intentionally fall back to the first-character placeholder.
  * 2026-09-23 校徽填充批次：追加 779 个校名→新 id(2000+)，来源 BadgeSpider（百度百科校徽），
  * 按归一化校名（全半角括号/空格）匹配；与人工核验条目重名时保留人工条目。
- * 2026-09-23 批次2：再追加 1,027 个（掌上高考官方 CDN），总映射 1,901/1,902 所（99.9%）。
+ * 2026-09-23 批次2：再追加 1,027 个（掌上高考官方 CDN），总映射 1,902/1,902 所（100%）。
  */
 export const SCHOOL_LOGO_IDS = Object.freeze({
   清华大学: 21,

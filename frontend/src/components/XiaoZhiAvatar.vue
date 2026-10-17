@@ -9,79 +9,69 @@ defineProps({
   <span class="xz-avatar" :class="[`xz-avatar--${size}`, { 'xz-avatar--float': float }]" role="img" aria-label="问小智">
     <svg viewBox="0 0 96 96" fill="none" xmlns="http://www.w3.org/2000/svg">
       <defs>
-        <linearGradient id="xzBlueGradient" x1="26" y1="4" x2="70" y2="88" gradientUnits="userSpaceOnUse">
-          <stop offset="0" stop-color="#39B9EF" />
-          <stop offset="1" stop-color="#0F8AD0" />
+        <linearGradient id="xzBodyGradient" x1="24" y1="8" x2="72" y2="88" gradientUnits="userSpaceOnUse">
+          <stop offset="0" stop-color="#4FB8E8" />
+          <stop offset="1" stop-color="#1A7BB8" />
         </linearGradient>
-        <linearGradient id="xzGoldGradient" x1="43" y1="48" x2="53" y2="58" gradientUnits="userSpaceOnUse">
-          <stop offset="0" stop-color="#FFE17D" />
-          <stop offset="1" stop-color="#F5A623" />
+        <linearGradient id="xzBellyGradient" x1="34" y1="42" x2="62" y2="78" gradientUnits="userSpaceOnUse">
+          <stop offset="0" stop-color="#E8F6FF" />
+          <stop offset="1" stop-color="#C4E8FC" />
         </linearGradient>
-        <linearGradient id="xzStrokeGradient" x1="26" y1="4" x2="70" y2="88" gradientUnits="userSpaceOnUse">
-          <stop offset="0" stop-color="#1D77B8" />
-          <stop offset="1" stop-color="#0B6BA8" />
+        <linearGradient id="xzHelmetGradient" x1="30" y1="6" x2="66" y2="40" gradientUnits="userSpaceOnUse">
+          <stop offset="0" stop-color="#5BC5F5" />
+          <stop offset="1" stop-color="#1A7BB8" />
+        </linearGradient>
+        <linearGradient id="xzVisorGradient" x1="34" y1="16" x2="62" y2="36" gradientUnits="userSpaceOnUse">
+          <stop offset="0" stop-color="#1B2A4A" />
+          <stop offset="1" stop-color="#2E5077" />
         </linearGradient>
       </defs>
 
-      <!-- 红尾巴 -->
-      <circle cx="69.5" cy="78.5" r="3.6" fill="#E02020" stroke="#B01515" stroke-width="1" />
+      <!-- 天线 -->
+      <line x1="48" y1="4" x2="48" y2="12" stroke="#F5A623" stroke-width="2.5" stroke-linecap="round" />
+      <circle cx="48" cy="4" r="3" fill="#F5A623" stroke="#D4880F" stroke-width="1">
+        <animate attributeName="opacity" values="1;0.5;1" dur="2.4s" repeatCount="indefinite" />
+      </circle>
 
-      <!-- 身体 -->
-      <ellipse cx="48" cy="62" rx="19.5" ry="16.5" fill="url(#xzBlueGradient)" stroke="url(#xzStrokeGradient)" stroke-width="1.4" />
-      <!-- 大白肚皮 -->
-      <ellipse cx="48" cy="64" rx="16" ry="14" fill="#FFFFFF" />
+      <!-- 头盔（圆头） -->
+      <circle cx="48" cy="27" r="21" fill="url(#xzHelmetGradient)" stroke="#1565A0" stroke-width="1.5" />
+      <!-- 头盔高光 -->
+      <ellipse cx="40" cy="17" rx="7" ry="5" fill="#FFFFFF" opacity="0.35" transform="rotate(-20 40 17)" />
 
-      <!-- 左手臂高举打招呼 -->
-      <ellipse cx="23.5" cy="41.5" rx="5.4" ry="9.6" transform="rotate(-40 23.5 41.5)" fill="url(#xzBlueGradient)" stroke="url(#xzStrokeGradient)" stroke-width="1.4" />
-      <circle cx="16.5" cy="32.5" r="5" fill="#FFFFFF" stroke="#173A5E" stroke-width="1.3" />
-      <!-- 右手臂垂放 -->
-      <ellipse cx="69.5" cy="57" rx="5.4" ry="8.4" transform="rotate(-30 69.5 57)" fill="url(#xzBlueGradient)" stroke="url(#xzStrokeGradient)" stroke-width="1.4" />
-      <circle cx="73" cy="63.5" r="4.6" fill="#FFFFFF" stroke="#173A5E" stroke-width="1.3" />
-
-      <!-- 脚 -->
-      <ellipse cx="35.5" cy="84.5" rx="10" ry="5.4" fill="#FFFFFF" stroke="#173A5E" stroke-width="1.3" />
-      <ellipse cx="60.5" cy="84.5" rx="10" ry="5.4" fill="#FFFFFF" stroke="#173A5E" stroke-width="1.3" />
-
-      <!-- 大头 -->
-      <circle cx="48" cy="25" r="22" fill="url(#xzBlueGradient)" stroke="url(#xzStrokeGradient)" stroke-width="1.4" />
-      <!-- 白脸 -->
-      <ellipse cx="48" cy="28.5" rx="17.5" ry="15.5" fill="#FFFFFF" />
-
-      <!-- 左眼睁开（可眨眼） -->
+      <!-- 面罩（深色弧形视窗） -->
+      <path d="M30 25a18 18 0 0 1 36 0c0 3-1 6-2.8 8.2H32.8A17.6 17.6 0 0 1 30 25z" fill="url(#xzVisorGradient)" />
+      <!-- 眼睛（视窗内的发光条） -->
       <g class="xz-avatar__eyes">
-        <ellipse cx="41" cy="19.5" rx="5.2" ry="6.6" fill="#FFFFFF" stroke="#1F2329" stroke-width="1.3" />
-        <circle cx="41.9" cy="21.6" r="2" fill="#1F2329" />
-        <circle cx="42.6" cy="20.6" r="0.65" fill="#FFFFFF" />
+        <rect x="38" y="20" width="6.5" height="8" rx="3" fill="#7FDBFF" />
+        <rect x="51" y="20" width="6.5" height="8" rx="3" fill="#7FDBFF" />
+        <circle cx="41" cy="23" r="1.2" fill="#FFFFFF" />
+        <circle cx="54" cy="23" r="1.2" fill="#FFFFFF" />
       </g>
-      <!-- 右眼 wink -->
-      <path d="M51 21Q55.6 16.4 60.2 21" stroke="#1F2329" stroke-width="1.8" stroke-linecap="round" />
+      <!-- 微笑（视窗下缘） -->
+      <path d="M40 30.5Q48 34 56 30.5" stroke="#7FDBFF" stroke-width="1.6" stroke-linecap="round" />
 
-      <!-- 鼻子与鼻唇线 -->
-      <circle cx="48" cy="28.8" r="3.7" fill="#E02020" stroke="#B01515" stroke-width="0.8" />
-      <circle cx="46.8" cy="27.4" r="1" fill="#FFFFFF" opacity="0.85" />
-      <path d="M48 32.5V35.2" stroke="#1F2329" stroke-width="1.3" stroke-linecap="round" />
-      <!-- 贯穿脸颊的大笑弧线 -->
-      <path d="M32 34.5Q48 45.5 64 34.5" stroke="#1F2329" stroke-width="1.8" stroke-linecap="round" />
+      <!-- 脖颈 -->
+      <rect x="42" y="46" width="12" height="5" rx="2.5" fill="#1565A0" />
 
-      <!-- 胡须（与嘴线两端交叉） -->
-      <g stroke="#1F2329" stroke-width="1.35" stroke-linecap="round">
-        <path d="M33.5 29.5L23.5 27.5" />
-        <path d="M33 33.5L22 33.5" />
-        <path d="M33.5 37.5L23.5 39.5" />
-        <path d="M62.5 29.5L72.5 27.5" />
-        <path d="M63 33.5L74 33.5" />
-        <path d="M62.5 37.5L72.5 39.5" />
-      </g>
+      <!-- 身体（胶囊形） -->
+      <rect x="28" y="50" width="40" height="32" rx="12" fill="url(#xzBodyGradient)" stroke="#1565A0" stroke-width="1.5" />
+      <!-- 胸口显示屏 -->
+      <rect x="37" y="56" width="22" height="14" rx="4" fill="url(#xzBellyGradient)" stroke="#1565A0" stroke-width="1" />
+      <!-- 屏幕上的对话气泡图标 -->
+      <path d="M43 60h10a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-6l-3 3v-3h-1a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2z" fill="#1565A0" opacity="0.4" />
+      <!-- 屏幕高光 -->
+      <line x1="39.5" y1="58" x2="39.5" y2="68" stroke="#FFFFFF" stroke-width="1.2" opacity="0.35" stroke-linecap="round" />
 
-      <!-- 红项圈 -->
-      <path d="M29 44.5h38a3.25 3.25 0 0 1 3.25 3.25v.5A3.25 3.25 0 0 1 67 51.5H29a3.25 3.25 0 0 1-3.25-3.25v-.5A3.25 3.25 0 0 1 29 44.5z" fill="#E02020" />
-      <!-- 铃铛 -->
-      <path d="M48 50.8V48.9" stroke="#8A5A00" stroke-width="1" stroke-linecap="round" />
-      <circle cx="48" cy="53" r="5.3" fill="url(#xzGoldGradient)" stroke="#C77E00" stroke-width="1" />
-      <path d="M43.7 51.8h8.6" stroke="#8A5A00" stroke-width="1.3" stroke-linecap="round" />
-      <path d="M43.7 54.4h8.6" stroke="#8A5A00" stroke-width="1.1" stroke-linecap="round" />
-      <circle cx="48" cy="56.4" r="1.25" fill="#8A5A00" />
-      <circle cx="46.5" cy="50.9" r="0.7" fill="#FFFFFF" opacity="0.9" />
+      <!-- 左手臂（挥手） -->
+      <rect x="18" y="52" width="9" height="18" rx="4.5" fill="url(#xzBodyGradient)" stroke="#1565A0" stroke-width="1.2" transform="rotate(-35 22.5 52)" />
+      <circle cx="18" cy="42" r="4.5" fill="#7FDBFF" stroke="#1565A0" stroke-width="1.2" />
+      <!-- 右手臂 -->
+      <rect x="69" y="52" width="9" height="18" rx="4.5" fill="url(#xzBodyGradient)" stroke="#1565A0" stroke-width="1.2" transform="rotate(35 73.5 52)" />
+      <circle cx="78" cy="68" r="4.5" fill="#7FDBFF" stroke="#1565A0" stroke-width="1.2" />
+
+      <!-- 底盘脚（磁悬浮底座） -->
+      <ellipse cx="48" cy="85" rx="12" ry="4" fill="#1565A0" opacity="0.25" />
+      <rect x="38" y="80" width="20" height="5" rx="2.5" fill="#1565A0" />
     </svg>
   </span>
 </template>
