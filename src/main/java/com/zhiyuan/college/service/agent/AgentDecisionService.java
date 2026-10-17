@@ -156,7 +156,7 @@ public class AgentDecisionService {
                 buildUserPrompt(state),
                 0.1,
                 agentToolRegistry.getOpenAiToolDefinitions());
-        String content = call.content() == null ? "" : call.content().trim();
+        String content = sanitizeReplyText(call.content() == null ? "" : call.content().trim());
         if (!call.isToolCall()) {
             // 模型未选任何工具（含 reply）：按直接回复处理
             return new AgentDecision(AgentToolNames.REPLY, content.isBlank() ? DEFAULT_REPLY_TEXT : content);
@@ -164,7 +164,7 @@ public class AgentDecisionService {
         String action = call.toolName().trim();
         Map<String, Object> toolArgs = parseArgumentsJson(call.argumentsJson());
         if (AgentToolNames.REPLY.equals(action)) {
-            String reply = toolArgs.get("reply") == null ? "" : String.valueOf(toolArgs.get("reply")).trim();
+            String reply = toolArgs.get("reply") == null ? "" : sanitizeReplyText(String.valueOf(toolArgs.get("reply")).trim());
             if (reply.isBlank()) {
                 // 部分模型把回复放进 content 而非参数，兼容取用
                 reply = content;
@@ -196,8 +196,22 @@ public class AgentDecisionService {
         return text;
     }
 
-    private Map<String, Object> parseArgumentsJson(String argumentsJson) {
-        if (argumentsJson == null || argumentsJson.isBlank()) {
+    /**
+     * 清理 LLM 输出的包装残留：部分模型会把回复文本包上字面 {@code <reply>…</reply>}
+     * 标签（模仿工具名），或用 markdown 代码栅栏包裹——原样透传会被用户看到。
+     */
+    private String sanitizeReplyText(String text) {
+        if (text == null) {
+            return "";
+        }
+        String cleaned = text.trim();
+        cleaned = cleaned.replaceFirst("^(<reply>|```reply\\s*|```json\\s*)", "")
+                         .replaceFirst("(</reply>|```)$", "")
+                         .trim();
+        return cleaned;
+    }
+
+    private Map<String, Object> parseArgumentsJson(String argumentsJson) {        if (argumentsJson == null || argumentsJson.isBlank()) {
             return Collections.emptyMap();
         }
         try {
