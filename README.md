@@ -629,3 +629,18 @@ Docker Compose 部署修改 `.env` 中的 `SERVER_HOST_PORT`；直接运行 JAR 
 - 可控推荐逻辑，而不是把结果直接交给大模型
 - 受控对话式 Agent，而不是纯聊天外壳
 - 完整鉴权、缓存、异步任务、管理端、Docker、测试与文档能力
+
+## 📁 项目文档导航
+
+| 位置 | 内容 |
+|---|---|
+| `docs/project/` | 工程日志与规范：`PROJECT_LOG.md`（逐日日志）、`DEV_ISSUES.md`（四段式问题记录 L-00~L-07）、`SESSION_STATE.md`（会话状态快照）、`PROJECT_PLAN.md`、`PROJECT_HANDOFF.md`、`history.md`、Agent 增强计划、AI 对话 API 设计 |
+| `docs/design/` | 设计文档（管理后台设计、功能设计边界） |
+| `docs/reviews/` | 各轮评审与修复记录（20260818-0822 系列） |
+| `docs/competition/` | 比赛材料 + `ppt/`（材料生成脚本与幻灯片） |
+| `docs/assets/qa/` | 设计 QA 截图（design-qa 系列） |
+| `scripts/` | 工具脚本（`scripts/db/` 下为数据库检查/初始化 bat） |
+| `REPRODUCE_BUILD.sh`（根目录） | 一键构建复现：`bash REPRODUCE_BUILD.sh [项目根]` |
+| `tmp/` | 临时产物（导入管线 w*.py、数据备份 db-backup-*/、比赛素材）；可整目录删除，不影响构建 |
+
+> 构建与部署入口全部在根目录：`Dockerfile`、`docker-compose*.yml`、`.env*`、`pom.xml`、`mvnw`、`frontend/`、`sql/`、`src/`。
