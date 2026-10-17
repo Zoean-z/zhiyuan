@@ -1,4 +1,5 @@
 <script setup>
+import { admissionLevel, admissionDisplayText } from "../utils/recommendation";
 import { ElMessage } from "element-plus";
 import { ArrowRight, CaretBottom, CaretTop, Collection, CopyDocument, Document, Expand, Fold, Monitor, Plus, Promotion, Refresh, RefreshRight, School, Search, SwitchButton, TrendCharts, User, VideoPause } from "@element-plus/icons-vue";
 import { computed, inject, nextTick, onMounted, ref, watch } from "vue";
@@ -86,6 +87,7 @@ const QUESTION_POOL = [
 const quickQuestions = ref(QUESTION_POOL.slice(0, 4));
 
 const TOOL_LABELS = {
+  admissionResearch: "院校资料分析",
   getUserProfile: "已读取用户画像",
   getCurrentPlan: "已读取当前志愿表",
   getMajorOverview: "已读取专业资料",
@@ -564,6 +566,8 @@ function stopGeneration() {
   if (abortRef.value) abortRef.value.abort();
 }
 
+const pendingResearchContext = ref(null);
+let turnResearchContext = null;
 async function sendMessage(content = draft.value) {
   const text = String(content || "").trim();
   if (!text || sending.value) return;
@@ -571,6 +575,8 @@ async function sendMessage(content = draft.value) {
     await createConversation(text.slice(0, 12));
     if (!activeConversationId.value) return;
   }
+  turnResearchContext = pendingResearchContext.value;
+  pendingResearchContext.value = null;
   const turnStartIndex = messages.value.length;
   const optimistic = { id: `temp-${Date.now()}`, role: "user", messageType: "text", content: text, createdAt: new Date().toISOString() };
   messages.value.push(optimistic);
@@ -607,6 +613,7 @@ async function sendMessage(content = draft.value) {
   } finally {
     finalizeLiveMessage();
     sending.value = false;
+    turnResearchContext = null;
     abortRef.value = null;
     if (usedWriteTool) {
       await loadPlans(activePlanId.value);
@@ -625,7 +632,7 @@ async function runStreamTurn(text) {
     response = await fetch(`/api/agent/conversations/${activeConversationId.value}/messages/stream`, {
       method: "POST",
       headers: getAuthHeaders({ "Content-Type": "application/json", Accept: "text/event-stream" }),
-      body: JSON.stringify({ content: text, planId: requestPlanId() }),
+      body: JSON.stringify({ content: text, planId: requestPlanId(), ...(turnResearchContext ? { researchContext: turnResearchContext } : {}) }),
       signal: controller.signal
     });
   } catch (ex) {
@@ -670,7 +677,11 @@ async function runStreamTurn(text) {
       data = {};
     }
     if (eventName === "tool_call") {
-      pushEventMessage({ role: "assistant", messageType: "tool_call", toolName: data.toolName, content: data.content || "" });
+      if (data.toolName === "admissionResearch") {
+        const existing = messages.value.findLast(m => m.messageType === "tool_call" && m.toolName === data.toolName && m.id?.startsWith?.("evt-"));
+        if (existing) existing.content = data.content || "正在分析院校资料";
+        else pushEventMessage({ role: "assistant", messageType: "tool_call", toolName: data.toolName, content: data.content || "" });
+      } else pushEventMessage({ role: "assistant", messageType: "tool_call", toolName: data.toolName, content: data.content || "" });
       streamingStarted.value = true;
       await scrollMessagesToBottom();
     } else if (eventName === "tool_result") {
@@ -691,6 +702,8 @@ async function runStreamTurn(text) {
       if (message.messageType === "text") {
         const target = ensureLiveMessage();
         target.content = message.content || target.content;
+        target.renderedContent = prepareStreamingMarkdown(target.content);
+        streamingStarted.value = true;
         if (WRITE_TOOLS.includes(message.toolName)) usedWriteTool = true;
       } else {
         pushEventMessage(message);
@@ -753,8 +766,8 @@ async function runLegacyTurn(text) {
   const turn = await apiFetch(`/api/agent/conversations/${activeConversationId.value}/messages`, {
     method: "POST",
     headers: getAuthHeaders({ "Content-Type": "application/json" }),
-    body: JSON.stringify({ content: text, planId: requestPlanId() }),
-    timeoutMs: 25000
+    body: JSON.stringify({ content: text, planId: requestPlanId(), ...(turnResearchContext ? { researchContext: turnResearchContext } : {}) }),
+    timeoutMs: turnResearchContext ? 115000 : 25000
   });
   const generated = Array.isArray(turn.generatedMessages) ? turn.generatedMessages : [];
   let usedWriteTool = false;
@@ -784,9 +797,32 @@ function recommendationCards(message) {
 }
 function hasProfilePayload(message) { return message?.toolName === "getUserProfile" && !!message?.payload; }
 function hasPlanPayload(message) { return message?.toolName === "getCurrentPlan" && !!message?.payload; }
+function safeSourceUrl(value) {
+  try { const url = new URL(value); return ["https:", "http:"].includes(url.protocol) ? url.href : undefined; }
+  catch { return undefined; }
+}
 function hasErrorPayload(message) { return message?.messageType === "tool_result" && !!message?.payload?.errorCategory; }
 
+function researchStatus(group, index) {
+  const tools = group.tools.filter(tool => tool.toolName === "admissionResearch");
+  const result = tools.findLast(tool => tool.messageType === "tool_result");
+  const current = index === groups.value.length - 1 && sending.value;
+  if (!tools.length && !(current && turnResearchContext)) return null;
+  if (result) {
+    const sources = result.payload?.sources?.length || 0;
+    return { active: false, title: "资料整理完成", detail: `已完成 ${result.payload?.searchesCompleted || 0} 次搜索 · ${sources} 条资料来源${sources ? "" : " · 本次未取得联网资料"}` };
+  }
+  if (!current) return { active: false, title: "研判未完成", detail: "本次未取得完整研究结果，可重新发起分析。" };
+  const detail = tools.findLast(tool => tool.messageType === "tool_call")?.content || "正在核对考生条件与院校历史资料";
+  const title = detail.includes("联网检索") ? "正在搜索…"
+    : detail.includes("补充网页") ? "正在阅读网页…"
+    : detail.includes("综合") || detail.includes("基于本地") ? "正在分析并生成报告…"
+    : "正在读取资料…";
+  return { active: true, title, detail };
+}
+
 function toolChipText(tool) {
+  if (tool.toolName === "admissionResearch") return tool.messageType === "tool_result" ? "资料整理完成" : (sending.value ? tool.content || "正在分析院校资料" : "院校资料分析");
   if (tool.messageType === "tool_call") return `正在调用工具 · ${tool.toolName || "agent"}`;
   if (hasErrorPayload(tool)) return `${TOOL_LABELS[tool.toolName] || tool.toolName || "工具"} 执行失败`;
   return TOOL_LABELS[tool.toolName] || tool.toolName || "工具已执行";
@@ -806,8 +842,12 @@ function strategyTagType(value) {
   return "success";
 }
 
+function stripResearchSourceFooter(text) {
+  return text.replace(/\n\n本次检索来源（截止 [^\r\n]+）：\r?\n(?:- \[\d+\] [^\r\n]+(?:\r?\n|$))+\s*$/, "");
+}
+
 function answerHtml(message) {
-  const source = message.streaming ? message.renderedContent || "" : message.content || "";
+  const source = admissionDisplayText(stripResearchSourceFooter(message.streaming ? message.renderedContent || "" : message.content || ""));
   return renderMarkdown(source);
 }
 
@@ -828,7 +868,7 @@ function expandAnswer(message) {
 
 async function copyAnswer(message) {
   try {
-    await navigator.clipboard.writeText(message.content || "");
+    await navigator.clipboard.writeText(admissionDisplayText(stripResearchSourceFooter(message.content || "")));
     ElMessage.success("已复制回答内容");
   } catch {
     ElMessage.warning("复制失败，请手动选择文本复制");
@@ -907,11 +947,29 @@ async function confirmAddItem() {
 
 watch(activePlanId, loadActivePlan);
 watch(() => messages.value.length, () => scrollMessagesToBottom());
+let researchMounted = false;
+async function consumeResearchRoute() {
+  const raw = route.query.research;
+  if (typeof raw !== "string" || sending.value) return false;
+  try {
+    const context = JSON.parse(raw);
+    if (!Number.isInteger(context.schoolId) || context.schoolId <= 0) throw new Error("请选择有效院校");
+    await createConversation("院校录取分析");
+    pendingResearchContext.value = context;
+    const question = String(route.query.q || "请分析这所学校的录取机会");
+    await router.replace({ path: route.path, query: {} });
+    await sendMessage(question);
+  } catch (ex) { ElMessage.error(ex.message || "无法发起院校分析"); }
+  return true;
+}
+watch(() => route.query.research, () => { if (researchMounted) consumeResearchRoute(); });
 onMounted(async () => {
   const [plansLoaded] = await Promise.all([loadPlans(), loadConversations()]);
-  if (plansLoaded) await syncLocalSheetWhenNoCloudDraft();
+  if (plansLoaded && !route.query.research) await syncLocalSheetWhenNoCloudDraft();
   if (!conversations.value.length) await createConversation();
   await loadActivePlan();
+  researchMounted = true;
+  if (await consumeResearchRoute()) return;
   const presetQuestion = Array.isArray(route.query.q) ? route.query.q[0] : route.query.q;
   if (typeof presetQuestion === "string" && presetQuestion.trim() && !draft.value.trim()) {
     draft.value = presetQuestion.trim();
@@ -1113,9 +1171,16 @@ onMounted(async () => {
                 <div v-if="group.user" class="xz-msg__q">{{ group.user.content }}</div>
                 <div v-if="group.tools.length || group.assistant.length || (sending && gi === groups.length - 1)" class="xz-msg__a">
                   <div class="xz-msg__card">
-                    <div v-if="group.tools.length" class="gk-tools">
+                    <div v-if="researchStatus(group, gi)" class="gk-research-status" :class="{ 'is-active': researchStatus(group, gi).active }" role="status" aria-live="polite" aria-atomic="true">
+                      <el-icon class="gk-research-status__icon"><RefreshRight v-if="researchStatus(group, gi).active" /><Search v-else /></el-icon>
+                      <div>
+                        <strong>{{ researchStatus(group, gi).title }}</strong>
+                        <p>{{ researchStatus(group, gi).detail }}</p>
+                      </div>
+                    </div>
+                    <div v-if="group.tools.some(tool => tool.toolName !== 'admissionResearch')" class="gk-tools">
                       <span
-                        v-for="(tool, ti) in group.tools"
+                        v-for="(tool, ti) in group.tools.filter(tool => tool.toolName !== 'admissionResearch')"
                         :key="`t-${gi}-${ti}`"
                         :class="[
                           'gk-tool-chip',
@@ -1124,6 +1189,9 @@ onMounted(async () => {
                       >{{ toolChipText(tool) }}</span>
                     </div>
                     <div v-for="(tool, ti) in group.tools" :key="`p-${gi}-${ti}`">
+                      <div v-if="tool.payload?.sources?.length" class="gk-research-sources">
+                        <a v-for="source in tool.payload.sources" :key="source.url" :href="safeSourceUrl(source.url)" target="_blank" rel="noopener noreferrer">[{{ source.id }}] {{ source.title || source.url }}</a>
+                      </div>
                       <div v-if="hasProfilePayload(tool)" class="gk-payload gk-payload--profile">
                         <span>分数<strong>{{ tool.payload.score ?? "-" }}</strong></span>
                         <span>科类<strong>{{ tool.payload.subjectType || "-" }}</strong></span>
@@ -1145,7 +1213,7 @@ onMounted(async () => {
                             </el-tag>
                           </div>
                           <div class="gk-card__stats">
-                            <span>录取概率 <strong>{{ item.admissionProbability == null ? "待测" : item.admissionProbability + "%" }}</strong></span>
+                            <span>机会等级 <strong>{{ item.admissionProbability == null ? "待测" : admissionLevel(item.admissionProbability) }}</strong></span>
                             <span>最低位次 <strong>{{ item.minRank ?? "-" }}</strong></span>
                             <span>位次差 <strong>{{ item.rankGap ?? "-" }}</strong></span>
                           </div>
@@ -1233,7 +1301,7 @@ onMounted(async () => {
             <el-tag size="small" :type="strategyTagType(item.strategy)" effect="light">{{ formatStrategyLabel(item.strategy) }}</el-tag>
           </div>
           <div class="gk-card__stats">
-            <span>录取概率 <strong>{{ item.admissionProbability == null ? "待测" : item.admissionProbability + "%" }}</strong></span>
+            <span>机会等级 <strong>{{ item.admissionProbability == null ? "待测" : admissionLevel(item.admissionProbability) }}</strong></span>
             <span>最低位次 <strong>{{ item.minRank ?? "-" }}</strong></span>
           </div>
         </article>
@@ -1270,3 +1338,16 @@ onMounted(async () => {
     </el-dialog>
   </section>
 </template>
+
+<style scoped>
+.gk-research-status { display:flex; align-items:flex-start; gap:12px; margin:0 0 18px; padding:16px 18px; border:1px solid #f4dfce; border-radius:14px; background:#fff9f3; color:#9b5425; }
+.gk-research-status__icon { flex-shrink:0; margin-top:2px; font-size:21px; }
+.gk-research-status > div { min-width:0; }
+.gk-research-status strong { font-size:16px; line-height:1.5; color:#9b4819; }
+.gk-research-status p { margin:5px 0 0; font-size:13px; line-height:1.7; overflow-wrap:anywhere; color:#8b7363; }
+.gk-research-status.is-active .gk-research-status__icon { animation:gk-research-spin 1.4s linear infinite; }
+@keyframes gk-research-spin { to { transform:rotate(360deg); } }
+@media (prefers-reduced-motion:reduce) { .gk-research-status.is-active .gk-research-status__icon { animation:none; } }
+.gk-research-sources { display:flex; flex-direction:column; gap:6px; margin:8px 0; overflow-wrap:anywhere; }
+.gk-research-sources a { color:#b75015; font-size:13px; }
+</style>

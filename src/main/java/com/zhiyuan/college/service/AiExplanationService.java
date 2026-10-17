@@ -1,5 +1,7 @@
 package com.zhiyuan.college.service;
 
+import com.zhiyuan.college.util.AdmissionAssessmentDisplay;
+
 import com.zhiyuan.college.model.dto.RecommendationItemResponse;
 import com.zhiyuan.college.model.dto.RecommendationRequest;
 import com.zhiyuan.college.model.enums.RecommendationMode;
@@ -92,7 +94,7 @@ public class AiExplanationService {
         }
 
         if (item.getAdmissionProbability() != null) {
-            reasons.add(String.format("规则测算录取概率约为 %d%%", item.getAdmissionProbability()));
+            reasons.add("规则参考录取机会" + AdmissionAssessmentDisplay.level(item.getAdmissionProbability()));
         }
 
         if (item.getMajorName() != null
@@ -107,9 +109,6 @@ public class AiExplanationService {
             reasons.add("院校标签匹配：" + String.join("/", item.getSchoolTags()));
         }
 
-        if (item.getRiskScore() != null) {
-            reasons.add(String.format("风险指数 %d/100", item.getRiskScore()));
-        }
         return reasons;
     }
 

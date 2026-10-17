@@ -1,8 +1,11 @@
 <script setup>
+import { useRouter } from "vue-router";
+import { admissionLevel, admissionDisplayText, admissionResearchRoute } from "../utils/recommendation";
 import { computed } from "vue";
 import { OfficeBuilding } from "@element-plus/icons-vue";
 import { normalizeItem, recommendationBasisLabel } from "../utils/recommendation";
 
+const researchRouter = useRouter();
 const props = defineProps({
   item: { type: Object, required: true },
   strategy: { type: String, default: "safe" },
@@ -27,10 +30,7 @@ const showRankMetric = computed(() =>
   || model.value.userRank != null
 );
 const probabilityText = computed(() =>
-  model.value.admissionProbability == null ? "-" : `${model.value.admissionProbability}%`
-);
-const riskText = computed(() =>
-  model.value.riskScore == null ? "-" : `${model.value.riskScore}/100`
+  model.value.admissionProbability == null ? "-" : admissionLevel(model.value.admissionProbability)
 );
 const matchReasons = computed(() =>
   Array.isArray(model.value.matchReasons) ? model.value.matchReasons.filter(Boolean).slice(0, 3) : []
@@ -71,7 +71,8 @@ function handleAction() {
 
 <template>
   <article class="university-card">
-    <header class="university-card__head">
+    <header class="university-card__head" style="flex-wrap:wrap;gap:8px">
+      <el-button size="small" @click="researchRouter.push(admissionResearchRoute(model.universityId, model.universityName, model.majorName))">AI 录取分析</el-button>
       <div class="university-card__identity">
         <span class="university-card__mark"><el-icon><OfficeBuilding /></el-icon></span>
         <div class="university-card__title">
@@ -98,12 +99,8 @@ function handleAction() {
     <div class="university-card__content">
       <div class="university-card__metrics">
         <div class="university-card__metric">
-          <span>录取概率</span>
+          <span>机会等级</span>
           <strong class="university-card__probability">{{ probabilityText }}</strong>
-        </div>
-        <div class="university-card__metric">
-          <span>风险指数</span>
-          <strong>{{ riskText }}</strong>
         </div>
         <div class="university-card__metric">
           <span>{{ cutoffLabel }}</span>

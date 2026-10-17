@@ -1,4 +1,5 @@
 <script setup>
+import { admissionLevel, admissionDisplayText, admissionResearchRoute } from "../utils/recommendation";
 import { Promotion } from "@element-plus/icons-vue";
 import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
@@ -95,8 +96,8 @@ async function fetchSchools() {
         minRank: s.minRank,
         probability: prob,
         extremelyLow,
-        probText: prob != null ? `${prob}%` : extremelyLow ? "0%" : "待测",
-        probHint: s.probability?.explanation || "设置高考信息后可测算录取概率",
+        probText: extremelyLow ? "极低" : admissionLevel(prob),
+        probHint: admissionDisplayText(s.probability?.explanation) || "设置高考信息后可测算录取概率",
         rankGap: s.probability?.rankGap ?? null,
         scoreGap: s.probability?.scoreGap ?? null,
         strategyKey: strategy?.key ?? "unknown",
@@ -286,7 +287,7 @@ function goAgentPlan() {
                 <p><b>{{ item.minScore == null ? "暂无" : item.minScore }}</b><span>最低分</span></p>
                 <p><b>{{ item.minRank == null ? "待测" : item.minRank.toLocaleString() }}</b><span>最低位次</span></p>
                 <p class="gk-choose__rate" :class="{ 'is-unknown': item.extremelyLow }" :title="item.probHint">
-                  <b>{{ item.probText }}</b><span>录取概率</span>
+                  <b>{{ item.probText }}</b><span>机会等级</span>
                 </p>
               </div>
               <div class="gk-choose__gap">
@@ -298,6 +299,7 @@ function goAgentPlan() {
                 </span>
               </div>
               <span class="gk-choose__prob" :class="probClass(item)" :title="item.probHint">{{ item.prob }}</span>
+              <button class="gk-school__action" type="button" @click.stop="router.push(admissionResearchRoute(item.id, item.name))">AI 录取分析</button>
               <button class="gk-school__action" type="button" @click.stop="openSchool(item)">院校详情 &gt;</button>
             </li>
             <li v-if="loadError" class="gk-school__empty">院校列表加载失败：{{ loadError }}（请刷新重试）</li>
@@ -322,3 +324,9 @@ function goAgentPlan() {
     </main>
   </div>
 </template>
+
+<style scoped>
+.gk-choose { flex-wrap:wrap; gap:10px; }
+.gk-choose__info { flex:1 1 210px; min-width:0; }
+.gk-school__action { flex-shrink:0; white-space:nowrap; }
+</style>

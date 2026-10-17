@@ -70,14 +70,14 @@ test("P2-D probability badges consume backend strategy instead of local threshol
     assert.doesNotMatch(content, /["']<1%?["']/);
   }
   assert.match(schools, /detail\.strategy/);
-  assert.match(schools, /label:\s*["']概率极低["'].*value:\s*["']0%["']/s);
+  assert.match(schools, /label:\s*["']概率极低["'].*value:\s*["']极低["']/s);
   assert.match(detail, /detail\.value\.strategy/);
   assert.match(detail, /full:\s*["']概率极低["']/);
   assert.match(choose, /probability\?\.strategy/);
-  assert.match(choose, /extremelyLow\s*\?\s*["']0%["']\s*:\s*["']待测["']/);
+  assert.match(choose, /extremelyLow\s*\?\s*["']极低["']\s*:\s*admissionLevel\(prob\)/);
   assert.match(sheet, /probability\?\.strategy/);
   assert.match(sheet, /prob == null \|\| prob === ["']["']\) return null/);
-  assert.match(sheet, /isExtremelyLowProbability\(detail\)\s*\?\s*["']0%["']\s*:\s*["']待测["']/);
+  assert.match(sheet, /return admissionLevel\(prob, detail\)/);
 });
 
 test("volunteer flow contains no smart fill, purity, or fabricated history", async () => {

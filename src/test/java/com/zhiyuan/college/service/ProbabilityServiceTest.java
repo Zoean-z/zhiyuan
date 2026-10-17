@@ -87,7 +87,7 @@ class ProbabilityServiceTest {
         assertEquals(26000, response.userRank());
         assertEquals(ScoreRankMappingService.SOURCE_EXACT, response.rankSource());
         assertNotNull(response.probability());
-        assertTrue(response.explanation().contains("综合录取概率"));
+        assertTrue(response.explanation().contains("规则参考录取机会"));
     }
 
     @Test

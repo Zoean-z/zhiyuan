@@ -1,5 +1,7 @@
 package com.zhiyuan.college.service.agent;
 
+import com.zhiyuan.college.util.AdmissionAssessmentDisplay;
+
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.zhiyuan.college.model.dto.AgentChatTurnResponse;
 import com.zhiyuan.college.model.dto.AgentMessageResponse;
@@ -35,6 +37,76 @@ public class AgentChatService {
     private final ObjectMapper objectMapper;
     private final AgentReplyFormatter replyFormatter;
     private final AgentFailureRewriteService failureRewriteService;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    private AdmissionResearchService admissionResearchService;
+
+    /** Explicit read-only mode; never routes through business tool selection. */
+    public AgentChatTurnResponse researchMessage(Long userId, Long conversationId, String content,
+            UserAccount user, com.zhiyuan.college.model.dto.AdmissionResearchContext context, SseEmitter emitter) {
+        // appendMessage verifies conversation ownership before any external work.
+        agentConversationService.appendMessage(userId, conversationId, AgentRoles.USER,
+                AgentMessageTypes.TEXT, content.trim(), null, null);
+        AtomicBoolean stopped = new AtomicBoolean(false);
+        Thread worker = Thread.currentThread();
+        if (emitter != null) {
+            emitter.onCompletion(() -> stopped.set(true));
+            emitter.onTimeout(() -> { stopped.set(true); worker.interrupt(); });
+            emitter.onError(ex -> { stopped.set(true); worker.interrupt(); });
+        }
+        var heartbeat = emitter == null ? null : java.util.concurrent.Executors.newSingleThreadScheduledExecutor(task -> {
+            Thread thread = new Thread(task, "admission-research-heartbeat"); thread.setDaemon(true); return thread;
+        });
+        if (heartbeat != null) heartbeat.scheduleAtFixedRate(() -> {
+            if (stopped.get()) return;
+            try { emitter.send(SseEmitter.event().name("ping").data(Map.of(), MediaType.APPLICATION_JSON)); }
+            catch (Exception ex) { stopped.set(true); worker.interrupt(); }
+        }, 2, 2, java.util.concurrent.TimeUnit.SECONDS);
+        List<AgentMessageResponse> generated = new ArrayList<>();
+        try {
+            var call = agentConversationService.appendMessage(userId, conversationId, AgentRoles.ASSISTANT,
+                    AgentMessageTypes.TOOL_CALL, "正在整理院校资料并联网分析", "admissionResearch", null);
+            generated.add(agentConversationService.toMessageResponse(call));
+            var result = admissionResearchService.analyse(user, context, step -> {
+                if (stopped.get()) throw new java.util.concurrent.CancellationException();
+                if (emitter != null) {
+                    try { emitter.send(SseEmitter.event().name("tool_call").data(
+                            Map.of("toolName", "admissionResearch", "content", step), MediaType.APPLICATION_JSON)); }
+                    catch (Exception ex) { stopped.set(true); throw new java.util.concurrent.CancellationException(); }
+                }
+            }, stopped::get);
+            if (stopped.get()) throw new java.util.concurrent.CancellationException();
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("sources", result.sources()); payload.put("gaps", result.gaps());
+            payload.put("searchesCompleted", result.searchesCompleted());
+            var evidence = agentConversationService.appendMessage(userId, conversationId, AgentRoles.TOOL,
+                    AgentMessageTypes.TOOL_RESULT, "资料整理完成", "admissionResearch", toJson(payload));
+            generated.add(agentConversationService.toMessageResponse(evidence));
+            var answer = agentConversationService.appendMessage(userId, conversationId, AgentRoles.ASSISTANT,
+                    AgentMessageTypes.TEXT, result.report(), null, null);
+            generated.add(agentConversationService.toMessageResponse(answer));
+            if (emitter != null && !stopped.get()) {
+                sendEvent(emitter, "tool_result", Map.of("toolName", "admissionResearch", "content", "资料整理完成", "payload", payload));
+                sendEvent(emitter, "message", Map.of("message", Map.of("role", "assistant", "messageType", "text", "content", result.report())));
+                sendDone(emitter);
+            }
+            return new AgentChatTurnResponse(conversationId, generated);
+        } catch (java.util.concurrent.CancellationException ex) {
+            if (emitter != null) emitter.complete();
+            return new AgentChatTurnResponse(conversationId, generated);
+        } catch (RuntimeException ex) {
+            if (emitter == null) throw ex;
+            String message = ex instanceof ResponseStatusException response ? response.getReason() : "院校分析暂未完成，请稍后重试";
+            var answer = agentConversationService.appendMessage(userId, conversationId, AgentRoles.ASSISTANT,
+                    AgentMessageTypes.TEXT, message, null, null);
+            sendEvent(emitter, "message", Map.of("message", Map.of("role", "assistant", "messageType", "text", "content", message)));
+            sendDone(emitter);
+            return new AgentChatTurnResponse(conversationId, List.of(agentConversationService.toMessageResponse(answer)));
+        } finally {
+            if (heartbeat != null) heartbeat.shutdownNow();
+        }
+    }
+
 
     public AgentChatService(AgentConversationService agentConversationService,
                             AgentDecisionService agentDecisionService,
@@ -125,7 +197,7 @@ public class AgentChatService {
                     conversationId,
                     AgentRoles.ASSISTANT,
                     AgentMessageTypes.TEXT,
-                    decision.getReply(),
+                    AdmissionAssessmentDisplay.text(decision.getReply()),
                     null,
                     null
             );
@@ -164,7 +236,7 @@ public class AgentChatService {
                         ? "好的，请继续告诉我你的需求。" : decision.getReply();
                 agentConversationService.appendMessage(
                         userId, conversationId, AgentRoles.ASSISTANT, AgentMessageTypes.TEXT, reply, null, null);
-                streamTemplateText(emitter, reply);
+                streamTemplateText(emitter, AdmissionAssessmentDisplay.text(reply));
                 sendDone(emitter);
                 return;
             }
@@ -269,10 +341,10 @@ public class AgentChatService {
                     toJson(decision.getToolArgs()),
                     extractFailureField(toolResult, "errorMessage"));
             if (rewritten != null && !rewritten.isBlank()) {
-                return rewritten;
+                return AdmissionAssessmentDisplay.text(rewritten);
             }
         }
-        return fallbackText;
+        return AdmissionAssessmentDisplay.text(fallbackText);
     }
 
     private boolean isFailurePayload(AgentToolResult toolResult) {

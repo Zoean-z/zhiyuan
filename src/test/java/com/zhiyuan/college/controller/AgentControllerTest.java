@@ -28,7 +28,7 @@ import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.RequestBuilder;
 import org.springframework.web.server.ResponseStatusException;
 
-@SpringBootTest
+@SpringBootTest(properties = "spring.datasource.url=jdbc:h2:mem:agent-controller-research;MODE=MySQL;DATABASE_TO_UPPER=false;DB_CLOSE_DELAY=-1")
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 class AgentControllerTest {
@@ -41,6 +41,38 @@ class AgentControllerTest {
 
     @Autowired
     private AgentToolExecutor agentToolExecutor;
+
+    @org.springframework.boot.test.mock.mockito.MockBean
+    private com.zhiyuan.college.service.agent.AdmissionResearchService researchService;
+
+    @Test
+    void researchMode_shouldPersistReportInSyncAndSseWithoutChangingNormalRequests() throws Exception {
+        var research = new com.zhiyuan.college.service.agent.AdmissionResearchService.Result(
+                "来自资料的定性分析", List.of(Map.of("id", 1, "title", "官方招生", "url", "https://zsb.school.edu.cn/")), List.of(), 1);
+        org.mockito.Mockito.when(researchService.analyse(org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any())).thenReturn(research);
+        String token = loginAndGetToken("testuser", "123456", 620, "PHYSICS", "湖南");
+        var created = mockMvc.perform(post("/api/agent/conversations")
+                .header("Authorization", "Bearer " + token).contentType(MediaType.APPLICATION_JSON).content("{}"))
+                .andExpect(status().isOk()).andReturn();
+        long id = objectMapper.readTree(created.getResponse().getContentAsString()).path("id").asLong();
+        String body = "{\"content\":\"分析目标院校\",\"researchContext\":{\"schoolId\":1,\"targetYear\":2026}}";
+        mockMvc.perform(post("/api/agent/conversations/" + id + "/messages")
+                .header("Authorization", "Bearer " + token).contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.generatedMessages[2].content").value("来自资料的定性分析"));
+        var streamed = mockMvc.perform(post("/api/agent/conversations/" + id + "/messages/stream")
+                .header("Authorization", "Bearer " + token).contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(request().asyncStarted()).andReturn();
+        var completed = mockMvc.perform(asyncDispatch(streamed)).andExpect(status().isOk()).andReturn();
+        Assertions.assertTrue(completed.getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8).contains("来自资料的定性分析"));
+        mockMvc.perform(post("/api/agent/conversations/" + id + "/messages")
+                .header("Authorization", "Bearer " + token).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"content\":\"分析\",\"researchContext\":{\"schoolId\":0,\"targetYear\":2026}}"))
+                .andExpect(status().isBadRequest());
+        org.mockito.Mockito.verify(researchService, org.mockito.Mockito.times(2)).analyse(
+                org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+    }
+
 
     @Test
     void conversation_shouldBeCreatedListedAndLoaded() throws Exception {

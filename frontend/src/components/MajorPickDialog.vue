@@ -1,4 +1,5 @@
 <script setup>
+import { admissionLevel, admissionDisplayText } from "../utils/recommendation";
 import { computed, ref, watch } from "vue";
 import { ElMessage } from "element-plus";
 import { useRouter } from "vue-router";
@@ -35,7 +36,7 @@ const tier = computed(() => {
   if (props.strategy === "guarantee") return { key: "guard", label: "保" };
   return { key: "safe", label: "稳" };
 });
-const probText = computed(() => (probability.value == null ? "" : `${probability.value}%`));
+const probText = computed(() => (probability.value == null ? "" : admissionLevel(probability.value)));
 
 const MAX_MAJORS = 6;
 const majorList = ref([]);

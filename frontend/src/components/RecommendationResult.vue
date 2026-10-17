@@ -1,4 +1,5 @@
 <script setup>
+import { admissionLevel, admissionDisplayText } from "../utils/recommendation";
 import { computed, ref, watch } from "vue";
 import { Search } from "@element-plus/icons-vue";
 import AiSummaryPanel from "./AiSummaryPanel.vue";
@@ -20,6 +21,14 @@ const props = defineProps({
   selectedPlanKeys: { type: Array, default: () => [] }
 });
 
+const researchConditions = computed(() => {
+  const meta = props.rankMeta || {};
+  return {
+    ...(meta.province ? { province: meta.province } : {}),
+    ...(meta.subjectType || meta.subjectTypeLabel ? { subjectType: meta.subjectType || meta.subjectTypeLabel } : {})
+  };
+});
+
 const emit = defineEmits(["add-item", "view-school-detail", "pick-majors"]);
 const activeTab = ref("rush");
 const rushList = computed(() => (Array.isArray(props.grouped?.rush) ? props.grouped.rush : []));
@@ -34,7 +43,7 @@ const TYPE_FILTERS = [
 ];
 const SORTERS = [
   { value: "DEFAULT", label: "综合排序" },
-  { value: "PROB", label: "概率从高到低" },
+  { value: "PROB", label: "机会从高到低" },
   { value: "DIFF", label: "分差从低到高" },
   { value: "RANK", label: "位次从高到低" }
 ];
@@ -194,6 +203,7 @@ function isItemAdded(item, strategy) {
                   :added="isItemAdded(item, 'rush')"
                   :user-score="userScore"
                   :user-rank="userRank"
+                  :research-conditions="researchConditions"
                   @add="emit('add-item', item, 'rush')"
                   @view-detail="emit('view-school-detail', item, 'rush')"
                   @pick-majors="emit('pick-majors', item, 'rush')"
@@ -217,6 +227,7 @@ function isItemAdded(item, strategy) {
                   :added="isItemAdded(item, 'safe')"
                   :user-score="userScore"
                   :user-rank="userRank"
+                  :research-conditions="researchConditions"
                   @add="emit('add-item', item, 'safe')"
                   @view-detail="emit('view-school-detail', item, 'safe')"
                   @pick-majors="emit('pick-majors', item, 'safe')"
@@ -240,6 +251,7 @@ function isItemAdded(item, strategy) {
                   :added="isItemAdded(item, 'guarantee')"
                   :user-score="userScore"
                   :user-rank="userRank"
+                  :research-conditions="researchConditions"
                   @add="emit('add-item', item, 'guarantee')"
                   @view-detail="emit('view-school-detail', item, 'guarantee')"
                   @pick-majors="emit('pick-majors', item, 'guarantee')"
@@ -258,10 +270,10 @@ function isItemAdded(item, strategy) {
 
     <AiSummaryPanel
       v-if="showAiSummary && (aiSummary || summary || finalAdvice || tips.length)"
-      :ai-summary="aiSummary"
-      :summary="summary"
-      :final-advice="finalAdvice"
-      :tips="tips"
+      :ai-summary="admissionDisplayText(aiSummary)"
+      :summary="admissionDisplayText(summary)"
+      :final-advice="admissionDisplayText(finalAdvice)"
+      :tips="tips.map(admissionDisplayText)"
     />
   </section>
 </template>

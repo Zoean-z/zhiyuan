@@ -26,6 +26,11 @@ mybatis-plus:
 server:
   port: ${SERVER_PORT:8080}
 ai:
+  search:
+    base-url: ${DEEPSEEK_SEARCH_BASE_URL:https://api.deepseek.com}
+    api-key: ${DEEPSEEK_SEARCH_API_KEY:}
+    max-queries: ${DEEPSEEK_SEARCH_MAX_QUERIES:8}
+    max-pages: ${DEEPSEEK_SEARCH_MAX_PAGES:6}
   qwen:
     enabled: ${QWEN_ENABLED:true}
     base-url: ${QWEN_BASE_URL:https://api.deepseek.com}

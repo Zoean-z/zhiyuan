@@ -1,16 +1,20 @@
 <script setup>
+import { useRouter } from "vue-router";
+import { admissionLevel, admissionDisplayText, admissionResearchRoute } from "../utils/recommendation";
 import { computed } from "vue";
 import GkSchoolLogo from "./GkSchoolLogo.vue";
 import { normalizeItem, recommendationBasisLabel } from "../utils/recommendation";
 import { rankOfScore as modelRankOfScore, scoreOfRank } from "../utils/scoreModel";
 
+const researchRouter = useRouter();
 const props = defineProps({
   item: { type: Object, required: true },
   strategy: { type: String, default: "safe" },
   added: { type: Boolean, default: false },
   showAddAction: { type: Boolean, default: false },
   userScore: { type: Number, default: null },
-  userRank: { type: Number, default: null }
+  userRank: { type: Number, default: null },
+  researchConditions: { type: Object, default: () => ({}) }
 });
 
 const emit = defineEmits(["add", "view-detail", "pick-majors"]);
@@ -33,7 +37,7 @@ const probability = computed(() => {
   if (model.value.admissionProbability != null) return Number(model.value.admissionProbability);
   return null;
 });
-const probabilityText = computed(() => (probability.value == null ? "待测" : `${probability.value}%`));
+const probabilityText = computed(() => (probability.value == null ? "待测" : admissionLevel(probability.value)));
 const tier = computed(() => {
   const t = model.value.strategy;
   if (t === "rush") return { key: "rush", label: "冲" };
@@ -110,7 +114,7 @@ function handleDetail() {
   <article class="mnz-rlrow" :class="`is-${tier.key}`">
     <div class="mnz-rlrow__top">
       <span class="mnz-rlrow__badge">
-        <em>{{ probabilityText }}</em>{{ tier.label }}
+        <em>{{ probabilityText }}</em>
       </span>
 
       <div class="mnz-rlrow__identity" @click="handleDetail">
@@ -136,7 +140,8 @@ function handleDetail() {
           <span>推荐指数</span>
           <el-rate :model-value="stars" disabled allow-half size="small" />
         </div>
-        <div class="mnz-rlrow__acts">
+        <div class="mnz-rlrow__acts" style="flex-wrap:wrap;gap:8px">
+          <button type="button" class="mnz-rlrow__majors" @click="researchRouter.push(admissionResearchRoute(model.universityId, model.universityName, model.majorName, { ...researchConditions, ...(userScore != null ? { score: userScore } : {}), ...(userRank != null ? { userRank } : {}) }))">AI 录取分析</button>
           <button type="button" class="mnz-rlrow__majors" @click="emit('pick-majors', item, strategy)">可填专业</button>
           <button
             v-if="showAddAction"

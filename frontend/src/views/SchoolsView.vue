@@ -1,4 +1,5 @@
 <script setup>
+import { admissionLevel, admissionDisplayText, admissionResearchRoute } from "../utils/recommendation";
 import { ArrowDown, Search } from "@element-plus/icons-vue";
 import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
@@ -67,7 +68,7 @@ const PROVINCE_OPTS = computed(() => ["不限", ...new Set(schools.value.map((s)
 const TYPE_OPTS = computed(() => ["不限", ...new Set(schools.value.map((s) => s.schoolType).filter(Boolean))]);
 const NATURE_OPTS = ["不限", "公办", "民办", "中外合作办学"];
 const FEATURE_OPTS = ["不限", "985", "双一流"];
-const SORT_OPTS = ["默认排序", "录取概率由高到低", "分数由高到低", "分数由低到高"];
+const SORT_OPTS = ["默认排序", "录取机会由高到低", "分数由高到低", "分数由低到高"];
 
 /* 专业筛选：真实专业目录（/api/majors）+ 开设院校集合（/api/majors/{id}/schools） */
 const majors = ref([]);
@@ -135,7 +136,7 @@ function probOfSchool(school) {
 function badgeOf(school) {
   const detail = probOfSchool(school);
   if (isExtremelyLowProbability(detail)) {
-    return { detail, key: "unknown", label: "概率极低", value: "0%", flame: false };
+    return { detail, key: "unknown", label: "概率极低", value: "极低", flame: false };
   }
   if (!detail || detail.probability == null || !detail.strategy) return null;
   const key = String(detail.strategy).toUpperCase();
@@ -149,7 +150,7 @@ function badgeOf(school) {
     detail,
     ...view,
     label: detail.strategyLabel || view.label,
-    value: `${detail.probability}%`,
+    value: admissionLevel(detail.probability, detail),
     flame: view.key === "rush"
   };
 }
@@ -175,7 +176,7 @@ function probTip(school) {
     : detail.scoreGap >= 0
       ? `分数高出 ${detail.scoreGap} 分`
       : `分数低 ${Math.abs(detail.scoreGap)} 分`;
-  return `${base}；你${rankText}、${scoreText} → 录取概率 ${detail.probability}%`;
+  return `${base}；你${rankText}、${scoreText} → 录取机会${admissionLevel(detail.probability, detail)}`;
 }
 
 function rankGapText(detail) {
@@ -205,7 +206,7 @@ const filtered = computed(() => {
   const sorted = [...list];
   if (sortKey.value === "分数由高到低") sorted.sort((a, b) => (minScoreOf(b) ?? -1) - (minScoreOf(a) ?? -1));
   else if (sortKey.value === "分数由低到高") sorted.sort((a, b) => (minScoreOf(a) ?? Number.MAX_SAFE_INTEGER) - (minScoreOf(b) ?? Number.MAX_SAFE_INTEGER));
-  else if (sortKey.value === "录取概率由高到低" && isReady.value) {
+  else if (sortKey.value === "录取机会由高到低" && isReady.value) {
     sorted.sort((a, b) => (probabilityDisplayValue(probOfSchool(b)) ?? -1) - (probabilityDisplayValue(probOfSchool(a)) ?? -1));
   }
   return sorted;
@@ -355,6 +356,7 @@ function goProfile() {
                   <i v-for="tag in (school.tags ? [school.tags] : [])" :key="tag">{{ tag }}</i>
                 </p>
               </div>
+              <button type="button" class="gks-research" @click.stop="router.push(admissionResearchRoute(school.id, school.name))">AI 录取分析</button>
               <button
                 v-if="badgeOf(school)"
                 class="gks-prob"
@@ -363,7 +365,7 @@ function goProfile() {
                 :title="probTip(school)"
                 @click.stop="openSchool(school)"
               >
-                <span>录取概率</span>
+                <span>机会等级</span>
                 <b>
                   <svg
                     v-if="badgeOf(school).flame"
@@ -379,14 +381,14 @@ function goProfile() {
                     <path d="M17.657 18.657A8 8 0 016.343 7.343S7 9 9 10c0-2 .5-5 2.986-7C14 5 16.09 5.777 17.656 7.343A7.975 7.975 0 0120 13a7.975 7.975 0 01-2.343 5.657z" />
                     <path d="M9.879 16.121A3 3 0 1012.015 11L11 14H9c0 .768.293 1.536.879 2.121z" />
                   </svg>
-                  {{ badgeOf(school).label }} {{ badgeOf(school).value }}
+                  {{ badgeOf(school).value }}
                 </b>
                 <i class="gks-prob__gap">
                   {{ rankGapText(badgeOf(school).detail) }}
                 </i>
               </button>
               <button v-else class="gks-prob gks-prob--empty" type="button" @click.stop="goProfile()">
-                <span>录取概率</span>
+                <span>机会等级</span>
                 <b>设置分数后测算</b>
                 <i class="gks-prob__gap">去设置高考信息 &gt;</i>
               </button>
@@ -404,8 +406,8 @@ function goProfile() {
               <div class="gks-source__block">
                 <h4>① 录取概率怎么算？</h4>
                 <p>
-                  先用<b>一分一段曲线</b>把你的分数换成全省位次；再把「院校最低位次 − 我的位次」（<b>权重 75%</b>）与「我的分数 − 院校最低分」（<b>权重 25%</b>）分段换算并加权求和；
-                  结果按 ≥75% 保底 / 55–74% 稳妥 / 35–54% 冲刺 / &lt;35% 高风险分档。与后端 <code>RecommendationPolicyService</code> 是同一套算法，前后端不会出现两个数。
+                  结合一分一段位次、院校历史最低位次和分数差，按现有规则划分参考机会等级；
+                  展示为极低、较低、低、中、高、较高、极高，冲稳保、筛选及排序沿用原规则。机会等级是规则参考，不代表统计录取概率。
                 </p>
               </div>
               <div class="gks-source__block">
@@ -436,3 +438,9 @@ function goProfile() {
     </main>
   </div>
 </template>
+
+<style scoped>
+.gks-research { flex-shrink:0; border:1px solid #ff8748; color:#c74f12; background:#fff7f0; border-radius:8px; padding:9px 12px; cursor:pointer; white-space:nowrap; }
+.gks-item { flex-wrap:wrap; gap:12px; }
+.gks-item__info { flex:1 1 240px; min-width:0; }
+</style>

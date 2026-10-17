@@ -59,7 +59,7 @@ class AiExplanationServiceTest {
         assertTrue(item.getMatchReasons().stream().anyMatch(reason -> reason.contains("位次")));
         assertTrue(item.getMatchReasons().stream().anyMatch(reason -> reason.contains("计算机")));
         assertTrue(item.getMatchReasons().stream().anyMatch(reason -> reason.contains("双一流")));
-        assertTrue(item.getExplanation().contains("规则测算录取概率"));
+        assertTrue(item.getExplanation().contains("规则参考录取机会"));
     }
 
     @Test

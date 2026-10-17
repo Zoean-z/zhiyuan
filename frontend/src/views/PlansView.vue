@@ -1,4 +1,5 @@
 <script setup>
+import { admissionLevel, admissionDisplayText } from "../utils/recommendation";
 import { computed, inject, onMounted, onUnmounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
@@ -228,7 +229,7 @@ onUnmounted(() => {
                       <p class="mnz-sheet__name">{{ slot.schoolName }}</p>
                       <p class="mnz-sheet__major">{{ describeSlot(slot) || "院校志愿" }}</p>
                     </div>
-                    <span class="mnz-sheet__prob">录取概率 {{ slot.prob == null ? "-" : `${slot.prob}%` }}</span>
+                    <span class="mnz-sheet__prob">机会等级 {{ slot.prob == null ? "-" : admissionLevel(slot.prob) }}</span>
                     <span class="mnz-sheet__rank">{{ slot.adjust === false ? "不服从调剂" : "服从调剂" }}</span>
                   </div>
                 </div>
@@ -330,7 +331,7 @@ onUnmounted(() => {
                 <span>{{ item.majorName || "院校志愿" }}</span>
               </div>
               <div class="plan-editor-item__metrics">
-                <span>录取概率 {{ item.admissionProbability == null ? "-" : `${item.admissionProbability}%` }}</span>
+                <span>机会等级 {{ item.admissionProbability == null ? "-" : admissionLevel(item.admissionProbability) }}</span>
                 <span>位次 {{ item.minRank ?? "-" }}</span>
               </div>
               <el-select v-model="item.strategy" class="plan-editor-item__strategy" aria-label="志愿档位">

@@ -96,6 +96,7 @@ public class AgentFallbackAdviceService {
 
     private String buildSystemPrompt() {
         return """
+                不要输出百分比录取概率或数字风险指数，使用定性机会等级。
                 你是资深高考志愿填报顾问。当前推荐系统没有返回精确匹配结果，可能是数据覆盖不足或筛选条件较严格，需要你基于通用高考常识给出结构化方向性建议。
 
                 输出格式（纯 markdown，不要代码块包裹）：

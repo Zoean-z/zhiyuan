@@ -54,6 +54,9 @@ public class AgentController {
     @PostMapping("/{id}/messages")
     public AgentChatTurnResponse sendMessage(@PathVariable("id") Long id,
                                              @Valid @RequestBody AgentMessageCreateRequest request) {
+        if (request.getResearchContext() != null) {
+            return agentChatService.researchMessage(currentUserId(), id, request.getContent(), currentUser(), request.getResearchContext(), null);
+        }
         return agentChatService.sendMessage(currentUserId(), id, request.getContent(), request.getPlanId(), currentUser());
     }
 
@@ -67,7 +70,11 @@ public class AgentController {
                 new org.springframework.web.servlet.mvc.method.annotation.SseEmitter(120_000L);
         Thread thread = new Thread(() -> {
             try {
-                agentChatService.streamMessage(userId, id, request.getContent(), request.getPlanId(), user, emitter);
+                if (request.getResearchContext() != null) {
+                    agentChatService.researchMessage(userId, id, request.getContent(), user, request.getResearchContext(), emitter);
+                } else {
+                    agentChatService.streamMessage(userId, id, request.getContent(), request.getPlanId(), user, emitter);
+                }
             } catch (Exception ex) {
                 try {
                     emitter.completeWithError(ex);

@@ -9,6 +9,12 @@ public class AgentMessageCreateRequest {
 
     private Long planId;
 
+    @jakarta.validation.Valid
+    private AdmissionResearchContext researchContext;
+
+    public AdmissionResearchContext getResearchContext() { return researchContext; }
+    public void setResearchContext(AdmissionResearchContext value) { researchContext = value; }
+
     public String getContent() {
         return content;
     }

@@ -1,3 +1,4 @@
+import { admissionLevel } from "./recommendation.js";
 /**
  * ══════════════════════════════════════════════════════════════
  *  统一「分数 ↔ 位次 ↔ 录取概率」模型（全站唯一数据口径）
@@ -396,5 +397,5 @@ export function probabilityExplain({ probability, scoreGap, rankGap, basis }) {
     parts.push(scoreGap >= 0 ? `分数高出 ${scoreGap} 分` : `分数低 ${Math.abs(scoreGap)} 分`);
   }
   const weight = basis === "RANK" ? "位次权重 75% + 分数权重 25%" : "仅按分差测算";
-  return `${parts.join("，")}；按${weight}折算，录取概率约 ${probability}%`;
+  return `${parts.join("，")}；按${weight}折算，录取机会${admissionLevel(probability)}`;
 }

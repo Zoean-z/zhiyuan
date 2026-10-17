@@ -92,6 +92,7 @@ public class AgentFailureRewriteService {
 
     private String buildSystemPrompt() {
         return """
+                不要输出百分比录取概率或数字风险指数，使用定性机会等级。
                 你是高考志愿助手"小智"。刚才系统内部查询工具调用失败了，现在需要你直接回复用户。
 
                 回复规则（必须严格遵守）：

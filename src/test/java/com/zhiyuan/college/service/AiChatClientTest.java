@@ -34,6 +34,25 @@ class AiChatClientTest {
 
     private HttpServer server;
 
+    @Test
+    void researchChat_shouldExplicitlyDisableDeepSeekThinkingWithoutChangingOrdinaryChat() throws Exception {
+        var requests = new CopyOnWriteArrayList<com.fasterxml.jackson.databind.JsonNode>();
+        var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/chat/completions", exchange -> {
+            requests.add(mapper.readTree(exchange.getRequestBody()));
+            writeJson(exchange, 200, "{\"choices\":[{\"message\":{\"content\":\"定性分析正文\"}}]}");
+        });
+        server.start();
+        var client = new AiChatClient(RestClient.builder(), "http://localhost:" + server.getAddress().getPort(),
+                "test-key", "deepseek-flash", 1, 0);
+        assertEquals("定性分析正文", client.researchChat("分析助手", "院校与检索资料", 5000));
+        client.chat("分析助手", "普通对话", 0.3, false);
+        assertEquals("disabled", requests.get(0).path("thinking").path("type").asText());
+        assertEquals(3000, requests.get(0).path("max_tokens").asInt());
+        assertFalse(requests.get(1).has("thinking"));
+    }
+
     @AfterEach
     void tearDown() {
         if (server != null) {

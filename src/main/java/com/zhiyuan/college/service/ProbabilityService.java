@@ -1,5 +1,7 @@
 package com.zhiyuan.college.service;
 
+import com.zhiyuan.college.util.AdmissionAssessmentDisplay;
+
 import com.zhiyuan.college.config.RecommendationScoringProperties;
 import com.zhiyuan.college.mapper.AdmissionCutoffMapper;
 import com.zhiyuan.college.mapper.MajorAdmissionCutoffMapper;
@@ -295,17 +297,7 @@ public class ProbabilityService {
             return text.toString();
         }
 
-        if (breakdown.rankProbability() != null && breakdown.scoreProbability() != null) {
-            text.append("位次口径 ").append(breakdown.rankProbability()).append("%、分数口径 ")
-                    .append(breakdown.scoreProbability()).append("%，按位次 ")
-                    .append(percent(scoringProperties.getRankWeight())).append("% + 分数 ")
-                    .append(percent(scoringProperties.getScoreWeight())).append("% 加权，");
-        } else if (breakdown.rankProbability() != null) {
-            text.append("仅位次口径可用，");
-        } else {
-            text.append("仅分数口径可用，");
-        }
-        text.append("综合录取概率 ").append(breakdown.probability()).append("%");
+        text.append("规则参考录取机会").append(AdmissionAssessmentDisplay.level(breakdown.probability()));
         if (strategy != null) {
             text.append("，属于").append(strategyLabel(strategy)).append("志愿");
         }

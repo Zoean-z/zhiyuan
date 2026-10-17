@@ -79,6 +79,26 @@ public class AiChatClient {
         this.readTimeoutMillis = readTimeoutMillis;
     }
 
+    /** One bounded research completion; no automatic retries or tool side effects. */
+    public String researchChat(String systemPrompt, String context, int timeoutMillis) {
+        if (Thread.currentThread().isInterrupted()) throw new java.util.concurrent.CancellationException();
+        var config = resolveConfig();
+        if (config.apiKey() == null || config.apiKey().isBlank()) {
+            throw new IllegalStateException("未配置分析模型凭据");
+        }
+        var client = buildRestClient(config, Math.min(4000, timeoutMillis), timeoutMillis);
+        var request = buildRequestBody(config.model(), systemPrompt, context,
+                0.3, false, false, 3000, false);
+        // New DeepSeek models default to thinking. Its tokens share max_tokens with
+        // the report, so an omitted switch can consume the entire budget without text.
+        // Keep this opt-out local to research; other callers retain their settings.
+        if (config.model().toLowerCase(java.util.Locale.ROOT).startsWith("deepseek")
+                || "api.deepseek.com".equalsIgnoreCase(java.net.URI.create(config.baseUrl()).getHost())) {
+            request.put("thinking", Map.of("type", "disabled"));
+        }
+        return performChat(client, request);
+    }
+
     public String chat(String systemPrompt,
                        String userPrompt,
                        double temperature,

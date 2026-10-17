@@ -1,4 +1,5 @@
 <script setup>
+import { admissionLevel, admissionDisplayText, admissionResearchRoute } from "../utils/recommendation";
 import { computed, onMounted, ref, watch } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { Delete, Bottom, Top, Promotion } from "@element-plus/icons-vue";
@@ -168,9 +169,7 @@ function normalizeProbability(prob) {
   return Number.isFinite(Number(prob)) ? Number(prob) : null;
 }
 function probabilityText(prob, detail = null) {
-  const value = normalizeProbability(prob);
-  if (value == null) return isExtremelyLowProbability(detail) ? "0%" : "待测";
-  return `${value}%`;
+  return admissionLevel(prob, detail);
 }
 /* 后端对概率为 null 的院校会给出「极低概率/超出模型区间」结论；
    志愿位只存了数值概率，渲染时按 schoolId 找回后端判定，避免误显示「待测」。 */
@@ -314,7 +313,11 @@ function addFromPick(facts) {
   ElMessage.success(`已加入第 ${target + 1} 志愿位（${seg.label}）`);
 }
 function askAbout(facts) {
-  router.push({ path: "/agent", query: { q: `帮我分析${facts.school.name}：我现在${props.profile.score}分，后端返回${facts.strategy.label}，参考概率${probabilityText(facts.prob, facts.school.probability)}，${facts.school.admissionYear || "当前"}年最低分为${facts.line ?? "暂无"}。请说明数据局限，并分析是否适合放进志愿表。` } });
+  router.push(admissionResearchRoute(facts.school.id, facts.school.name, "", {
+    score: props.profile.score == null ? null : Number(props.profile.score),
+    province: props.profile.province, batch: props.profile.batch,
+    userRank: props.profile.manualRank == null || props.profile.manualRank === "" ? null : Number(props.profile.manualRank)
+  }));
 }
 
 /* 下拉可选项 = 后端院校库 + 已填的外部院校（来自推荐结果投放） */
@@ -417,7 +420,7 @@ async function exportSheet() {
     ElMessage.warning("志愿表为空，暂无可导出内容");
     return;
   }
-  const header = ["序号", "院校名称", "录取概率", "策略", "专业", "服从调剂"];
+  const header = ["序号", "院校名称", "机会等级", "策略", "专业", "服从调剂"];
   const rows = slots.value.map((s, i) =>
     s ? [i + 1, s.schoolName, probabilityText(s.prob, probabilityDetailOf(s)), segmentOfIndex(i).label, (s.majorNames || []).join("、"), s.adjust ? "是" : "否"] : null
   ).filter(Boolean);
@@ -572,9 +575,8 @@ defineExpose({ smartSort });
           <!-- 盾形概率徽章 + 校徽 -->
           <div class="mnz-pcard__badge">
             <GkSchoolLogo :school="f.school" size="sm" class="mnz-pcard__logo" />
-            <span class="mnz-pcard__shield" :class="`is-${f.strategy.key}`" :title="f.school.probability?.explanation || '低于该校录取线较多，模型不给出具体概率'">
+            <span class="mnz-pcard__shield" :class="`is-${f.strategy.key}`" :title="admissionDisplayText(f.school.probability?.explanation || '低于该校录取线较多，机会极低')">
               <b>{{ probabilityText(f.prob, f.school.probability) }}</b>
-              <i>{{ f.strategy.label }}</i>
             </span>
           </div>
 
@@ -602,7 +604,7 @@ defineExpose({ smartSort });
                 可填专业({{ f.majorList.length || f.school.majorCount || 0 }})
                 <el-icon><Promotion /></el-icon>
               </button>
-              <button type="button" class="mnz-pcard__ask" @click="askAbout(f)">问小智解读</button>
+              <button type="button" class="mnz-pcard__ask" @click="askAbout(f)">AI 录取分析</button>
               <div v-if="expandedId === f.school.id" class="mnz-pcard__major-list">
                 <template v-if="f.majorList.length">
                   <span v-for="m in f.majorList" :key="m">{{ m }}</span>
@@ -678,7 +680,7 @@ defineExpose({ smartSort });
             <tr>
               <th>序号</th>
               <th>院校名称</th>
-              <th>录取概率</th>
+              <th>机会等级</th>
               <th>专业</th>
               <th>服从调剂</th>
               <th>操作</th>
@@ -692,7 +694,7 @@ defineExpose({ smartSort });
                 {{ r.slot.schoolName }}
               </td>
               <td>
-                <span class="mnz-table__prob" :class="segmentOfIndex(r.idx - 1).key"><em>录取率</em> {{ probabilityText(r.slot.prob, probabilityDetailOf(r.slot)) }}</span>
+                <span class="mnz-table__prob" :class="segmentOfIndex(r.idx - 1).key"><em>机会</em> {{ probabilityText(r.slot.prob, probabilityDetailOf(r.slot)) }}</span>
               </td>
               <td class="mnz-table__majors">{{ (r.slot.majorNames || []).join("、") || "—" }}</td>
               <td>{{ r.slot.adjust ? "是" : "否" }}</td>
@@ -769,7 +771,7 @@ defineExpose({ smartSort });
               </button>
 
               <span class="mnz-vrow__prob" :class="seg.key">
-                <em>录取率</em>
+                <em>机会</em>
                 {{ probabilityText(slots[seg.range[0] + n - 1].prob, probabilityDetailOf(slots[seg.range[0] + n - 1])) }}
               </span>
 

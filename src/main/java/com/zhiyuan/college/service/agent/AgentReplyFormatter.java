@@ -1,5 +1,7 @@
 package com.zhiyuan.college.service.agent;
 
+import com.zhiyuan.college.util.AdmissionAssessmentDisplay;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.zhiyuan.college.model.entity.UserAccount;
@@ -156,7 +158,7 @@ public class AgentReplyFormatter {
 
         sb.append("## 一、分数段研判\n");
         sb.append(String.format("%d分%s类%s考生，参考位次约%s。", score, subject, province, userRank));
-        sb.append("以下推荐基于本系统数据库真实录取数据，冲稳保三档已按录取概率分层。\n\n");
+        sb.append("以下推荐基于本系统数据库真实录取数据，冲稳保三档已按规则参考机会分层。\n\n");
 
         sb.append(majorFirst ? "## 二、冲稳保专业推荐\n\n" : "## 二、冲稳保院校推荐\n\n");
         appendGroupTable(sb, "冲一冲", groups.get("rush"), score);
@@ -206,7 +208,7 @@ public class AgentReplyFormatter {
         String tags = joinTags(item.path("schoolTags"));
         int cutoff = item.path("cutoffScore").asInt(0);
         int prob = item.path("admissionProbability").asInt(0);
-        String probStr = prob > 0 ? prob + "%" : "—";
+        String probStr = item.path("admissionProbability").isNumber() ? AdmissionAssessmentDisplay.level(prob) : "待评估";
         String majorStr = major.isBlank() ? "—" : major;
         String tagsStr = tags.isBlank() ? "普通" : tags;
         return String.format("| %s | %s | %s | %d | %s |\n", uni, majorStr, tagsStr, cutoff, probStr);
@@ -217,7 +219,7 @@ public class AgentReplyFormatter {
             return;
         }
         sb.append(String.format("### %s\n", title));
-        sb.append("| 院校 | 专业 | 层次 | 录取分 | 录取概率 |\n");
+        sb.append("| 院校 | 专业 | 层次 | 录取分 | 机会等级 |\n");
         sb.append("|---|---|---|---|---|\n");
         sb.append(rows);
         sb.append("\n");

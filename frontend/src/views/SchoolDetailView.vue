@@ -1,4 +1,5 @@
 <script setup>
+import { admissionLevel, admissionDisplayText, admissionResearchRoute } from "../utils/recommendation";
 import { ArrowLeft } from "@element-plus/icons-vue";
 import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
@@ -112,7 +113,7 @@ const strategy = computed(() => {
 });
 const displayProbability = computed(() => {
   const value = probabilityDisplayValue(detail.value);
-  return value == null ? null : String(value);
+  return admissionLevel(value, detail.value);
 });
 
 const planRows = computed(() => majors.value.slice(0, 8));
@@ -175,10 +176,10 @@ function scoreGapLine(detailValue) {
 
               <!-- 录取概率卡：分数来自全局考生档案（登录时确定、志愿填报页可改） -->
               <aside class="gkd-prob" :class="strategy ? `is-${strategy.key}` : 'is-empty'">
+                  <button type="button" class="gkd-research" @click="router.push(admissionResearchRoute(school.id, school.name))">AI 录取分析</button>
                 <template v-if="strategy">
-                  <p class="gkd-prob__label">我的录取概率</p>
-                  <strong>{{ displayProbability }}<i>%</i></strong>
-                  <span class="gkd-prob__seg">{{ strategy.full }}</span>
+                  <p class="gkd-prob__label">我的录取机会</p>
+                  <strong>{{ displayProbability }}</strong>
                   <ul class="gkd-prob__why">
                     <li>
                       我的位次 <b>{{ fmt(rank) }}</b> · 院校最低位次 <b>{{ fmt(detail?.minRank) }}</b>
@@ -192,12 +193,12 @@ function scoreGapLine(detailValue) {
                       <b>{{ detail.scoreGap == null ? "待测" : Math.abs(detail.scoreGap) }}</b> 分（权重 25%）
                     </li>
                     <li v-if="extremelyLow">
-                      {{ detail.explanation || "差距超出模型可测算区间，概率极低" }}
+                      {{ admissionDisplayText(detail.explanation) || "差距超出模型可测算区间，机会极低" }}
                     </li>
                   </ul>
                 </template>
                 <template v-else>
-                  <p class="gkd-prob__label">我的录取概率</p>
+                  <p class="gkd-prob__label">我的录取机会</p>
                   <strong class="gkd-prob__placeholder">待测算</strong>
                   <span class="gkd-prob__seg">{{ profile.province }} · {{ profile.firstSubject }}类 · 未设置分数</span>
                   <p class="gkd-prob__hint">分数在登录时确定，可在志愿填报页的高考信息中修改，全站同步生效</p>
@@ -353,3 +354,7 @@ function scoreGapLine(detailValue) {
     </main>
   </div>
 </template>
+
+<style scoped>
+.gkd-research { border:1px solid #ff8748; background:#fff7f0; color:#c74f12; border-radius:8px; padding:8px 12px; cursor:pointer; margin-bottom:10px; }
+</style>

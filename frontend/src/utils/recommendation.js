@@ -194,8 +194,8 @@ export function normalizeItem(item, fallbackStrategy) {
     strategy,
     strategyLabel: pickValue(item, ["strategyLabel"]) || strategyLabel(strategy),
     riskScore,
-    matchReasons: Array.isArray(pickValue(item, ["matchReasons"])) ? pickValue(item, ["matchReasons"]) : [],
-    explanation: pickValue(item, ["explanation"])
+    matchReasons: Array.isArray(pickValue(item, ["matchReasons"])) ? pickValue(item, ["matchReasons"]).map(admissionDisplayText) : [],
+    explanation: admissionDisplayText(pickValue(item, ["explanation"]))
   };
 }
 
@@ -307,4 +307,56 @@ export function formatDateTime(value) {
     return String(value);
   }
   return date.toLocaleString("zh-CN", { hour12: false });
+}
+
+
+// Display only: raw values remain available for ordering, strategy and stars.
+export function admissionLevel(value, detail = null) {
+  if (isExtremelyLowProbability(detail)) return "极低";
+  if (value == null || value === "" || !Number.isFinite(Number(value))) return "待评估";
+  const p = Number(value);
+  return p <= 0 ? "极低" : p < 20 ? "较低" : p < 35 ? "低" : p < 55 ? "中" : p < 75 ? "高" : p < 90 ? "较高" : "极高";
+}
+
+export function admissionDisplayText(input) {
+  if (input == null) return "";
+  let text = String(input)
+    .replace(/(?:规则测算|综合|参考)?录取概率(?:约为|约|为|是|[:：\s])*(\d+(?:\.\d+)?)\s*[%％]/g,
+      (_, p) => `录取机会${admissionLevel(p)}`)
+    .replace(/风险(?:指数|评分|分数)\s*[:：]?\s*\d+(?:\.\d+)?\s*(?:\/\s*100|分)?/g, "请结合位次差与招生条件判断风险");
+  let column = -1;
+  return text.split("\n").map(line => {
+    if (!line.trimStart().startsWith("|")) { column = -1; return line; }
+    const cells = line.split("|");
+    cells.forEach((cell, i) => {
+      if (cell.includes("录取概率") || cell.includes("机会等级")) {
+        column = i;
+        cells[i] = cell.replaceAll("录取概率", "机会等级");
+      }
+    });
+    if (column >= 0 && column < cells.length) {
+      cells[column] = cells[column].replace(/(\d+(?:\.\d+)?)\s*[%％]/g, (_, p) => admissionLevel(p));
+    }
+    return cells.join("|");
+  }).join("\n");
+}
+
+
+export function admissionResearchRoute(schoolId, schoolName, majorName = "", conditions = null) {
+  const year = new Date().getFullYear();
+  let profile = {};
+  try { profile = JSON.parse(localStorage.getItem("zhiyuan_exam_profile") || "{}"); } catch { /* optional */ }
+  const context = {
+    schoolId: Number(schoolId), majorName: majorName || null,
+    province: profile.province || null,
+    subjectType: profile.firstSubject === "历史" ? "HISTORY" : profile.firstSubject === "物理" ? "PHYSICS" : null,
+    score: profile.score == null || profile.score === "" ? null : Number(profile.score),
+    userRank: profile.manualRank == null || profile.manualRank === "" ? null : Number(profile.manualRank),
+    batch: profile.batch || null, secondSubjects: profile.secondSubjects || [], targetYear: year,
+    ...conditions
+  };
+  return { path: "/agent", query: {
+    q: `请结合当前考生条件、历史录取资料及专业、学校、地区热度和招生变化，综合分析${schoolName || "该院校"}${majorName ? "的" + majorName + "专业" : ""}在${context.targetYear}年的录取机会。`,
+    research: JSON.stringify(context)
+  }};
 }

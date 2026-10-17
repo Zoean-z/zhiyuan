@@ -1,4 +1,5 @@
 <script setup>
+import { admissionLevel, admissionDisplayText, admissionResearchRoute } from "../utils/recommendation";
 import { ArrowDown } from "@element-plus/icons-vue";
 import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
@@ -409,11 +410,11 @@ const scoreBands = computed(() =>
                     <i v-for="tag in schoolTags(school)" :key="tag">{{ tag }}</i>
                   </p>
                 </div>
+                <button type="button" class="gkd-prob" @click="router.push(admissionResearchRoute(school.universityId || school.id, school.universityName, major?.name))">AI 录取分析</button>
                 <button type="button" class="gkd-prob" @click="askProb(school)">
-                  <span class="gkd-prob__cap">录取概率</span>
+                  <span class="gkd-prob__cap">机会等级</span>
                   <span class="gkd-prob__row">
-                    <b :class="`is-${probOf(school).cls}`">{{ probOf(school).label }}</b>
-                    <em :class="`is-${probOf(school).cls}`">{{ probOf(school).p == null ? "待测" : `${probOf(school).p}%` }}</em>
+                    <em :class="`is-${probOf(school).cls}`">{{ probOf(school).p == null ? "待测" : admissionLevel(probOf(school).p) }}</em>
                   </span>
                 </button>
               </li>
@@ -458,7 +459,7 @@ const scoreBands = computed(() =>
             <h4 class="gkd-sub">{{ major.name }} · 院校线参考（{{ cutoffYearLabel }}）</h4>
             <table class="gkd-table">
               <thead>
-                <tr><th>院校</th><th>最低分</th><th>最低位次</th><th>录取概率</th></tr>
+                <tr><th>院校</th><th>最低分</th><th>最低位次</th><th>机会等级</th></tr>
               </thead>
               <tbody>
                 <tr v-for="row in scoreBands" :key="row.universityId">
@@ -470,7 +471,7 @@ const scoreBands = computed(() =>
                   </td>
                   <td>{{ row.cutoffScore == null ? "—" : row.cutoffScore }}</td>
                   <td>{{ row.minRank == null ? "—" : row.minRank }}</td>
-                  <td><span class="gkd-badge" :class="`is-${row.prob.cls}`">{{ row.prob.p == null ? "待测" : `${row.prob.label} ${row.prob.p}%` }}</span></td>
+                  <td><span class="gkd-badge" :class="`is-${row.prob.cls}`">{{ row.prob.p == null ? "待测" : admissionLevel(row.prob.p) }}</span></td>
                 </tr>
               </tbody>
             </table>
