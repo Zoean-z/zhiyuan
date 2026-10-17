@@ -101,14 +101,14 @@ const levelTags = computed(() => {
 const extremelyLow = computed(() => isExtremelyLowProbability(detail.value));
 const strategy = computed(() => {
   if (extremelyLow.value) return { key: "unknown", label: "概率极低", full: "概率极低" };
-  if (!detail.value || detail.value.probability == null || !detail.value.strategy) return null;
+  if (!detail.value || detail.value.probability == null) return null;
   const key = String(detail.value.strategy).toUpperCase();
   const view = {
     RUSH: { key: "rush", label: "冲", full: "冲刺" },
     SAFE: { key: "safe", label: "稳", full: "稳妥" },
     GUARANTEE: { key: "guard", label: "保", full: "保底" }
   }[key];
-  if (!view) return null;
+  if (!view) return { key: "unknown", label: admissionLevel(detail.value.probability, detail.value) };
   return { ...view, label: detail.value.strategyLabel || view.label };
 });
 const displayProbability = computed(() => {

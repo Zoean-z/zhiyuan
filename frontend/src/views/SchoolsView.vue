@@ -138,14 +138,14 @@ function badgeOf(school) {
   if (isExtremelyLowProbability(detail)) {
     return { detail, key: "unknown", label: "概率极低", value: "极低", flame: false };
   }
-  if (!detail || detail.probability == null || !detail.strategy) return null;
+  if (!detail || detail.probability == null) return null;
   const key = String(detail.strategy).toUpperCase();
   const view = {
     RUSH: { key: "rush", label: "冲" },
     SAFE: { key: "safe", label: "稳" },
     GUARANTEE: { key: "guard", label: "保" }
   }[key];
-  if (!view) return null;
+  if (!view) return { detail, key: "unknown", label: "", value: admissionLevel(detail.probability, detail), flame: false };
   return {
     detail,
     ...view,

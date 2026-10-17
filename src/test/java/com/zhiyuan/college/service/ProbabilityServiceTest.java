@@ -159,6 +159,23 @@ class ProbabilityServiceTest {
         return university;
     }
 
+    @Test
+    void breakdownExposesLowAndExtremeResultsWithoutNumericRiskClaims() {
+        var extreme = probabilityService.buildBreakdown(2L, "北京大学", null, "湖南", "物理", 2026,
+                650, new RankResolution(3131, ScoreRankMappingService.SOURCE_PROVIDED, 2026), 686, 189);
+        assertEquals(0, extreme.probability());
+        assertEquals(false, extreme.recommended());
+        assertEquals(null, extreme.strategy());
+        assertTrue(extreme.explanation().contains("录取机会极低"));
+        assertTrue(!extreme.explanation().contains("%"));
+
+        var low = probabilityService.buildBreakdown(3L, "样本大学", null, "湖南", "物理", 2026,
+                null, new RankResolution(13000, ScoreRankMappingService.SOURCE_PROVIDED, 2026), null, 10000);
+        assertTrue(low.probability() > 0 && low.probability() < 35);
+        assertTrue(low.explanation().contains("录取机会低"));
+        assertEquals(false, low.recommended());
+    }
+
     private AdmissionCutoff admissionCutoff(Integer year, Integer score, Integer rank) {
         AdmissionCutoff cutoff = new AdmissionCutoff();
         cutoff.setAdmissionYear(year);

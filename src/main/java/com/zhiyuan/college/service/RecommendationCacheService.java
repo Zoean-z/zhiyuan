@@ -91,7 +91,7 @@ public class RecommendationCacheService {
         String subjectType = request.getSubjectType() == null ? "" : request.getSubjectType().name();
         String majorKeyword = request.getMajorKeyword() == null ? "" : request.getMajorKeyword().trim().toLowerCase();
         Integer score = request.getScore() == null ? -1 : request.getScore();
-        return "recommendation:%s:%s:%s:%d:%s".formatted(mode, province, subjectType, score, digest(majorKeyword));
+        return "recommendation:relative-rank-v2:%s:%s:%s:%d:%s".formatted(mode, province, subjectType, score, digest(majorKeyword));
     }
 
     private String parseCacheKey(String text) {

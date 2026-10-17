@@ -116,9 +116,10 @@ class RecommendationServiceTest {
         when(recommendationCacheService.getRecommendation(request)).thenReturn(null);
         when(scoreRankMappingService.resolveUserRank("浙江", "物理", 620)).thenReturn(26000);
         when(admissionCutoffMapper.findLatestByProvinceAndSubject("浙江", "物理")).thenReturn(List.of(
-                buildCutoff(1L, "冲刺大学", "浙江", "985", true, true, true, "综合类", 658, 25000),
+                buildCutoff(1L, "冲刺大学", "浙江", "985", true, true, true, "综合类", 625, 25000),
                 buildCutoff(2L, "稳妥大学", "浙江", "双一流", false, false, true, "综合类", 612, 28000),
-                buildCutoff(3L, "保底大学", "浙江", "普通", false, false, false, "综合类", 585, 55000)
+                buildCutoff(3L, "保底大学", "浙江", "普通", false, false, false, "综合类", 585, 55000),
+                buildCutoff(4L, "明显不适合大学", "浙江", "985", true, true, true, "综合类", 686, 189)
         ));
         when(recommendationHintService.buildTips(eq(request), eq(3))).thenReturn(List.of("tip-1"));
         doAnswer(invocation -> {

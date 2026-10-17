@@ -11,7 +11,7 @@ import org.springframework.stereotype.Service;
  * 录取概率 / 冲稳保策略的唯一口径。
  *
  * <p>{@link #explain} 返回完整拆解且<b>不做</b>最低概率过滤，供“查大学 / 院校详情 / 概率接口”使用；
- * {@link #evaluate} 在它之上叠推荐门槛，行为与原版保持一致。</p>
+     * {@link #evaluate} 在它之上叠推荐门槛。</p>
  */
 @Service
 public class RecommendationPolicyService {
@@ -35,28 +35,36 @@ public class RecommendationPolicyService {
     /**
      * 概率拆解：不过滤、不丢数据，把模型中间量全部输出。
      *
-     * <p>位次一票否决（L-20260921 消融实验 A0→A1）：当位次数据齐全且差距超出模型区间
-     * （rankGap < MIN_RANK_GAP，即该校最低位次比考生高出 3000 名以上）时，位次判定
-     * "不可能"拥有否决权——不允许单凭某一年分数线碰巧偏低（score 概率）把该校救回推荐。
-     * 位次数据缺失（userRank/minRank 缺一）时才允许退回单分数口径。</p>
+     * <p>落后位次按相对该校参考位次的比例分档，不再用固定3000名否决所有院校。
+     * 位次结论作为落后考生的评分上限，不能被偏低分数线救回；两项均落后时保留分数劣势。
+     * 这些分值是启发式规则评分，未经统计概率校准。</p>
      */
     public ProbabilityBreakdown explain(Integer userScore,
                                        Integer userRank,
                                        Integer cutoffScore,
                                        Integer minRank) {
         Integer scoreGap = userScore == null || cutoffScore == null ? null : userScore - cutoffScore;
-        Integer rankGap = userRank == null || minRank == null ? null : minRank - userRank;
-        Integer rankProbability = rankGap == null ? null : computeRankProbability(rankGap);
+        Integer rankGap = userRank == null || minRank == null || userRank <= 0 || minRank <= 0
+                ? null : minRank - userRank;
+        Integer rankProbability = rankGap == null ? null : computeRankProbability(rankGap, minRank);
         Integer scoreProbability = scoreGap == null ? null : computeScoreProbability(scoreGap);
-        boolean rankVeto = rankGap != null && rankGap < MIN_RANK_GAP;
-        Integer probability = rankVeto ? Integer.valueOf(0) : blendProbability(rankProbability, scoreProbability);
-        StrategyType strategy = probability == null || (rankVeto && probability == 0)
-                ? null
-                : classifyByProbability(probability);
+        Integer probability;
+        if (rankGap != null && rankGap < 0) {
+            probability = Math.min(rankProbability, blendProbability(rankProbability, scoreProbability));
+            if (scoreGap != null && scoreGap < MIN_SCORE_GAP) {
+                probability = Math.min(probability, scoreProbability);
+            }
+        } else if (rankGap != null && scoreGap != null && scoreGap < MIN_SCORE_GAP) {
+            // 位次已领先时，跨年份分数波动不单独推翻位次，保持原先位次优先的行为。
+            probability = rankProbability;
+        } else {
+            probability = blendProbability(rankProbability, scoreProbability);
+        }
+        StrategyType strategy = probability == null ? null : classifyByProbability(probability);
         boolean recommended = probability != null
                 && strategy != null
                 && probability >= scoringProperties.getMinimumProbability();
-        String basis = userRank != null && minRank != null
+        String basis = rankGap != null
                 ? BASIS_RANK
                 : (userScore != null && cutoffScore != null ? BASIS_SCORE : null);
         return new ProbabilityBreakdown(
@@ -126,9 +134,16 @@ public class RecommendationPolicyService {
         return rankProbability != null ? rankProbability : scoreProbability;
     }
 
-    private Integer computeRankProbability(int rankGap) {
-        if (rankGap < MIN_RANK_GAP) {
-            return null;
+    private Integer computeRankProbability(int rankGap, int minRank) {
+        if (rankGap < 0) {
+            double deficit = -(double) rankGap / minRank;
+            if (deficit >= 1) return 0;
+            if (deficit >= 0.5) return clamp((int) Math.round(19 * (1 - deficit) / 0.5), 1, 19);
+            if (deficit >= 0.2) return clamp((int) Math.round(34 - (deficit - 0.2) / 0.3 * 14), 20, 34);
+            int atCutoff = scale(0, MIN_RANK_GAP, RUSH_MAX_RANK_GAP,
+                    scoringProperties.getRush().getMin(), scoringProperties.getRush().getMax());
+            return scale((int) Math.round((1 - deficit / 0.2) * 10000), 0, 10000,
+                    scoringProperties.getRush().getMin(), atCutoff);
         }
         if (rankGap <= RUSH_MAX_RANK_GAP) {
             return scale(rankGap, MIN_RANK_GAP, RUSH_MAX_RANK_GAP,
@@ -146,7 +161,9 @@ public class RecommendationPolicyService {
 
     private Integer computeScoreProbability(int scoreGap) {
         if (scoreGap < MIN_SCORE_GAP) {
-            return null;
+            if (scoreGap <= -30) return 0;
+            if (scoreGap < -20) return scale(scoreGap, -30, -20, 1, 19);
+            return scale(scoreGap, -20, MIN_SCORE_GAP, 20, 34);
         }
         if (scoreGap <= RUSH_MAX_SCORE_GAP) {
             return scale(scoreGap, MIN_SCORE_GAP, RUSH_MAX_SCORE_GAP,

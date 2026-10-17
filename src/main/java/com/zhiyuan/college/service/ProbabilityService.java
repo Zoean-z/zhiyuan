@@ -293,7 +293,7 @@ public class ProbabilityService {
         }
 
         if (breakdown.probability() == null) {
-            text.append("差距超出模型可测算区间，视为极低概率。");
+            text.append("缺少可用于评估的分数或位次数据，暂待评估。");
             return text.toString();
         }
 
@@ -303,7 +303,7 @@ public class ProbabilityService {
         }
         text.append("。");
         if (!breakdown.recommended()) {
-            text.append("低于推荐门槛 ").append(scoringProperties.getMinimumProbability()).append("%，智能推荐列表不会出现。");
+            text.append("低于当前规则推荐门槛，智能推荐列表不会出现。");
         }
         return text.toString();
     }

@@ -103,4 +103,64 @@ class RecommendationPolicyServiceTest {
         assertTrue(breakdown.probability() >= 75);
         assertTrue(breakdown.recommended());
     }
+
+    @Test
+    void eliteCutoff_relativeRankDeficitCannotBeRescuedByScore() {
+        for (int score : new int[]{650, 700}) {
+            var result = recommendationPolicyService.explain(score, 3131, 686, 189);
+            assertEquals(0, result.probability());
+            assertNull(result.strategy());
+            assertFalse(result.recommended());
+        }
+        assertNull(recommendationPolicyService.evaluate(650, 3131, buildCutoff(686, 189)));
+    }
+
+    @Test
+    void relativeRankBoundariesProduceLowScoresWithoutRecommending() {
+        int[] ranks = {11999, 12000, 14999, 15000, 19999, 20000};
+        int[] expected = {35, 34, 20, 19, 1, 0};
+        for (int i = 0; i < ranks.length; i++) {
+            var result = recommendationPolicyService.explain(null, ranks[i], null, 10000);
+            assertEquals(expected[i], result.probability());
+            assertEquals(i == 0, result.recommended());
+        }
+    }
+
+    @Test
+    void sameAbsoluteDeficitIsNotEquivalentAcrossRankRanges() {
+        assertEquals(0, recommendationPolicyService.explain(null, 3131, null, 189).probability());
+        var ordinary = recommendationPolicyService.explain(595, 62942, 600, 60000);
+        assertTrue(ordinary.probability() >= 35);
+        assertTrue(ordinary.recommended());
+        assertTrue(recommendationPolicyService.explain(null, 64000, null, 60000).probability() > 0);
+    }
+
+    @Test
+    void scoreDeficitsRemainKnownAndCanLimitBothNegativeIndicators() {
+        int[] scores = {650, 657, 662, 667, 675, 676};
+        int previous = -1;
+        for (int score : scores) {
+            var result = recommendationPolicyService.explain(score, null, 686, null);
+            assertNotNull(result.probability());
+            assertTrue(result.probability() >= previous);
+            previous = result.probability();
+        }
+        assertEquals(0, recommendationPolicyService.explain(650, null, 686, null).probability());
+        assertEquals(0, recommendationPolicyService.explain(620, 26000, 658, 25000).probability());
+        assertFalse(recommendationPolicyService.explain(620, 26000, 658, 25000).recommended());
+        // Leading ranks remain authoritative when cross-year scores conflict.
+        assertEquals(57, recommendationPolicyService.explain(620, 26000, 660, 28000).probability());
+    }
+
+    @Test
+    void rankScoreIsMonotoneAndUnknownInputsStayUnknown() {
+        int previous = 101;
+        for (int rank = 1; rank <= 30000; rank += 37) {
+            int value = recommendationPolicyService.explain(null, rank, null, 10000).probability();
+            assertTrue(value <= previous, "Worse ranks must not improve assessment");
+            previous = value;
+        }
+        assertNull(recommendationPolicyService.explain(null, null, null, null).probability());
+        assertNull(recommendationPolicyService.explain(null, 100, null, 0).probability());
+    }
 }

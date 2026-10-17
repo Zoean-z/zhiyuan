@@ -101,7 +101,7 @@ async function fetchSchools() {
         rankGap: s.probability?.rankGap ?? null,
         scoreGap: s.probability?.scoreGap ?? null,
         strategyKey: strategy?.key ?? "unknown",
-        prob: strategy?.probabilityLabel || (extremelyLow ? "概率极低" : "待测")
+        prob: strategy?.probabilityLabel || (extremelyLow ? "概率极低" : prob == null ? "待测" : admissionLevel(prob))
       };
     });
   } catch (ex) {
