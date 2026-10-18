@@ -1,7 +1,7 @@
 <script setup>
 import { admissionLevel, admissionDisplayText } from "../utils/recommendation";
 import { ElMessage } from "element-plus";
-import { ArrowRight, CaretBottom, CaretTop, Collection, CopyDocument, Document, Expand, Fold, Monitor, Plus, Promotion, Refresh, RefreshRight, School, Search, SwitchButton, TrendCharts, User, VideoPause } from "@element-plus/icons-vue";
+import { ArrowRight, CaretBottom, CaretTop, Collection, CopyDocument, Document, Expand, Fold, House, Monitor, Plus, Promotion, Refresh, RefreshRight, School, Search, TrendCharts, User, VideoPause } from "@element-plus/icons-vue";
 import { computed, inject, nextTick, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import {
@@ -1045,8 +1045,8 @@ onMounted(async () => {
             <strong>{{ props.user?.username || "志愿考生" }}</strong>
             <span>AI 对话工作区</span>
           </div>
-          <button type="button" class="xz-side__logout" @click="workspace?.logout?.()">
-            <el-icon><SwitchButton /></el-icon>退出
+          <button type="button" class="xz-side__logout" @click="router.push('/')">
+            <el-icon><House /></el-icon>回到主页面
           </button>
         </template>
       </div>
